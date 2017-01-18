@@ -110,6 +110,7 @@ func (cp *ConnectionPool) Get() (*PooledConnection, error) {
 	if cp.postCreateHook != nil {
 		err = cp.postCreateHook(newConn)
 		if err != nil {
+			newConn.Close()
 			return &PooledConnection{}, err
 		}
 	}
