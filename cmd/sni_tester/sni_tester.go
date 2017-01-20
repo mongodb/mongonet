@@ -59,9 +59,9 @@ func (myi *MyInterceptor) InterceptClientToMongo(m mongonet.Message) (mongonet.M
 
 func (myi *MyInterceptor) Close() {
 }
-func (myi *MyInterceptor) TrackInBytes(int) {
+func (myi *MyInterceptor) TrackRequest(mongonet.MessageHeader) {
 }
-func (myi *MyInterceptor) TrackOutBytes(int) {
+func (myi *MyInterceptor) TrackResponse(mongonet.MessageHeader) {
 }
 
 func main() {
