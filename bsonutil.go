@@ -48,6 +48,10 @@ func parseSimpleBSON(b []byte) (SimpleBSON, error) {
 		return SimpleBSON{}, NewStackErrorf("bson size invalid %d", size)
 	}
 
+	if int(size) > len(b) {
+		return SimpleBSON{}, NewStackErrorf("invalid bson -- size = %v is greater than length of bytes = %v", size, len(b))
+	}
+
 	return SimpleBSON{size, b[0:int(size)]}, nil
 }
 

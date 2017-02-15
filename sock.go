@@ -50,6 +50,9 @@ func ReadMessage(conn net.Conn) (Message, error) {
 		read += n
 	}
 
+	if len(restBuf) < 12 {
+		return nil, NewStackErrorf("invalid message header -- header size = %v is less than message length", header.Size)
+	}
 	header.RequestID = readInt32(restBuf)
 	header.ResponseTo = readInt32(restBuf[4:])
 	header.OpCode = readInt32(restBuf[8:])
