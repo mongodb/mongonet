@@ -35,12 +35,18 @@ func parseKillCursorsMessage(header MessageHeader, buf []byte) (Message, error) 
 
 	loc := 0
 
+	if len(buf) < 8 {
+		return m, NewStackErrorf("invalid kill cursors message -- length of message bytes = %v is less than 8", len(buf))
+	}
 	m.Reserved = readInt32(buf)
 	loc += 4
 
 	m.NumCursors = readInt32(buf[loc:])
 	loc += 4
 
+	if len(buf[loc:]) < int(m.NumCursors)*8 {
+		return m, NewStackErrorf("invalid kill cursors message -- NumCursors = %v is larger than number of cursors in message", m.NumCursors)
+	}
 	m.CursorIds = make([]int64, int(m.NumCursors))
 
 	for i := 0; i < int(m.NumCursors); i++ {

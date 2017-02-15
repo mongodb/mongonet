@@ -38,6 +38,9 @@ func parseReplyMessage(header MessageHeader, buf []byte) (Message, error) {
 
 	loc := 0
 
+	if len(buf) < 20 {
+		return m, NewStackErrorf("invalid reply message -- length of message bytes = %v is less than 20", len(buf))
+	}
 	rm.Flags = readInt32(buf[loc:])
 	loc += 4
 

@@ -42,6 +42,9 @@ func parseUpdateMessage(header MessageHeader, buf []byte) (Message, error) {
 	var err error
 	loc := 0
 
+	if len(buf) < 4 {
+		return m, NewStackErrorf("invalid update message -- length of message bytes = %v is less than 4", len(buf))
+	}
 	m.Reserved = readInt32(buf[loc:])
 	loc += 4
 
@@ -51,6 +54,9 @@ func parseUpdateMessage(header MessageHeader, buf []byte) (Message, error) {
 	}
 	loc += len(m.Namespace) + 1
 
+	if len(buf) < (loc + 4) {
+		return m, NewStackErrorf("invalid update message -- expect length of message to be longer than %v", len(buf))
+	}
 	m.Flags = readInt32(buf[loc:])
 	loc += 4
 
@@ -60,6 +66,9 @@ func parseUpdateMessage(header MessageHeader, buf []byte) (Message, error) {
 	}
 	loc += int(m.Filter.Size)
 
+	if len(buf) < loc {
+		return m, NewStackErrorf("invalid update message -- expect length of message to be longer than %v", len(buf))
+	}
 	m.Update, err = parseSimpleBSON(buf[loc:])
 	if err != nil {
 		return m, err

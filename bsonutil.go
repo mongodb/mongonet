@@ -38,6 +38,9 @@ func (sb SimpleBSON) Copy(loc *int, buf []byte) {
 }
 
 func parseSimpleBSON(b []byte) (SimpleBSON, error) {
+	if len(b) < 4 {
+		return SimpleBSON{}, NewStackErrorf("invalid bson -- length of bytes must be at least 4, not %v", len(b))
+	}
 	size := readInt32(b)
 	if int(size) == 0 {
 		// shortcut in wire protocol
