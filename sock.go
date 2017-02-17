@@ -42,7 +42,7 @@ func ReadMessage(conn net.Conn) (Message, error) {
 		return nil, NewStackErrorf("message too big %d", header.Size)
 	}
 
-	if header.Size < 0 || header.Size > MaxInt32+4 {
+	if header.Size < 0 || header.Size-4 > MaxInt32 {
 		return nil, NewStackErrorf("message header has invalid size.")
 	}
 	restBuf := make([]byte, header.Size-4)
@@ -59,7 +59,7 @@ func ReadMessage(conn net.Conn) (Message, error) {
 	}
 
 	if len(restBuf) < 12 {
-		return nil, NewStackErrorf("invalid message header. either header.Size = %v is shorter than message length, or message header is missing RequestId, ResponseTo, or OpCode fields.", header.Size)
+		return nil, NewStackErrorf("invalid message header. either header.Size = %v is shorter than message length, or message is missing RequestId, ResponseTo, or OpCode fields.", header.Size)
 	}
 	header.RequestID = readInt32(restBuf)
 	header.ResponseTo = readInt32(restBuf[4:])

@@ -42,7 +42,7 @@ func parseQueryMessage(header MessageHeader, buf []byte) (Message, error) {
 	loc := 0
 
 	if len(buf) < 4 {
-		return m, NewStackErrorf("invalid query message -- message must have length of at least 4 bytes.")
+		return qm, NewStackErrorf("invalid query message -- message must have length of at least 4 bytes.")
 	}
 	qm.Flags = readInt32(buf)
 	loc += 4
@@ -55,7 +55,7 @@ func parseQueryMessage(header MessageHeader, buf []byte) (Message, error) {
 	loc += len(qm.Namespace) + 1
 
 	if len(buf) < loc+8 {
-		return m, NewStackErrorf("invalid query message -- message length is too short.")
+		return qm, NewStackErrorf("invalid query message -- message length is too short.")
 	}
 	qm.Skip = readInt32(buf[loc:])
 	loc += 4
