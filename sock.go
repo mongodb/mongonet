@@ -2,6 +2,8 @@ package mongonet
 
 import "net"
 
+const MaxInt32 = 2147483647
+
 func sendBytes(conn net.Conn, buf []byte) error {
 	for {
 		written, err := conn.Write(buf)
@@ -40,7 +42,7 @@ func ReadMessage(conn net.Conn) (Message, error) {
 		return nil, NewStackErrorf("message too big %d", header.Size)
 	}
 
-	if header.Size < 0 || header.Size > XX {
+	if header.Size < 0 || header.Size > MaxInt32+4 {
 		return nil, NewStackErrorf("message header has invalid size. cannot be < 0 or over the limit.")
 	}
 	restBuf := make([]byte, header.Size-4)
