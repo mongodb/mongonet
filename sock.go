@@ -43,7 +43,7 @@ func ReadMessage(conn net.Conn) (Message, error) {
 	}
 
 	if header.Size < 0 || header.Size > MaxInt32+4 {
-		return nil, NewStackErrorf("message header has invalid size. cannot be < 0 or over the limit.")
+		return nil, NewStackErrorf("message header has invalid size.")
 	}
 	restBuf := make([]byte, header.Size-4)
 

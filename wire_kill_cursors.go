@@ -36,7 +36,7 @@ func parseKillCursorsMessage(header MessageHeader, buf []byte) (Message, error) 
 	loc := 0
 
 	if len(buf) < 8 {
-		return m, NewStackErrorf("invalid kill cursors message -- length of message bytes = %v is less than 8", len(buf))
+		return m, NewStackErrorf("invalid kill cursors message -- message must have length of at least 4 bytes.")
 	}
 	m.Reserved = readInt32(buf)
 	loc += 4
