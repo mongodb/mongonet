@@ -37,7 +37,7 @@ func parseGetMoreMessage(header MessageHeader, buf []byte) (Message, error) {
 	loc := 0
 
 	if len(buf) < 4 {
-		return m, NewStackErrorf("invalid get more message -- length of message bytes = %v is less than 4", len(buf))
+		return m, NewStackErrorf("invalid get more message -- message must have length of at least 4 bytes.")
 	}
 	qm.Reserved = readInt32(buf)
 	loc += 4
@@ -50,12 +50,13 @@ func parseGetMoreMessage(header MessageHeader, buf []byte) (Message, error) {
 	loc += len(qm.Namespace) + 1
 
 	if len(buf) < loc+12 {
-		return m, NewStackErrorf("invalid get more message -- expected message length to be at least %v, but it was %v", loc+12, len(buf))
+		return m, NewStackErrorf("invalid get more message -- message length is too short.")
 	}
 	qm.NReturn = readInt32(buf[loc:])
 	loc += 4
 
 	qm.CursorId = readInt64(buf[loc:])
+	loc += 8
 
 	return qm, nil
 }

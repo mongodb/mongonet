@@ -41,7 +41,7 @@ func parseDeleteMessage(header MessageHeader, buf []byte) (Message, error) {
 	loc := 0
 
 	if len(buf) < 4 {
-		return m, NewStackErrorf("invalid delete message -- length of message bytes = %v is less than 4", len(buf))
+		return m, NewStackErrorf("invalid delete message -- message must have length of at least 4 bytes.")
 	}
 	m.Reserved = readInt32(buf[loc:])
 	loc += 4
@@ -53,7 +53,7 @@ func parseDeleteMessage(header MessageHeader, buf []byte) (Message, error) {
 	loc += len(m.Namespace) + 1
 
 	if len(buf) < loc+4 {
-		return m, NewStackErrorf("invalid delete message -- length of message bytes = %v is too short", len(buf))
+		return m, NewStackErrorf("invalid delete message -- message length is too short.")
 	}
 	m.Flags = readInt32(buf[loc:])
 	loc += 4
@@ -62,7 +62,6 @@ func parseDeleteMessage(header MessageHeader, buf []byte) (Message, error) {
 	if err != nil {
 		return m, err
 	}
-
 	loc += int(m.Filter.Size)
 
 	return m, nil

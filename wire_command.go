@@ -47,11 +47,17 @@ func parseCommandMessage(header MessageHeader, buf []byte) (Message, error) {
 	if err != nil {
 		return cmd, err
 	}
+	if len(buf) < len(cmd.DB)+1 {
+		return m, NewStackErrorf("invalid command message -- message length is too short.")
+	}
 	buf = buf[len(cmd.DB)+1:]
 
 	cmd.CmdName, err = readCString(buf)
 	if err != nil {
 		return cmd, err
+	}
+	if len(buf) < len(cmd.CmdName)+1 {
+		return m, NewStackErrorf("invalid command message -- message length is too short.")
 	}
 	buf = buf[len(cmd.CmdName)+1:]
 
@@ -59,11 +65,17 @@ func parseCommandMessage(header MessageHeader, buf []byte) (Message, error) {
 	if err != nil {
 		return cmd, err
 	}
+	if len(buf) < cmd.CommandArgs.Size {
+		return m, NewStackErrorf("invalid command message -- message length is too short.")
+	}
 	buf = buf[cmd.CommandArgs.Size:]
 
 	cmd.Metadata, err = parseSimpleBSON(buf)
 	if err != nil {
 		return cmd, err
+	}
+	if len(buf) < len(cmd.Metadata.Size) {
+		return m, NewStackErrorf("invalid command message -- message length is too short.")
 	}
 	buf = buf[cmd.Metadata.Size:]
 
