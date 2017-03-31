@@ -73,7 +73,7 @@ type ProxyInterceptor interface {
 	TrackRequest(MessageHeader)
 	TrackResponse(MessageHeader)
 	CheckConnection() error
-	ConnectionCheckInterval() time.Duration
+	CheckConnectionInterval() time.Duration
 }
 
 type ProxyInterceptorFactory interface {

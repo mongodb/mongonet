@@ -74,7 +74,7 @@ func (myi *MyInterceptor) CheckConnection() error {
 	return nil
 }
 
-func (myi *MyInterceptor) ConnectionCheckInterval() time.Duration {
+func (myi *MyInterceptor) CheckConnectionInterval() time.Duration {
 	return 0
 }
 

@@ -5,7 +5,7 @@ import "time"
 
 type ConnChecker interface {
 	CheckConnection() error
-	ConnectionCheckInterval() time.Duration // set to 0 to not check
+	CheckConnectionInterval() time.Duration // set to 0 to not check
 }
 
 type CheckedConn struct {
@@ -15,7 +15,7 @@ type CheckedConn struct {
 
 func (c CheckedConn) Read(b []byte) (n int, err error) {
 	for {
-		interval := c.checker.ConnectionCheckInterval()
+		interval := c.checker.CheckConnectionInterval()
 		if interval > 0 {
 			if err := c.checker.CheckConnection(); err != nil {
 				return n, err
@@ -37,7 +37,7 @@ func (c CheckedConn) Read(b []byte) (n int, err error) {
 
 func (c CheckedConn) Write(b []byte) (n int, err error) {
 	for {
-		interval := c.checker.ConnectionCheckInterval()
+		interval := c.checker.CheckConnectionInterval()
 		if interval > 0 {
 			if err := c.checker.CheckConnection(); err != nil {
 				return n, err
