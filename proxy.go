@@ -4,6 +4,7 @@ import "crypto/tls"
 import "fmt"
 import "io"
 import "net"
+import "time"
 
 import "gopkg.in/mgo.v2/bson"
 
@@ -16,9 +17,14 @@ type Proxy struct {
 	logger *slogger.Logger
 }
 
+type ClientConn interface {
+	RemoteAddr() net.Addr
+	io.ReadWriteCloser
+}
+
 type ProxySession struct {
 	proxy *Proxy
-	conn  net.Conn
+	conn  ClientConn
 
 	interceptor ProxyInterceptor
 
@@ -66,6 +72,8 @@ type ProxyInterceptor interface {
 	Close()
 	TrackRequest(MessageHeader)
 	TrackResponse(MessageHeader)
+	CheckConnection() error
+	ConnectionCheckInterval() time.Duration
 }
 
 type ProxyInterceptorFactory interface {
@@ -273,11 +281,11 @@ func (ps *ProxySession) doLoop(pooledConn *PooledConnection) (*PooledConnection,
 	}
 }
 
-func (ps *ProxySession) Run() {
+func (ps *ProxySession) Run(conn net.Conn) {
 	var err error
-	defer ps.conn.Close()
+	defer conn.Close()
 
-	switch c := ps.conn.(type) {
+	switch c := conn.(type) {
 	case *tls.Conn:
 		// we do this here so that we can get the SNI server name
 		err = c.Handshake()
@@ -297,6 +305,8 @@ func (ps *ProxySession) Run() {
 			return
 		}
 		defer ps.interceptor.Close()
+
+		ps.conn = CheckedConn{conn, ps.interceptor}
 	}
 
 	defer ps.logger.Logf(slogger.INFO, "socket closed")
@@ -396,8 +406,8 @@ func (p *Proxy) Run() error {
 			conn = tls.Server(conn, tlsConfig)
 		}
 
-		c := &ProxySession{p, conn, nil, p.NewLogger(fmt.Sprintf("ProxySession %s", conn.RemoteAddr())), ""}
-		go c.Run()
+		c := &ProxySession{p, nil, nil, p.NewLogger(fmt.Sprintf("ProxySession %s", conn.RemoteAddr())), ""}
+		go c.Run(conn)
 	}
 
 }
