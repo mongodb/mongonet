@@ -17,14 +17,10 @@ type Proxy struct {
 	logger *slogger.Logger
 }
 
-type ClientConn interface {
-	RemoteAddr() net.Addr
-	io.ReadWriteCloser
-}
-
 type ProxySession struct {
-	proxy *Proxy
-	conn  ClientConn
+	proxy      *Proxy
+	conn       io.ReadWriteCloser
+	remoteAddr net.Addr
 
 	interceptor ProxyInterceptor
 
@@ -84,7 +80,7 @@ type ProxyInterceptorFactory interface {
 // -----
 
 func (ps *ProxySession) RemoteAddr() net.Addr {
-	return ps.conn.RemoteAddr()
+	return ps.remoteAddr
 }
 
 func (ps *ProxySession) GetLogger() *slogger.Logger {
@@ -406,7 +402,8 @@ func (p *Proxy) Run() error {
 			conn = tls.Server(conn, tlsConfig)
 		}
 
-		c := &ProxySession{p, nil, nil, p.NewLogger(fmt.Sprintf("ProxySession %s", conn.RemoteAddr())), ""}
+		remoteAddr := conn.RemoteAddr()
+		c := &ProxySession{p, nil, remoteAddr, nil, p.NewLogger(fmt.Sprintf("ProxySession %s", remoteAddr)), ""}
 		go c.Run(conn)
 	}
 
