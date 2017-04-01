@@ -60,7 +60,3 @@ func (c CheckedConn) Write(b []byte) (n int, err error) {
 func (c CheckedConn) Close() error {
 	return c.conn.Close()
 }
-
-func (c CheckedConn) RemoteAddr() net.Addr {
-	return c.conn.RemoteAddr()
-}
