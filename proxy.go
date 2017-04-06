@@ -33,17 +33,11 @@ type MongoError struct {
 	codeName string
 }
 
-var NoMongoError MongoError = MongoError{}
-
 func NewMongoError(err error, code int, codeName string) MongoError {
 	return MongoError{err, code, codeName}
 }
 
 func (me MongoError) ToBSON() bson.D {
-	if me == NoMongoError {
-		return bson.D{{"ok", 1}}
-	}
-
 	doc := bson.D{{"ok", 0}}
 
 	if me.err != nil {
@@ -57,12 +51,21 @@ func (me MongoError) ToBSON() bson.D {
 	return doc
 }
 
+func (me MongoError) Error() string {
+	return fmt.Sprintf(
+		"code=%v codeName=%v errmsg = %v",
+		me.code,
+		me.codeName,
+		me.err.Error(),
+	)
+}
+
 type ResponseInterceptor interface {
 	InterceptMongoToClient(m Message) (Message, error)
 }
 
 type ProxyInterceptor interface {
-	InterceptClientToMongo(m Message) (Message, ResponseInterceptor, MongoError)
+	InterceptClientToMongo(m Message) (Message, ResponseInterceptor, error)
 	Close()
 	TrackRequest(MessageHeader)
 	TrackResponse(MessageHeader)
@@ -129,12 +132,21 @@ func (ps *ProxySession) RespondToCommand(clientMessage Message, doc SimpleBSON) 
 
 }
 
-func (ps *ProxySession) respondWithError(clientMessage Message, mongoErr MongoError) error {
-	ps.logger.Logf(slogger.INFO, "respondWithError %v", mongoErr)
+func (ps *ProxySession) respondWithError(clientMessage Message, err error) error {
+	ps.logger.Logf(slogger.INFO, "respondWithError %v", err)
+
+	var errBSON bson.D
+	if err == nil {
+		errBSON = bson.D{{"ok", 1}}
+	} else if mongoErr, ok := err.(MongoError); ok {
+		errBSON = mongoErr.ToBSON()
+	} else {
+		errBSON = bson.D{{"ok", 0}, {"errmsg", err.Error()}}
+	}
 
 	switch clientMessage.Header().OpCode {
 	case OP_QUERY, OP_GET_MORE:
-		doc, myErr := SimpleBSONConvert(mongoErr.ToBSON())
+		doc, myErr := SimpleBSONConvert(errBSON)
 		if myErr != nil {
 			return myErr
 		}
@@ -153,7 +165,7 @@ func (ps *ProxySession) respondWithError(clientMessage Message, mongoErr MongoEr
 		}
 		return SendMessage(rm, ps.conn)
 	case OP_COMMAND:
-		doc, myErr := SimpleBSONConvert(mongoErr.ToBSON())
+		doc, myErr := SimpleBSONConvert(errBSON)
 		if myErr != nil {
 			return myErr
 		}
@@ -186,22 +198,21 @@ func (ps *ProxySession) doLoop(pooledConn *PooledConnection) (*PooledConnection,
 
 	var respInter ResponseInterceptor
 	if ps.interceptor != nil {
-		var mongoErr MongoError
 		ps.interceptor.TrackRequest(m.Header())
 
-		m, respInter, mongoErr = ps.interceptor.InterceptClientToMongo(m)
-		if mongoErr != NoMongoError {
+		m, respInter, err = ps.interceptor.InterceptClientToMongo(m)
+		if err != nil {
 			if m == nil {
 				if pooledConn != nil {
 					pooledConn.Close()
 				}
-				return nil, mongoErr.err
+				return nil, err
 			}
 			if !m.HasResponse() {
 				// we can't respond, so we just fail
-				return pooledConn, mongoErr.err
+				return pooledConn, err
 			}
-			err = ps.respondWithError(m, mongoErr)
+			err = ps.respondWithError(m, err)
 			if err != nil {
 				return pooledConn, NewStackErrorf("couldn't send error response to client %s", err)
 			}

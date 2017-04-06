@@ -33,33 +33,33 @@ func (myi *MyInterceptor) sniResponse() mongonet.SimpleBSON {
 	return raw
 }
 
-func (myi *MyInterceptor) InterceptClientToMongo(m mongonet.Message) (mongonet.Message, mongonet.ResponseInterceptor, mongonet.MongoError) {
+func (myi *MyInterceptor) InterceptClientToMongo(m mongonet.Message) (mongonet.Message, mongonet.ResponseInterceptor, error) {
 	switch mm := m.(type) {
 	case *mongonet.QueryMessage:
 		if !mongonet.NamespaceIsCommand(mm.Namespace) {
-			return m, nil, mongonet.NoMongoError
+			return m, nil, nil
 		}
 
 		query, err := mm.Query.ToBSOND()
 		if err != nil || len(query) == 0 {
 			// let mongod handle error message
-			return m, nil, mongonet.NoMongoError
+			return m, nil, nil
 		}
 
 		cmdName := query[0].Name
 		if cmdName != "sni" {
-			return m, nil, mongonet.NoMongoError
+			return m, nil, nil
 		}
 
 		return nil, nil, newSNIError(myi.ps.RespondToCommand(mm, myi.sniResponse()))
 	case *mongonet.CommandMessage:
 		if mm.CmdName != "sni" {
-			return mm, nil, mongonet.NoMongoError
+			return mm, nil, nil
 		}
 		return nil, nil, newSNIError(myi.ps.RespondToCommand(mm, myi.sniResponse()))
 	}
 
-	return m, nil, mongonet.NoMongoError
+	return m, nil, nil
 }
 
 func (myi *MyInterceptor) Close() {
@@ -102,9 +102,9 @@ func main() {
 	}
 }
 
-func newSNIError(err error) mongonet.MongoError {
+func newSNIError(err error) error {
 	if err == nil {
-		return mongonet.NoMongoError
+		return nil
 	}
 
 	return mongonet.NewMongoError(err, errorCode, errorCodeName)
