@@ -1,12 +1,12 @@
 package mongonet
 
-import "net"
+import "io"
 
 const MaxInt32 = 2147483647
 
-func sendBytes(conn net.Conn, buf []byte) error {
+func sendBytes(writer io.Writer, buf []byte) error {
 	for {
-		written, err := conn.Write(buf)
+		written, err := writer.Write(buf)
 		if err != nil {
 			return NewStackErrorf("error writing to client: %s", err)
 		}
@@ -20,10 +20,10 @@ func sendBytes(conn net.Conn, buf []byte) error {
 
 }
 
-func ReadMessage(conn net.Conn) (Message, error) {
+func ReadMessage(reader io.Reader) (Message, error) {
 	// read header
 	sizeBuf := make([]byte, 4)
-	n, err := conn.Read(sizeBuf)
+	n, err := reader.Read(sizeBuf)
 	if err != nil {
 		return nil, err
 	}
@@ -48,7 +48,7 @@ func ReadMessage(conn net.Conn) (Message, error) {
 	restBuf := make([]byte, header.Size-4)
 
 	for read := 0; int32(read) < header.Size-4; {
-		n, err := conn.Read(restBuf[read:])
+		n, err := reader.Read(restBuf[read:])
 		if err != nil {
 			return nil, err
 		}
@@ -92,6 +92,6 @@ func ReadMessage(conn net.Conn) (Message, error) {
 
 }
 
-func SendMessage(m Message, conn net.Conn) error {
-	return sendBytes(conn, m.Serialize())
+func SendMessage(m Message, writer io.Writer) error {
+	return sendBytes(writer, m.Serialize())
 }

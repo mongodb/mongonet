@@ -3,6 +3,7 @@ package main
 import "flag"
 import "fmt"
 import "os"
+import "time"
 
 import "gopkg.in/mgo.v2/bson"
 
@@ -67,6 +68,14 @@ func (myi *MyInterceptor) Close() {
 func (myi *MyInterceptor) TrackRequest(mongonet.MessageHeader) {
 }
 func (myi *MyInterceptor) TrackResponse(mongonet.MessageHeader) {
+}
+
+func (myi *MyInterceptor) CheckConnection() error {
+	return nil
+}
+
+func (myi *MyInterceptor) CheckConnectionInterval() time.Duration {
+	return 0
 }
 
 func main() {
