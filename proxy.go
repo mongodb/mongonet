@@ -161,7 +161,11 @@ func (ps *ProxySession) respondWithError(clientMessage Message, err error) error
 				17, // TODO
 				clientMessage.Header().RequestID,
 				OP_REPLY},
-			2, // flags - error bit
+
+			// We should not set the error bit because we are
+			// responding with errmsg instead of $err
+			0, // flags - error bit
+
 			0, // cursor id
 			0, // StartingFrom
 			1, // NumberReturned
