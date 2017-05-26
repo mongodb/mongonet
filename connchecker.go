@@ -2,6 +2,7 @@ package mongonet
 
 import "net"
 import "time"
+import "crypto/tls"
 
 type ConnChecker interface {
 	CheckConnection() error
@@ -29,6 +30,13 @@ func (c CheckedConn) Read(b []byte) (n int, err error) {
 
 		nDelta, err := c.conn.Read(b[n:])
 		n += nDelta
+
+		// If a timeout occurs, the TLS connection will be corrupted, and all future writes
+		// will return the same error. (https://golang.org/pkg/crypto/tls/#Conn.SetDeadline)
+		// Therefore, always return.
+		if _, ok := c.conn.(*tls.Conn); ok {
+			return n, err
+		}
 		if e, ok := err.(net.Error); !ok || !e.Timeout() {
 			return n, err
 		}
@@ -51,6 +59,13 @@ func (c CheckedConn) Write(b []byte) (n int, err error) {
 
 		nDelta, err := c.conn.Write(b[n:])
 		n += nDelta
+
+		// If a timeout occurs, the TLS connection will be corrupted, and all future writes
+		// will return the same error. (https://golang.org/pkg/crypto/tls/#Conn.SetDeadline)
+		// Therefore, always return.
+		if _, ok := c.conn.(*tls.Conn); ok {
+			return n, err
+		}
 		if e, ok := err.(net.Error); !ok || !e.Timeout() {
 			return n, err
 		}
