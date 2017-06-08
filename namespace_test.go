@@ -12,6 +12,7 @@ func TestNamespaceIsCommand(test *testing.T) {
 	testNamespaceIsCommand(test, "foo", false)
 	testNamespaceIsCommand(test, "foo.bar", false)
 	testNamespaceIsCommand(test, "foo.$cmd", true)
+	testNamespaceIsCommand(test, "foo.", false)
 }
 
 func testNamespaceToDB(test *testing.T, ns string, db string) {
@@ -25,6 +26,7 @@ func TestNamespaceToDB(test *testing.T) {
 	testNamespaceToDB(test, "foo", "foo")
 	testNamespaceToDB(test, "", "")
 	testNamespaceToDB(test, "foo.bar", "foo")
+	testNamespaceToDB(test, "foo.", "foo")
 	testNamespaceToDB(test, "foo.bar.abc", "foo")
 }
 
@@ -39,5 +41,6 @@ func TestNamespaceToCollection(test *testing.T) {
 	testNamespaceToCollection(test, "foo", "")
 	testNamespaceToCollection(test, "", "")
 	testNamespaceToCollection(test, "foo.bar", "bar")
+	testNamespaceToCollection(test, "foo.", "")
 	testNamespaceToCollection(test, "foo.bar.abc", "bar.abc")
 }

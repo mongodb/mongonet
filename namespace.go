@@ -4,7 +4,7 @@ import "strings"
 
 func NamespaceIsCommand(ns string) bool {
 	idx := strings.IndexByte(ns, '.')
-	if idx == -1 {
+	if idx == -1 || len(ns) <= idx+1 {
 		return false
 	}
 
