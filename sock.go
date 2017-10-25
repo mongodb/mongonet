@@ -1,6 +1,8 @@
 package mongonet
 
-import "io"
+import (
+	"io"
+)
 
 const MaxInt32 = 2147483647
 
@@ -17,7 +19,6 @@ func sendBytes(writer io.Writer, buf []byte) error {
 
 		buf = buf[written:]
 	}
-
 }
 
 func ReadMessage(reader io.Reader) (Message, error) {
@@ -42,10 +43,10 @@ func ReadMessage(reader io.Reader) (Message, error) {
 		return nil, NewStackErrorf("message too big %d", header.Size)
 	}
 
-	if header.Size < 0 || header.Size-4 > MaxInt32 {
-		return nil, NewStackErrorf("message header has invalid size.")
+	restBuf, err := SafeMakeByteSlice(header.Size - 4)
+	if err != nil {
+		return nil, err
 	}
-	restBuf := make([]byte, header.Size-4)
 
 	for read := 0; int32(read) < header.Size-4; {
 		n, err := reader.Read(restBuf[read:])
