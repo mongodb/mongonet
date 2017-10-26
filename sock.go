@@ -42,15 +42,10 @@ func ReadMessage(reader io.Reader) (Message, error) {
 		return nil, NewStackErrorf("message too big %d", header.Size)
 	}
 
-	size := header.Size - 4
-	if header.Size-4 < 0 {
-		size = 0
+	if header.Size-4 < 0 || header.Size-4 > MaxInt32 {
+		return nil, NewStackErrorf("message header has invalid size (%v).", header.Size)
 	}
-
-	if size > MaxInt32 {
-		return nil, NewStackErrorf("message header has invalid size (%v). Cannot make new buffer.", header.Size)
-	}
-	restBuf := make([]byte, size)
+	restBuf := make([]byte, header.Size-4)
 
 	for read := 0; int32(read) < header.Size-4; {
 		n, err := reader.Read(restBuf[read:])
@@ -64,7 +59,7 @@ func ReadMessage(reader io.Reader) (Message, error) {
 	}
 
 	if len(restBuf) < 12 {
-		return nil, NewStackErrorf("invalid message header. either header.Size = %v is shorter than message length, or message is missing RequestId, ResponseTo, or OpCode fields. Rest of message = %v", header.Size, string(restBuf))
+		return nil, NewStackErrorf("invalid message header. either header.Size = %v is shorter than message length, or message is missing RequestId, ResponseTo, or OpCode fields.", header.Size)
 	}
 	header.RequestID = readInt32(restBuf)
 	header.ResponseTo = readInt32(restBuf[4:])
