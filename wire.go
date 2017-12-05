@@ -12,6 +12,7 @@ const (
 	OP_KILL_CURSORS  = 2007
 	OP_COMMAND       = 2010
 	OP_COMMAND_REPLY = 2011
+	OP_MSG           = 2013
 )
 
 type MessageHeader struct {
@@ -132,3 +133,10 @@ type CommandReplyMessage struct {
 	Metadata     SimpleBSON
 	OutputDocs   []SimpleBSON
 }
+
+// OP_MSG
+type MessageMessage struct {
+	header MessageHeader
+
+	flagBits int32
+	
