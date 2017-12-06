@@ -135,8 +135,10 @@ type CommandReplyMessage struct {
 }
 
 // OP_MSG
+// Note that checksum is not implemented
 type MessageMessage struct {
 	header MessageHeader
 
-	flagBits int32
-	
+	FlagBits int32
+	Sections []MessageMessageSection
+}
