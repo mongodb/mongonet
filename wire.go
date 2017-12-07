@@ -2,7 +2,7 @@ package mongonet
 
 const (
 	OP_REPLY         = 1
-	OP_MSG           = 1000
+	OP_MSG_LEGACY    = 1000
 	OP_UPDATE        = 2001
 	OP_INSERT        = 2002
 	RESERVED         = 2003
