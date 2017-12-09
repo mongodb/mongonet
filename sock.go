@@ -86,6 +86,8 @@ func ReadMessage(reader io.Reader) (Message, error) {
 		return parseCommandMessage(header, body)
 	case OP_COMMAND_REPLY:
 		return parseCommandReplyMessage(header, body)
+	case OP_MSG:
+		return parseMessageMessage(header, body)
 	default:
 		return nil, NewStackErrorf("unknown op code: %s", header.OpCode)
 	}

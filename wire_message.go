@@ -44,12 +44,12 @@ type BodySection struct {
 	Body SimpleBSON
 }
 
-func (bs BodySection) Size() int32 {
+func (bs *BodySection) Size() int32 {
 	// 1 byte for kind byte
 	return 1 + bs.Body.Size
 }
 
-func (bs BodySection) WriteInto(buf []byte, loc *int) {
+func (bs *BodySection) WriteInto(buf []byte, loc *int) {
 	buf[*loc] = BodySectionKind
 	(*loc)++
 	bs.Body.Copy(loc, buf)
