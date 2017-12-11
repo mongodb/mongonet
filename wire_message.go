@@ -24,7 +24,9 @@ func (m *MessageMessage) Serialize() []byte {
 	buf := make([]byte, size)
 	m.header.WriteInto(buf)
 
-	writeInt32(m.FlagBits, buf, 16)
+	flags := m.FlagBits
+	flags &^= 1 // clear checksumPresent field
+	writeInt32(flags, buf, 16)
 
 	loc := 20
 
