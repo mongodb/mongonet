@@ -104,7 +104,9 @@ func (ps *ProxySession) Stats() bson.D {
 }
 
 func (ps *ProxySession) RespondToCommand(clientMessage Message, doc SimpleBSON) error {
-	if clientMessage.Header().OpCode == OP_QUERY {
+	switch clientMessage.Header().OpCode {
+
+	case OP_QUERY:
 		rm := &ReplyMessage{
 			MessageHeader{
 				0,
@@ -118,7 +120,8 @@ func (ps *ProxySession) RespondToCommand(clientMessage Message, doc SimpleBSON) 
 			[]SimpleBSON{doc},
 		}
 		return SendMessage(rm, ps.conn)
-	} else if clientMessage.Header().OpCode == OP_COMMAND {
+
+	case OP_COMMAND:
 		rm := &CommandReplyMessage{
 			MessageHeader{
 				0,
@@ -130,7 +133,24 @@ func (ps *ProxySession) RespondToCommand(clientMessage Message, doc SimpleBSON) 
 			[]SimpleBSON{},
 		}
 		return SendMessage(rm, ps.conn)
-	} else {
+
+	case OP_MSG:
+		rm := &MessageMessage{
+			MessageHeader{
+				0,
+				17, // TODO
+				clientMessage.Header().RequestID,
+				OP_MSG},
+			0,
+			[]MessageMessageSection{
+				&BodySection{
+					doc,
+				},
+			},
+		}
+		return SendMessage(rm, ps.conn)
+
+	default:
 		panic("impossible")
 	}
 
@@ -148,13 +168,13 @@ func (ps *ProxySession) respondWithError(clientMessage Message, err error) error
 		errBSON = bson.D{{"ok", 0}, {"errmsg", err.Error()}}
 	}
 
+	doc, myErr := SimpleBSONConvert(errBSON)
+	if myErr != nil {
+		return myErr
+	}
+
 	switch clientMessage.Header().OpCode {
 	case OP_QUERY, OP_GET_MORE:
-		doc, myErr := SimpleBSONConvert(errBSON)
-		if myErr != nil {
-			return myErr
-		}
-
 		rm := &ReplyMessage{
 			MessageHeader{
 				0,
@@ -172,12 +192,8 @@ func (ps *ProxySession) respondWithError(clientMessage Message, err error) error
 			[]SimpleBSON{doc},
 		}
 		return SendMessage(rm, ps.conn)
-	case OP_COMMAND:
-		doc, myErr := SimpleBSONConvert(errBSON)
-		if myErr != nil {
-			return myErr
-		}
 
+	case OP_COMMAND:
 		rm := &CommandReplyMessage{
 			MessageHeader{
 				0,
@@ -189,6 +205,23 @@ func (ps *ProxySession) respondWithError(clientMessage Message, err error) error
 			[]SimpleBSON{},
 		}
 		return SendMessage(rm, ps.conn)
+
+	case OP_MSG:
+		rm := &MessageMessage{
+			MessageHeader{
+				0,
+				17, // TODO
+				clientMessage.Header().RequestID,
+				OP_MSG},
+			0,
+			[]MessageMessageSection{
+				&BodySection{
+					doc,
+				},
+			},
+		}
+		return SendMessage(rm, ps.conn)
+
 	default:
 		panic("impossible")
 	}
