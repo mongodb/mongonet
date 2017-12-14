@@ -108,8 +108,9 @@ func parseMessageMessage(header MessageHeader, buf []byte) (Message, error) {
 }
 
 func parseMessageMessageSection(buf []byte, loc *int) (MessageMessageSection, error) {
+	kind := buf[*loc]
 	(*loc)++
-	switch buf[0] {
+	switch kind {
 	case BodySectionKind:
 		return parseBodySection(buf, loc)
 	case DocumentSequenceSectionKind:
