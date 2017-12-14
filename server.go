@@ -33,6 +33,26 @@ type Session struct {
 	SSLServerName string
 }
 
+// --------
+type ServerWorker interface {
+	doLoopTemp()
+	Close()
+}
+
+type ServerWorkerFactory interface {
+	CreateWorker(session *Session) (ServerWorker, error)
+}
+
+// --------
+
+type Server struct {
+	config ServerConfig
+	logger *slogger.Logger
+	workerFactory ServerWorkerFactory
+}
+
+// ------------------
+
 func (s *Session) Run(conn net.Conn) {
 	var err error
 	defer conn.Close()
@@ -64,23 +84,7 @@ func (s *Session) Run(conn net.Conn) {
 	worker.doLoopTemp()
 }
 
-// --------
-type ServerWorker interface {
-	doLoopTemp()
-	Close()
-}
-
-type ServerWorkerFactory interface {
-	CreateWorker(session *Session) (ServerWorker, error)
-}
-
-// --------
-
-type Server struct {
-	config ServerConfig
-	logger *slogger.Logger
-	workerFactory ServerWorkerFactory
-}
+// -------------------
 
 func (s *Server) Run() error {
 	bindTo := fmt.Sprintf("%s:%d", s.config.BindHost, s.config.BindPort)
@@ -135,7 +139,7 @@ func (s *Server) Run() error {
 		}
 
 		remoteAddr := conn.RemoteAddr()
-		c := &Session{s, nil, remoteAddr, s.NewLogger(fmt.Sprintf("ProxySession %s", remoteAddr)), ""}
+		c := &Session{s, nil, remoteAddr, s.NewLogger(fmt.Sprintf("Session %s", remoteAddr)), ""}
 		go c.Run(conn)
 	}
 }
