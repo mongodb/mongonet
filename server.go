@@ -6,6 +6,8 @@ import "io"
 import "net"
 import "time"
 
+import "gopkg.in/mgo.v2/bson"
+
 import "github.com/mongodb/slogger/v2/slogger"
 
 type ServerConfig struct {
@@ -35,7 +37,7 @@ type Session struct {
 
 // --------
 type ServerWorker interface {
-	doLoopTemp()
+	DoLoopTemp()
 	Close()
 }
 
@@ -52,6 +54,14 @@ type Server struct {
 }
 
 // ------------------
+
+func (s *Session) Logf(level slogger.Level, messageFmt string, args ...interface{}) (*slogger.Log, []error) {
+	return s.logger.Logf(level, messageFmt, args...)
+}
+
+func (s *Session) ReadMessage() (Message, error) {
+	return ReadMessage(s.conn)
+}
 
 func (s *Session) Run(conn net.Conn) {
 	var err error
@@ -81,7 +91,162 @@ func (s *Session) Run(conn net.Conn) {
 	}
 	defer worker.Close()
 	
-	worker.doLoopTemp()
+	worker.DoLoopTemp()
+}
+
+func (s *Session) RespondToCommandMakeBSON(clientMessage Message, args ...interface{}) error {
+	if len(args) % 2 == 1 {
+		return fmt.Errorf("magic bson has to be even # of args, got %d", len(args))
+	}
+
+	gotOk := false
+	
+	doc := bson.D{}
+	for idx := 0; idx < len(args); idx += 2 {
+		name, ok := args[idx].(string)
+		if !ok {
+			return fmt.Errorf("got a non string for bson name: %t", args[idx])
+		}
+		doc = append(doc, bson.DocElem{name, args[idx+1]})
+		if name == "ok" {
+			gotOk = true
+		}
+	}
+
+	if !gotOk {
+		doc = append(doc, bson.DocElem{"ok", 1})
+	}
+	
+	doc2, err := SimpleBSONConvert(doc)
+	if err != nil {
+		return err
+	}
+	return s.RespondToCommand(clientMessage, doc2)
+}
+
+func (s *Session) RespondToCommand(clientMessage Message, doc SimpleBSON) error {
+	switch clientMessage.Header().OpCode {
+
+	case OP_QUERY:
+		rm := &ReplyMessage{
+			MessageHeader{
+				0,
+				17, // TODO
+				clientMessage.Header().RequestID,
+				OP_REPLY},
+			0, // flags - error bit
+			0, // cursor id
+			0, // StartingFrom
+			1, // NumberReturned
+			[]SimpleBSON{doc},
+		}
+		return SendMessage(rm, s.conn)
+
+	case OP_COMMAND:
+		rm := &CommandReplyMessage{
+			MessageHeader{
+				0,
+				17, // TODO
+				clientMessage.Header().RequestID,
+				OP_COMMAND_REPLY},
+			doc,
+			SimpleBSONEmpty(),
+			[]SimpleBSON{},
+		}
+		return SendMessage(rm, s.conn)
+
+	case OP_MSG:
+		rm := &MessageMessage{
+			MessageHeader{
+				0,
+				17, // TODO
+				clientMessage.Header().RequestID,
+				OP_MSG},
+			0,
+			[]MessageMessageSection{
+				&BodySection{
+					doc,
+				},
+			},
+		}
+		return SendMessage(rm, s.conn)
+
+	default:
+		panic("impossible")
+	}
+
+}
+
+func (s *Session) RespondWithError(clientMessage Message, err error) error {
+	s.logger.Logf(slogger.INFO, "RespondWithError %v", err)
+
+	var errBSON bson.D
+	if err == nil {
+		errBSON = bson.D{{"ok", 1}}
+	} else if mongoErr, ok := err.(MongoError); ok {
+		errBSON = mongoErr.ToBSON()
+	} else {
+		errBSON = bson.D{{"ok", 0}, {"errmsg", err.Error()}}
+	}
+
+	doc, myErr := SimpleBSONConvert(errBSON)
+	if myErr != nil {
+		return myErr
+	}
+
+	switch clientMessage.Header().OpCode {
+	case OP_QUERY, OP_GET_MORE:
+		rm := &ReplyMessage{
+			MessageHeader{
+				0,
+				17, // TODO
+				clientMessage.Header().RequestID,
+				OP_REPLY},
+
+			// We should not set the error bit because we are
+			// responding with errmsg instead of $err
+			0, // flags - error bit
+
+			0, // cursor id
+			0, // StartingFrom
+			1, // NumberReturned
+			[]SimpleBSON{doc},
+		}
+		return SendMessage(rm, s.conn)
+
+	case OP_COMMAND:
+		rm := &CommandReplyMessage{
+			MessageHeader{
+				0,
+				17, // TODO
+				clientMessage.Header().RequestID,
+				OP_COMMAND_REPLY},
+			doc,
+			SimpleBSONEmpty(),
+			[]SimpleBSON{},
+		}
+		return SendMessage(rm, s.conn)
+
+	case OP_MSG:
+		rm := &MessageMessage{
+			MessageHeader{
+				0,
+				17, // TODO
+				clientMessage.Header().RequestID,
+				OP_MSG},
+			0,
+			[]MessageMessageSection{
+				&BodySection{
+					doc,
+				},
+			},
+		}
+		return SendMessage(rm, s.conn)
+
+	default:
+		panic("impossible")
+	}
+
 }
 
 // -------------------
@@ -155,3 +320,10 @@ func (s *Server) NewLogger(prefix string) *slogger.Logger {
 	return &slogger.Logger{prefix, appenders, 0, filters}
 }
 
+func NewServer(config ServerConfig, factory ServerWorkerFactory) Server {
+	return Server {
+		config,
+		&slogger.Logger{"Server", nil, 0, nil},
+		factory,
+	}
+}
