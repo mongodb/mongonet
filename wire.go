@@ -2,7 +2,7 @@ package mongonet
 
 const (
 	OP_REPLY         = 1
-	OP_MSG           = 1000
+	OP_MSG_LEGACY    = 1000
 	OP_UPDATE        = 2001
 	OP_INSERT        = 2002
 	RESERVED         = 2003
@@ -12,6 +12,7 @@ const (
 	OP_KILL_CURSORS  = 2007
 	OP_COMMAND       = 2010
 	OP_COMMAND_REPLY = 2011
+	OP_MSG           = 2013
 )
 
 type MessageHeader struct {
@@ -131,4 +132,13 @@ type CommandReplyMessage struct {
 	CommandReply SimpleBSON
 	Metadata     SimpleBSON
 	OutputDocs   []SimpleBSON
+}
+
+// OP_MSG
+// Note that checksum is not implemented
+type MessageMessage struct {
+	header MessageHeader
+
+	FlagBits int32
+	Sections []MessageMessageSection
 }
