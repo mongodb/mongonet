@@ -9,13 +9,10 @@ import "github.com/mongodb/slogger/v2/slogger"
 import "gopkg.in/mgo.v2"
 import "gopkg.in/mgo.v2/bson"
 
-import "github.com/10gen/atlasproxy"
-
 import "github.com/erh/mongonet"
 
 type MyServerSession struct {
 	session *mongonet.Session
-	nonce string
 	mydata map[string][]bson.D
 }
 
@@ -43,12 +40,7 @@ func (mss *MyServerSession) handleMessage(m mongonet.Message) (error, bool) {
 		cmdName := cmd[0].Name
 		
 		if cmdName == "getnonce" {
-			n, err := atlasproxy.NewNonce()
-			if err != nil {
-				return err, false
-			}
-			mss.nonce = n.String()
-			return mss.session.RespondToCommandMakeBSON(mm, "nonce", mss.nonce), false
+			return mss.session.RespondToCommandMakeBSON(mm, "nonce", "914653afbdbdb833"), false 
 		}
 
 		if cmdName == "ismaster" {
@@ -153,7 +145,7 @@ type MyServerTestFactory struct {
 }
 
 func (sf *MyServerTestFactory) CreateWorker(session *mongonet.Session) (mongonet.ServerWorker, error) {
-	return &MyServerSession{session, "", map[string][]bson.D{}}, nil
+	return &MyServerSession{session, map[string][]bson.D{}}, nil
 }
 
 func TestServer(t *testing.T) {
