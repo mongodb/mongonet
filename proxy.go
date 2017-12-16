@@ -18,10 +18,10 @@ type Proxy struct {
 
 type ProxySession struct {
 	*Session
-	
-	proxy *Proxy
+
+	proxy       *Proxy
 	interceptor ProxyInterceptor
-	pooledConn *PooledConnection
+	pooledConn  *PooledConnection
 }
 
 type MongoError struct {
@@ -193,7 +193,6 @@ func (ps *ProxySession) Close() {
 	// TODO: anything here?
 }
 
-
 func (ps *ProxySession) doLoop(pooledConn *PooledConnection) (*PooledConnection, error) {
 	m, err := ReadMessage(ps.conn)
 	if err != nil {
@@ -323,7 +322,7 @@ func (p *Proxy) NewLogger(prefix string) *slogger.Logger {
 
 func (p *Proxy) CreateWorker(session *Session) (ServerWorker, error) {
 	var err error
-	
+
 	ps := &ProxySession{session, p, nil, nil}
 	if p.config.InterceptorFactory != nil {
 		ps.interceptor, err = ps.proxy.config.InterceptorFactory.NewInterceptor(ps)

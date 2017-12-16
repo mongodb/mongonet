@@ -22,7 +22,6 @@ type ProxyConfig struct {
 	InterceptorFactory ProxyInterceptorFactory
 
 	ConnectionPoolHook ConnectionHook
-
 }
 
 func NewProxyConfig(bindHost string, bindPort int, mongoHost string, mongoPort int) ProxyConfig {
@@ -30,9 +29,9 @@ func NewProxyConfig(bindHost string, bindPort int, mongoHost string, mongoPort i
 		ServerConfig{
 			bindHost,
 			bindPort,
-			false, // UseSSL
-			nil, // SSLKeys
-			0, // TCPKeepAlivePeriod
+			false,       // UseSSL
+			nil,         // SSLKeys
+			0,           // TCPKeepAlivePeriod
 			slogger.OFF, // LogLevel
 			nil,         // Appenders
 		},
@@ -41,8 +40,8 @@ func NewProxyConfig(bindHost string, bindPort int, mongoHost string, mongoPort i
 		false, // MongoSSL
 		nil,   // MongoRootCAs
 		false, // MongoSSLSkipVerify
-		nil,         // InterceptorFactory
-		nil,         // ConnectionPoolHook
+		nil,   // InterceptorFactory
+		nil,   // ConnectionPoolHook
 	}
 }
 

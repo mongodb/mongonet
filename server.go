@@ -26,12 +26,12 @@ type ServerConfig struct {
 // --------
 
 type Session struct {
-	server      *Server
+	server     *Server
 	conn       io.ReadWriteCloser
 	remoteAddr net.Addr
 
 	logger *slogger.Logger
-	
+
 	SSLServerName string
 }
 
@@ -48,8 +48,8 @@ type ServerWorkerFactory interface {
 // --------
 
 type Server struct {
-	config ServerConfig
-	logger *slogger.Logger
+	config        ServerConfig
+	logger        *slogger.Logger
 	workerFactory ServerWorkerFactory
 }
 
@@ -68,7 +68,7 @@ func (s *Session) Run(conn net.Conn) {
 	defer conn.Close()
 
 	s.conn = conn
-	
+
 	switch c := conn.(type) {
 	case *tls.Conn:
 		// we do this here so that we can get the SNI server name
@@ -90,17 +90,17 @@ func (s *Session) Run(conn net.Conn) {
 		return
 	}
 	defer worker.Close()
-	
+
 	worker.DoLoopTemp()
 }
 
 func (s *Session) RespondToCommandMakeBSON(clientMessage Message, args ...interface{}) error {
-	if len(args) % 2 == 1 {
+	if len(args)%2 == 1 {
 		return fmt.Errorf("magic bson has to be even # of args, got %d", len(args))
 	}
 
 	gotOk := false
-	
+
 	doc := bson.D{}
 	for idx := 0; idx < len(args); idx += 2 {
 		name, ok := args[idx].(string)
@@ -116,7 +116,7 @@ func (s *Session) RespondToCommandMakeBSON(clientMessage Message, args ...interf
 	if !gotOk {
 		doc = append(doc, bson.DocElem{"ok", 1})
 	}
-	
+
 	doc2, err := SimpleBSONConvert(doc)
 	if err != nil {
 		return err
@@ -321,7 +321,7 @@ func (s *Server) NewLogger(prefix string) *slogger.Logger {
 }
 
 func NewServer(config ServerConfig, factory ServerWorkerFactory) Server {
-	return Server {
+	return Server{
 		config,
 		&slogger.Logger{"Server", nil, 0, nil},
 		factory,
