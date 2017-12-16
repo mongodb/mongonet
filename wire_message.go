@@ -170,7 +170,7 @@ func parseDocumentSequenceSection(buf []byte, loc *int) (MessageMessageSection, 
 		}
 
 		if expectedSizeRemaining < doc.Size {
-			return dss, NewStackErrorf("invalid Document Sequence section -- size of document %v (starting from 0) overruns end of section", docNum)
+			return dss, NewStackErrorf("invalid Document Sequence section -- size of document %v (starting from 0) (%v bytes) overruns end of section (%v bytes left)", docNum, doc.Size, expectedSizeRemaining)
 		}
 
 		expectedSizeRemaining -= doc.Size

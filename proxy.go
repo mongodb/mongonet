@@ -98,7 +98,6 @@ func (ps *ProxySession) Stats() bson.D {
 	}
 }
 
-
 func (ps *ProxySession) DoLoopTemp() {
 	var err error
 	for {
@@ -116,6 +115,77 @@ func (ps *ProxySession) DoLoopTemp() {
 
 	if ps.pooledConn != nil {
 		ps.pooledConn.Close()
+	}
+}
+
+func (ps *ProxySession) respondWithError(clientMessage Message, err error) error {
+	ps.logger.Logf(slogger.INFO, "respondWithError %v", err)
+
+	var errBSON bson.D
+	if err == nil {
+		errBSON = bson.D{{"ok", 1}}
+	} else if mongoErr, ok := err.(MongoError); ok {
+		errBSON = mongoErr.ToBSON()
+	} else {
+		errBSON = bson.D{{"ok", 0}, {"errmsg", err.Error()}}
+	}
+
+	doc, myErr := SimpleBSONConvert(errBSON)
+	if myErr != nil {
+		return myErr
+	}
+
+	switch clientMessage.Header().OpCode {
+	case OP_QUERY, OP_GET_MORE:
+		rm := &ReplyMessage{
+			MessageHeader{
+				0,
+				17, // TODO
+				clientMessage.Header().RequestID,
+				OP_REPLY},
+
+			// We should not set the error bit because we are
+			// responding with errmsg instead of $err
+			0, // flags - error bit
+
+			0, // cursor id
+			0, // StartingFrom
+			1, // NumberReturned
+			[]SimpleBSON{doc},
+		}
+		return SendMessage(rm, ps.conn)
+
+	case OP_COMMAND:
+		rm := &CommandReplyMessage{
+			MessageHeader{
+				0,
+				17, // TODO
+				clientMessage.Header().RequestID,
+				OP_COMMAND_REPLY},
+			doc,
+			SimpleBSONEmpty(),
+			[]SimpleBSON{},
+		}
+		return SendMessage(rm, ps.conn)
+
+	case OP_MSG:
+		rm := &MessageMessage{
+			MessageHeader{
+				0,
+				17, // TODO
+				clientMessage.Header().RequestID,
+				OP_MSG},
+			0,
+			[]MessageMessageSection{
+				&BodySection{
+					doc,
+				},
+			},
+		}
+		return SendMessage(rm, ps.conn)
+
+	default:
+		panic("impossible")
 	}
 }
 
