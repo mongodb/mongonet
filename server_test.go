@@ -13,34 +13,34 @@ import "github.com/erh/mongonet"
 
 type MyServerSession struct {
 	session *mongonet.Session
-	mydata map[string][]bson.D
+	mydata  map[string][]bson.D
 }
 
 /*
 * @return (error, <fatal>)
-*/
+ */
 func (mss *MyServerSession) handleMessage(m mongonet.Message) (error, bool) {
 	switch mm := m.(type) {
 	case *mongonet.QueryMessage:
-		
+
 		if !mongonet.NamespaceIsCommand(mm.Namespace) {
 			return fmt.Errorf("can only use old query style to bootstrap, not a valid namesapce (%s)", mm.Namespace), false
 		}
-		
+
 		cmd, err := mm.Query.ToBSOND()
 		if err != nil {
 			return fmt.Errorf("old thing not valid, barfing %s", err), true
 		}
-		
+
 		if len(cmd) == 0 {
 			return fmt.Errorf("old thing not valid, barfing"), true
 		}
 
 		db := mongonet.NamespaceToDB(mm.Namespace)
 		cmdName := cmd[0].Name
-		
+
 		if cmdName == "getnonce" {
-			return mss.session.RespondToCommandMakeBSON(mm, "nonce", "914653afbdbdb833"), false 
+			return mss.session.RespondToCommandMakeBSON(mm, "nonce", "914653afbdbdb833"), false
 		}
 
 		if cmdName == "ismaster" {
@@ -62,7 +62,7 @@ func (mss *MyServerSession) handleMessage(m mongonet.Message) (error, bool) {
 		}
 
 		if cmdName == "insert" {
-			ns := fmt.Sprintf( "%s.%s", db, cmd[0].Value.(string) ) // TODO: check type cast?
+			ns := fmt.Sprintf("%s.%s", db, cmd[0].Value.(string)) // TODO: check type cast?
 			docs := mongonet.BSONIndexOf(cmd, "documents")
 			if docs < 0 {
 				return fmt.Errorf("no documents to insert :("), false
@@ -87,7 +87,7 @@ func (mss *MyServerSession) handleMessage(m mongonet.Message) (error, bool) {
 		}
 
 		if cmdName == "find" {
-			ns := fmt.Sprintf( "%s.%s", db, cmd[0].Value.(string) ) // TODO: check type cast?
+			ns := fmt.Sprintf("%s.%s", db, cmd[0].Value.(string)) // TODO: check type cast?
 
 			data, found := mss.mydata[ns]
 			if !found {
@@ -96,16 +96,16 @@ func (mss *MyServerSession) handleMessage(m mongonet.Message) (error, bool) {
 			return mss.session.RespondToCommandMakeBSON(mm,
 				"cursor", bson.D{{"firstBatch", data}, {"id", 0}, {"ns", ns}},
 			), false
-			
+
 		}
-		
+
 		fmt.Printf("hi1 %s %s %s\n", mm.Namespace, cmdName, cmd)
 		return fmt.Errorf("command (%s) not done", cmdName), true
-			
+
 	case *mongonet.CommandMessage:
 		fmt.Printf("hi2 %#v\n", mm)
 	}
-	
+
 	return fmt.Errorf("what are you! %t", m), true
 }
 
@@ -150,7 +150,7 @@ func (sf *MyServerTestFactory) CreateWorker(session *mongonet.Session) (mongonet
 
 func TestServer(t *testing.T) {
 	port := 9919 // TODO: pick randomly or check?
-	
+
 	server := mongonet.NewServer(
 		mongonet.ServerConfig{
 			"127.0.0.1",
@@ -174,8 +174,8 @@ func TestServer(t *testing.T) {
 	defer session.Close()
 
 	coll := session.DB("test").C("bar")
-	docIn := bson.D{{"foo", 17}} 
-	err = coll.Insert( docIn )
+	docIn := bson.D{{"foo", 17}}
+	err = coll.Insert(docIn)
 	if err != nil {
 		t.Errorf("can't insert: %s", err)
 		return
@@ -192,7 +192,7 @@ func TestServer(t *testing.T) {
 		t.Errorf("docs don't match\n %s\n %s\n", docIn, docOut)
 		return
 	}
-	
+
 	if docIn[0] != docOut[0] {
 		t.Errorf("docs don't match\n %s\n %s\n", docIn, docOut)
 		return
