@@ -5,6 +5,7 @@ import "fmt"
 import "io"
 import "net"
 import "time"
+import "strings"
 
 import "gopkg.in/mgo.v2/bson"
 
@@ -337,7 +338,7 @@ func (ps *ProxySession) Run(conn net.Conn) {
 			ps.logger.Logf(slogger.WARN, "error doing tls handshake %s", err)
 			return
 		}
-		ps.SSLServerName = c.ConnectionState().ServerName
+		ps.SSLServerName = strings.TrimSuffix(c.ConnectionState().ServerName, ".")
 	}
 
 	ps.logger.Logf(slogger.INFO, "new connection SSLServerName [%s]", ps.SSLServerName)
