@@ -4,6 +4,7 @@ import "crypto/tls"
 import "fmt"
 import "io"
 import "net"
+import "strings"
 import "time"
 
 import "gopkg.in/mgo.v2/bson"
@@ -77,7 +78,7 @@ func (s *Session) Run(conn net.Conn) {
 			s.logger.Logf(slogger.WARN, "error doing tls handshake %s", err)
 			return
 		}
-		s.SSLServerName = c.ConnectionState().ServerName
+		s.SSLServerName = strings.TrimSuffix(c.ConnectionState().ServerName, ".")
 	}
 
 	s.logger.Logf(slogger.INFO, "new connection SSLServerName [%s]", s.SSLServerName)
