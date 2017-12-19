@@ -138,13 +138,13 @@ func parseBodySection(buf []byte, loc *int) (MessageMessageSection, error) {
 func parseDocumentSequenceSection(buf []byte, loc *int) (MessageMessageSection, error) {
 	dss := &DocumentSequenceSection{}
 
-	expectedSizeRemaining := readInt32(buf[*loc:])
-
-	if expectedSizeRemaining < 4 {
+	if len(buf[*loc:]) < 4 {
 		return dss, NewStackErrorf("invalid Document Sequence section -- section must have a length of at least 4 bytes.")
 	}
 
-	if int(expectedSizeRemaining) > len(buf) {
+	expectedSizeRemaining := readInt32(buf[*loc:])
+
+	if int(expectedSizeRemaining) > len(buf[*loc:]) {
 		return dss, NewStackErrorf("invalid Document Sequence section -- section size is larger than message.")
 	}
 
