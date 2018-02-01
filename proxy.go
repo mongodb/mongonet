@@ -190,7 +190,7 @@ func (ps *ProxySession) respondWithError(clientMessage Message, err error) error
 }
 
 func (ps *ProxySession) Close() {
-	// TODO: anything here?
+	ps.interceptor.Close()
 }
 
 func (ps *ProxySession) doLoop(pooledConn *PooledConnection) (*PooledConnection, error) {
