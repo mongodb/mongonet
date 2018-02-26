@@ -15,8 +15,9 @@ type ServerConfig struct {
 	BindHost string
 	BindPort int
 
-	UseSSL  bool
-	SSLKeys []SSLPair
+	UseSSL        bool
+	SSLKeys       []SSLPair
+	MinTlsVersion uint16 // see tls.Version* constants
 
 	TCPKeepAlivePeriod time.Duration // set to 0 for no keep alives
 
@@ -273,6 +274,10 @@ func (s *Server) Run() error {
 		}
 
 		tlsConfig = &tls.Config{Certificates: certs}
+
+		if s.config.MinTlsVersion != 0 {
+			tlsConfig.MinVersion = s.config.MinTlsVersion
+		}
 
 		tlsConfig.BuildNameToCertificate()
 	}
