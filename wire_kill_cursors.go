@@ -49,7 +49,7 @@ func parseKillCursorsMessage(header MessageHeader, buf []byte) (Message, error) 
 	}
 
 	if int(m.NumCursors) < 0 || int(m.NumCursors) > MaxInt32 {
-		return nil, NewStackErrorf("number of cursos has invalid size (%v).", int(m.NumCursors))
+		return nil, NewStackErrorf("number of cursors has invalid size (%v).", int(m.NumCursors))
 	}
 	m.CursorIds = make([]int64, int(m.NumCursors))
 
