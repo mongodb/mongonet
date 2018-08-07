@@ -53,6 +53,9 @@ type Server struct {
 	config        ServerConfig
 	logger        *slogger.Logger
 	workerFactory ServerWorkerFactory
+	killChan      chan struct{}
+	doneChan      chan struct{}
+	net.Addr
 }
 
 // ------------------
@@ -286,33 +289,59 @@ func (s *Server) Run() error {
 	if err != nil {
 		return NewStackErrorf("cannot start listening in proxy: %s", err)
 	}
+	s.Addr = ln.Addr()
 
+	defer close(s.doneChan)
 	defer ln.Close()
 
-	for {
-		conn, err := ln.Accept()
-		if err != nil {
-			return NewStackErrorf("could not accept in proxy: %s", err)
-		}
-
-		if s.config.TCPKeepAlivePeriod > 0 {
-			switch conn := conn.(type) {
-			case *net.TCPConn:
-				conn.SetKeepAlive(true)
-				conn.SetKeepAlivePeriod(s.config.TCPKeepAlivePeriod)
-			default:
-				s.logger.Logf(slogger.WARN, "Want to set TCP keep alive on accepted connection but connection is not *net.TCPConn.  It is %T", conn)
-			}
-		}
-
-		if s.config.UseSSL {
-			conn = tls.Server(conn, tlsConfig)
-		}
-
-		remoteAddr := conn.RemoteAddr()
-		c := &Session{s, nil, remoteAddr, s.NewLogger(fmt.Sprintf("Session %s", remoteAddr)), ""}
-		go c.Run(conn)
+	type accepted struct {
+		conn net.Conn
+		err  error
 	}
+
+	incomingConnections := make(chan accepted, 1)
+
+	for {
+		go func() {
+			conn, err := ln.Accept()
+			incomingConnections <- accepted{conn, err}
+		}()
+
+		select {
+		case <-s.killChan:
+			// TODO close down all active connections before returning
+			return nil
+		case connectionEvent := <-incomingConnections:
+			if connectionEvent.err != nil {
+				return NewStackErrorf("could not accept in proxy: %s", err)
+			}
+			conn := connectionEvent.conn
+			if s.config.TCPKeepAlivePeriod > 0 {
+				switch conn := conn.(type) {
+				case *net.TCPConn:
+					conn.SetKeepAlive(true)
+					conn.SetKeepAlivePeriod(s.config.TCPKeepAlivePeriod)
+				default:
+					s.logger.Logf(slogger.WARN, "Want to set TCP keep alive on accepted connection but connection is not *net.TCPConn.  It is %T", conn)
+				}
+			}
+
+			if s.config.UseSSL {
+				conn = tls.Server(conn, tlsConfig)
+			}
+
+			remoteAddr := conn.RemoteAddr()
+			c := &Session{s, nil, remoteAddr, s.NewLogger(fmt.Sprintf("Session %s", remoteAddr)), ""}
+			go c.Run(conn)
+		}
+
+	}
+}
+
+func (s *Server) Close() {
+	close(s.killChan)
+	<-s.doneChan
+
 }
 
 func (s *Server) NewLogger(prefix string) *slogger.Logger {
@@ -329,7 +358,10 @@ func (s *Server) NewLogger(prefix string) *slogger.Logger {
 func NewServer(config ServerConfig, factory ServerWorkerFactory) Server {
 	return Server{
 		config,
-		&slogger.Logger{"Server", nil, 0, nil},
+		&slogger.Logger{"Server", config.Appenders, 0, nil},
 		factory,
+		make(chan struct{}),
+		make(chan struct{}),
+		nil,
 	}
 }

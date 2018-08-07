@@ -303,6 +303,9 @@ func (p *Proxy) Run() error {
 		p.config.ServerConfig,
 		p.logger,
 		p,
+		make(chan struct{}),
+		make(chan struct{}),
+		nil,
 	}
 	return server.Run()
 }
