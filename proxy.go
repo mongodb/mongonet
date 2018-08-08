@@ -304,6 +304,7 @@ func (p *Proxy) Run() error {
 		p.logger,
 		p,
 		make(chan struct{}),
+		make(chan error, 1),
 		make(chan struct{}),
 		nil,
 	}
