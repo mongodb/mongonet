@@ -148,6 +148,10 @@ func (s *Session) RespondToCommand(clientMessage Message, doc SimpleBSON) error 
 		}
 		return SendMessage(rm, s.conn)
 
+	case OP_INSERT, OP_UPDATE, OP_DELETE:
+		// For MongoDB 2.6+, and wpv 3+, these are only used for unacknowledged writes, so do nothing
+		return nil
+
 	case OP_COMMAND:
 		rm := &CommandReplyMessage{
 			MessageHeader{
@@ -219,6 +223,10 @@ func (s *Session) RespondWithError(clientMessage Message, err error) error {
 			[]SimpleBSON{doc},
 		}
 		return SendMessage(rm, s.conn)
+
+	case OP_INSERT, OP_UPDATE, OP_DELETE:
+		// For MongoDB 2.6+, and wpv 3+, these are only used for unacknowledged writes, so do nothing
+		return nil
 
 	case OP_COMMAND:
 		rm := &CommandReplyMessage{
