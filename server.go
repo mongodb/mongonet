@@ -59,6 +59,8 @@ type Server struct {
 	net.Addr
 }
 
+var ErrUnknownOpcode = errors.New("unknown opcode")
+
 // ------------------
 
 func (s *Session) Logf(level slogger.Level, messageFmt string, args ...interface{}) (*slogger.Log, []error) {
@@ -182,7 +184,7 @@ func (s *Session) RespondToCommand(clientMessage Message, doc SimpleBSON) error 
 		return SendMessage(rm, s.conn)
 
 	default:
-		panic("impossible")
+		return ErrUnknownOpcode
 	}
 
 }
@@ -258,7 +260,7 @@ func (s *Session) RespondWithError(clientMessage Message, err error) error {
 		return SendMessage(rm, s.conn)
 
 	default:
-		panic("impossible")
+		return ErrUnknownOpcode
 	}
 
 }
@@ -356,7 +358,7 @@ func (s *Server) Run() error {
 	}
 }
 
-// InitChannel returns a channel that will send nil once the server has started 
+// InitChannel returns a channel that will send nil once the server has started
 // listening, or an error indicating why the server failed to start
 func (s *Server) InitChannel() <-chan error {
 	return s.initChan
