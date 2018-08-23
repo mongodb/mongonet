@@ -1,6 +1,7 @@
 package mongonet
 
 import "crypto/tls"
+import "errors"
 import "fmt"
 import "io"
 import "net"
