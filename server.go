@@ -46,6 +46,7 @@ type ServerWorker interface {
 
 type ServerWorkerFactory interface {
 	CreateWorker(session *Session) (ServerWorker, error)
+	GetConnection(conn net.Conn) io.ReadWriteCloser
 }
 
 // --------
@@ -76,7 +77,7 @@ func (s *Session) Run(conn net.Conn) {
 	var err error
 	defer conn.Close()
 
-	s.conn = conn
+	s.conn = s.server.workerFactory.GetConnection(conn)
 
 	switch c := conn.(type) {
 	case *tls.Conn:

@@ -337,3 +337,7 @@ func (p *Proxy) CreateWorker(session *Session) (ServerWorker, error) {
 
 	return ps, nil
 }
+
+func (p *Proxy) GetConnection(conn net.Conn) io.ReadWriteCloser {
+	return conn
+}
