@@ -64,6 +64,9 @@ type Server struct {
 var ErrUnknownOpcode = errors.New("unknown opcode")
 
 // ------------------
+func (s *Session) Connection() io.ReadWriteCloser {
+	return s.conn
+}
 
 func (s *Session) Logf(level slogger.Level, messageFmt string, args ...interface{}) (*slogger.Log, []error) {
 	return s.logger.Logf(level, messageFmt, args...)
