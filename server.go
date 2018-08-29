@@ -78,9 +78,9 @@ func (s *Session) ReadMessage() (Message, error) {
 
 func (s *Session) Run(conn net.Conn) {
 	var err error
-	defer conn.Close()
 
 	s.conn = s.server.workerFactory.GetConnection(conn)
+	defer s.conn.Close()
 
 	switch c := conn.(type) {
 	case *tls.Conn:
