@@ -80,7 +80,14 @@ func (s *Session) Run(conn net.Conn) {
 	var err error
 
 	s.conn = s.server.workerFactory.GetConnection(conn)
-	defer s.conn.Close()
+
+	var worker ServerWorker
+	defer func() {
+		s.conn.Close()
+		if worker != nil {
+			worker.Close()
+		}
+	}()
 
 	switch c := conn.(type) {
 	case *tls.Conn:
@@ -97,12 +104,11 @@ func (s *Session) Run(conn net.Conn) {
 
 	defer s.logger.Logf(slogger.INFO, "socket closed")
 
-	worker, err := s.server.workerFactory.CreateWorker(s)
+	worker, err = s.server.workerFactory.CreateWorker(s)
 	if err != nil {
 		s.logger.Logf(slogger.WARN, "error creating worker %s", err)
 		return
 	}
-	defer worker.Close()
 
 	worker.DoLoopTemp()
 }
