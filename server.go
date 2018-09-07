@@ -34,6 +34,11 @@ type ServerWorkerFactory interface {
 	GetConnection(conn net.Conn) io.ReadWriteCloser
 }
 
+// ServerWorkerWithContextFactory should be used when workers need to listen to the Done channel of the session context.
+// The server will call stopSessions() when the server killChan is closed; stopSessions() will close the Done channel.
+// Implementing this interface will cause the server to incrememnt a session wait group when each new session starts.
+// A mongonet session will decrement the wait group after calling .Close() on the session.
+// When using this you should make sure that your `DoLoopTemp` returns when it receives from the context Done Channel.
 type ServerWorkerWithContextFactory interface {
 	ServerWorkerFactory
 	CreateWorkerWithContext(session *Session, ctx *context.Context) (ServerWorker, error)
@@ -101,9 +106,9 @@ func (s *Server) Run() error {
 	s.initChan <- nil
 
 	defer func() {
+		ln.Close()
 		// wait for all sessions to end
 		s.sessionManager.sessionWG.Wait()
-		ln.Close()
 		close(s.doneChan)
 	}()
 
@@ -146,7 +151,7 @@ func (s *Server) Run() error {
 
 			remoteAddr := conn.RemoteAddr()
 			c := &Session{s, nil, remoteAddr, s.NewLogger(fmt.Sprintf("Session %s", remoteAddr)), ""}
-			if s.hasContextualWorkerFactory() {
+			if _, ok := s.contextualWorkerFactory(); ok {
 				s.sessionManager.sessionWG.Add(1)
 			}
 			go c.Run(conn)
@@ -195,7 +200,7 @@ func NewServer(config ServerConfig, factory ServerWorkerFactory) Server {
 	}
 }
 
-func (s *Server) hasContextualWorkerFactory() bool {
-	_, ok := s.workerFactory.(ServerWorkerWithContextFactory)
-	return ok
+func (s *Server) contextualWorkerFactory() (ServerWorkerWithContextFactory, bool) {
+	swf, ok := s.workerFactory.(ServerWorkerWithContextFactory)
+	return swf, ok
 }

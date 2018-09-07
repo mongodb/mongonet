@@ -49,7 +49,7 @@ func (s *Session) Run(conn net.Conn) {
 
 		// server has sessions that will receive from the sessionCtx.Done() channel
 		// decrement the session wait group
-		if s.server.hasContextualWorkerFactory() {
+		if _, ok := s.server.contextualWorkerFactory(); ok {
 			s.server.sessionManager.sessionWG.Done()
 		}
 	}()
@@ -69,8 +69,8 @@ func (s *Session) Run(conn net.Conn) {
 
 	defer s.logger.Logf(slogger.INFO, "socket closed")
 
-	if s.server.hasContextualWorkerFactory() {
-		worker, err = s.server.workerFactory.(ServerWorkerWithContextFactory).CreateWorkerWithContext(s, s.server.sessionManager.ctx)
+	if cwf, ok := s.server.contextualWorkerFactory(); ok {
+		worker, err = cwf.CreateWorkerWithContext(s, s.server.sessionManager.ctx)
 	} else {
 		worker, err = s.server.workerFactory.CreateWorker(s)
 	}
