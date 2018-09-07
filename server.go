@@ -1,11 +1,13 @@
 package mongonet
 
+import "context"
 import "crypto/tls"
 import "errors"
 import "fmt"
 import "io"
 import "net"
 import "strings"
+import "sync"
 import "time"
 
 import "gopkg.in/mgo.v2/bson"
@@ -49,15 +51,26 @@ type ServerWorkerFactory interface {
 	GetConnection(conn net.Conn) io.ReadWriteCloser
 }
 
+type ServerWorkerWithContextFactory interface {
+	ServerWorkerFactory
+	CreateWorkerWithContext(session *Session, ctx *context.Context) (ServerWorker, error)
+}
+
 // --------
+type sessionManager struct {
+	sessionWG    *sync.WaitGroup
+	ctx          *context.Context
+	stopSessions context.CancelFunc
+}
 
 type Server struct {
-	config        ServerConfig
-	logger        *slogger.Logger
-	workerFactory ServerWorkerFactory
-	killChan      chan struct{}
-	initChan      chan error
-	doneChan      chan struct{}
+	config         ServerConfig
+	logger         *slogger.Logger
+	workerFactory  ServerWorkerFactory
+	killChan       chan struct{}
+	initChan       chan error
+	doneChan       chan struct{}
+	sessionManager *sessionManager
 	net.Addr
 }
 
@@ -87,6 +100,12 @@ func (s *Session) Run(conn net.Conn) {
 		if worker != nil {
 			worker.Close()
 		}
+
+		// server has sessions that will receive from the sessionCtx.Done() channel
+		// decrement the session wait group
+		if s.server.hasContextualWorkerFactory() {
+			s.server.sessionManager.sessionWG.Done()
+		}
 	}()
 
 	switch c := conn.(type) {
@@ -104,7 +123,12 @@ func (s *Session) Run(conn net.Conn) {
 
 	defer s.logger.Logf(slogger.INFO, "socket closed")
 
-	worker, err = s.server.workerFactory.CreateWorker(s)
+	if s.server.hasContextualWorkerFactory() {
+		worker, err = s.server.workerFactory.(ServerWorkerWithContextFactory).CreateWorkerWithContext(s, s.server.sessionManager.ctx)
+	} else {
+		worker, err = s.server.workerFactory.CreateWorker(s)
+	}
+
 	if err != nil {
 		s.logger.Logf(slogger.WARN, "error creating worker %s", err)
 		return
@@ -276,7 +300,7 @@ func (s *Session) RespondWithError(clientMessage Message, err error) error {
 
 }
 
-// -------------------
+// SERVER -------------------
 
 func (s *Server) Run() error {
 	bindTo := fmt.Sprintf("%s:%d", s.config.BindHost, s.config.BindPort)
@@ -322,8 +346,12 @@ func (s *Server) Run() error {
 	s.Addr = ln.Addr()
 	s.initChan <- nil
 
-	defer close(s.doneChan)
-	defer ln.Close()
+	defer func() {
+		// wait for all sessions to end
+		s.sessionManager.sessionWG.Wait()
+		ln.Close()
+		close(s.doneChan)
+	}()
 
 	type accepted struct {
 		conn net.Conn
@@ -340,7 +368,8 @@ func (s *Server) Run() error {
 
 		select {
 		case <-s.killChan:
-			// TODO close down all active connections before returning
+			// close the Done channel on the sessions ctx
+			s.sessionManager.stopSessions()
 			return nil
 		case connectionEvent := <-incomingConnections:
 			if connectionEvent.err != nil {
@@ -363,6 +392,9 @@ func (s *Server) Run() error {
 
 			remoteAddr := conn.RemoteAddr()
 			c := &Session{s, nil, remoteAddr, s.NewLogger(fmt.Sprintf("Session %s", remoteAddr)), ""}
+			if s.hasContextualWorkerFactory() {
+				s.sessionManager.sessionWG.Add(1)
+			}
 			go c.Run(conn)
 		}
 
@@ -392,6 +424,7 @@ func (s *Server) NewLogger(prefix string) *slogger.Logger {
 }
 
 func NewServer(config ServerConfig, factory ServerWorkerFactory) Server {
+	sessionCtx, stopSessions := context.WithCancel(context.Background())
 	return Server{
 		config,
 		&slogger.Logger{"Server", config.Appenders, 0, nil},
@@ -399,6 +432,16 @@ func NewServer(config ServerConfig, factory ServerWorkerFactory) Server {
 		make(chan struct{}),
 		make(chan error, 1),
 		make(chan struct{}),
+		&sessionManager{
+			&sync.WaitGroup{},
+			&sessionCtx,
+			stopSessions,
+		},
 		nil,
 	}
+}
+
+func (s *Server) hasContextualWorkerFactory() bool {
+	_, ok := s.workerFactory.(ServerWorkerWithContextFactory)
+	return ok
 }
