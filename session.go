@@ -37,7 +37,6 @@ func (s *Session) ReadMessage() (Message, error) {
 
 func (s *Session) Run(conn net.Conn) {
 	var err error
-
 	s.conn = s.server.workerFactory.GetConnection(conn)
 
 	var worker ServerWorker
@@ -172,7 +171,6 @@ func (s *Session) RespondToCommand(clientMessage Message, doc SimpleBSON) error 
 
 func (s *Session) RespondWithError(clientMessage Message, err error) error {
 	s.logger.Logf(slogger.INFO, "RespondWithError %v", err)
-
 	var errBSON bson.D
 	if err == nil {
 		errBSON = bson.D{{"ok", 1}}

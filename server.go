@@ -63,6 +63,7 @@ type Server struct {
 
 func (s *Server) Run() error {
 	bindTo := fmt.Sprintf("%s:%d", s.config.BindHost, s.config.BindPort)
+
 	s.logger.Logf(slogger.WARN, "listening on %s", bindTo)
 
 	var tlsConfig *tls.Config
@@ -108,7 +109,10 @@ func (s *Server) Run() error {
 	defer func() {
 		ln.Close()
 		// wait for all sessions to end
+		s.logger.Logf(slogger.WARN, "waiting for sessions to close...")
 		s.sessionManager.sessionWG.Wait()
+		s.logger.Logf(slogger.WARN, "done")
+
 		close(s.doneChan)
 	}()
 
@@ -131,6 +135,7 @@ func (s *Server) Run() error {
 			s.sessionManager.stopSessions()
 			return nil
 		case connectionEvent := <-incomingConnections:
+
 			if connectionEvent.err != nil {
 				return NewStackErrorf("could not accept in proxy: %s", err)
 			}
@@ -154,6 +159,7 @@ func (s *Server) Run() error {
 			if _, ok := s.contextualWorkerFactory(); ok {
 				s.sessionManager.sessionWG.Add(1)
 			}
+
 			go c.Run(conn)
 		}
 
