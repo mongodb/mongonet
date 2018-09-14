@@ -1,8 +1,12 @@
 package mongonet_test
 
+import "context"
 import "fmt"
 import "io"
+import "net"
+import "sync/atomic"
 import "testing"
+import "time"
 
 import "github.com/mongodb/slogger/v2/slogger"
 
@@ -148,6 +152,10 @@ func (sf *MyServerTestFactory) CreateWorker(session *mongonet.Session) (mongonet
 	return &MyServerSession{session, map[string][]bson.D{}}, nil
 }
 
+func (sf *MyServerTestFactory) GetConnection(conn net.Conn) io.ReadWriteCloser {
+	return conn
+}
+
 func TestServer(t *testing.T) {
 	port := 9919 // TODO: pick randomly or check?
 
@@ -199,4 +207,159 @@ func TestServer(t *testing.T) {
 		return
 	}
 
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Testing for server with contextualWorkerFactory
+
+type TestFactoryWithContext struct {
+	counter *int32
+}
+
+func (sf *TestFactoryWithContext) CreateWorkerWithContext(session *mongonet.Session, ctx *context.Context) (mongonet.ServerWorker, error) {
+	return &TestSessionWithContext{session, ctx, sf.counter}, nil
+}
+
+func (sf *TestFactoryWithContext) CreateWorker(session *mongonet.Session) (mongonet.ServerWorker, error) {
+	return nil, fmt.Errorf("create worker not allowed with contextual worker factory")
+}
+
+func (sf *TestFactoryWithContext) GetConnection(conn net.Conn) io.ReadWriteCloser {
+	return conn
+}
+
+type TestSessionWithContext struct {
+	session *mongonet.Session
+	ctx     *context.Context
+	counter *int32
+}
+
+func (tsc *TestSessionWithContext) handleMessage(m mongonet.Message) (error, bool) {
+	switch mm := m.(type) {
+	case *mongonet.QueryMessage:
+		cmd, err := mm.Query.ToBSOND()
+		if err != nil {
+			return fmt.Errorf("error converting query to bsond", err), true
+		}
+
+		if len(cmd) == 0 {
+			return fmt.Errorf("invalid command length"), true
+		}
+
+		cmdName := cmd[0].Name
+
+		if cmdName == "ismaster" {
+			return tsc.session.RespondToCommandMakeBSON(mm,
+				"ismaster", true,
+				"maxBsonObjectSize", 16777216,
+				"maxMessageSizeBytes", 48000000,
+				"maxWriteBatchSize", 100000,
+				//"localTime", ISODate("2017-12-14T17:40:28.640Z"),
+				"logicalSessionTimeoutMinutes", 30,
+				"minWireVersion", 0,
+				"maxWireVersion", 6,
+				"readOnly", false,
+			), false
+		}
+
+		if cmdName == "getnonce" {
+			return tsc.session.RespondToCommandMakeBSON(mm, "nonce", "6d32d13b13436425"), false
+		}
+
+		if cmdName == "ping" {
+			return tsc.session.RespondToCommandMakeBSON(mm), false
+		}
+		return fmt.Errorf("command (%s) not done", cmdName), true
+	}
+
+	return fmt.Errorf("error handling message"), true
+
+}
+
+func (tsc *TestSessionWithContext) DoLoopTemp() {
+	atomic.AddInt32(tsc.counter, 1)
+	ctx := *tsc.ctx
+
+	for {
+		m, err := tsc.session.ReadMessage()
+		if err != nil {
+			if err == io.EOF {
+				return
+			}
+			tsc.session.Logf(slogger.WARN, "error reading message: %s", err)
+			return
+		}
+
+		err, fatal := tsc.handleMessage(m)
+		if err == nil && fatal {
+			panic(fmt.Errorf("should be impossible, no error but fatal"))
+		}
+		if err != nil {
+			err = tsc.session.RespondWithError(m, err)
+			if err != nil {
+				tsc.session.Logf(slogger.WARN, "error writing error: %s", err)
+				return
+			}
+			if fatal {
+				return
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			continue
+		}
+	}
+}
+func (tsc *TestSessionWithContext) Close() {
+	time.Sleep(5000 * time.Millisecond)
+	atomic.AddInt32(tsc.counter, -1)
+}
+
+func TestServerWorkerWithContext(t *testing.T) {
+	port := 27027
+
+	var sessCtr int32
+	server := mongonet.NewServer(
+		mongonet.ServerConfig{
+			"127.0.0.1",
+			port,
+			false,
+			nil,
+			0,
+			0,
+			slogger.DEBUG,
+			nil,
+		},
+		&TestFactoryWithContext{&sessCtr},
+	)
+
+	go server.Run()
+
+	if err := <-server.InitChannel(); err != nil {
+		t.Error(err)
+	}
+
+	for i := 0; i < 10; i++ {
+		session, err := mgo.Dial(fmt.Sprintf("127.0.0.1:%d", port))
+		if err != nil {
+			t.Errorf("cannot dial: %s", err)
+			return
+		}
+		defer session.Close()
+	}
+
+	sessCtrCurr := atomic.LoadInt32(&sessCtr)
+
+	if sessCtrCurr != int32(10) {
+		t.Errorf("expect session counter to be 10 but got %d", sessCtrCurr)
+	}
+
+	server.Close()
+
+	sessCtrFinal := atomic.LoadInt32(&sessCtr)
+	if sessCtrFinal != int32(0) {
+		t.Errorf("expect session counter to be 0 but got %d", sessCtrFinal)
+	}
 }

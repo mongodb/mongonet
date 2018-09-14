@@ -1,14 +1,12 @@
 package mongonet
 
+import "context"
 import "crypto/tls"
-import "errors"
 import "fmt"
 import "io"
 import "net"
-import "strings"
+import "sync"
 import "time"
-
-import "gopkg.in/mgo.v2/bson"
 
 import "github.com/mongodb/slogger/v2/slogger"
 
@@ -26,19 +24,6 @@ type ServerConfig struct {
 	Appenders []slogger.Appender
 }
 
-// --------
-
-type Session struct {
-	server     *Server
-	conn       io.ReadWriteCloser
-	remoteAddr net.Addr
-
-	logger *slogger.Logger
-
-	SSLServerName string
-}
-
-// --------
 type ServerWorker interface {
 	DoLoopTemp()
 	Close()
@@ -49,237 +34,36 @@ type ServerWorkerFactory interface {
 	GetConnection(conn net.Conn) io.ReadWriteCloser
 }
 
-// --------
+// ServerWorkerWithContextFactory should be used when workers need to listen to the Done channel of the session context.
+// The server will call stopSessions() when the server killChan is closed; stopSessions() will close the Done channel.
+// Implementing this interface will cause the server to incrememnt a session wait group when each new session starts.
+// A mongonet session will decrement the wait group after calling .Close() on the session.
+// When using this you should make sure that your `DoLoopTemp` returns when it receives from the context Done Channel.
+type ServerWorkerWithContextFactory interface {
+	ServerWorkerFactory
+	CreateWorkerWithContext(session *Session, ctx *context.Context) (ServerWorker, error)
+}
+
+type sessionManager struct {
+	sessionWG    *sync.WaitGroup
+	ctx          *context.Context
+	stopSessions context.CancelFunc
+}
 
 type Server struct {
-	config        ServerConfig
-	logger        *slogger.Logger
-	workerFactory ServerWorkerFactory
-	killChan      chan struct{}
-	initChan      chan error
-	doneChan      chan struct{}
+	config         ServerConfig
+	logger         *slogger.Logger
+	workerFactory  ServerWorkerFactory
+	killChan       chan struct{}
+	initChan       chan error
+	doneChan       chan struct{}
+	sessionManager *sessionManager
 	net.Addr
 }
 
-var ErrUnknownOpcode = errors.New("unknown opcode")
-
-// ------------------
-func (s *Session) Connection() io.ReadWriteCloser {
-	return s.conn
-}
-
-func (s *Session) Logf(level slogger.Level, messageFmt string, args ...interface{}) (*slogger.Log, []error) {
-	return s.logger.Logf(level, messageFmt, args...)
-}
-
-func (s *Session) ReadMessage() (Message, error) {
-	return ReadMessage(s.conn)
-}
-
-func (s *Session) Run(conn net.Conn) {
-	var err error
-
-	s.conn = s.server.workerFactory.GetConnection(conn)
-
-	var worker ServerWorker
-	defer func() {
-		s.conn.Close()
-		if worker != nil {
-			worker.Close()
-		}
-	}()
-
-	switch c := conn.(type) {
-	case *tls.Conn:
-		// we do this here so that we can get the SNI server name
-		err = c.Handshake()
-		if err != nil {
-			s.logger.Logf(slogger.WARN, "error doing tls handshake %s", err)
-			return
-		}
-		s.SSLServerName = strings.TrimSuffix(c.ConnectionState().ServerName, ".")
-	}
-
-	s.logger.Logf(slogger.INFO, "new connection SSLServerName [%s]", s.SSLServerName)
-
-	defer s.logger.Logf(slogger.INFO, "socket closed")
-
-	worker, err = s.server.workerFactory.CreateWorker(s)
-	if err != nil {
-		s.logger.Logf(slogger.WARN, "error creating worker %s", err)
-		return
-	}
-
-	worker.DoLoopTemp()
-}
-
-func (s *Session) RespondToCommandMakeBSON(clientMessage Message, args ...interface{}) error {
-	if len(args)%2 == 1 {
-		return fmt.Errorf("magic bson has to be even # of args, got %d", len(args))
-	}
-
-	gotOk := false
-
-	doc := bson.D{}
-	for idx := 0; idx < len(args); idx += 2 {
-		name, ok := args[idx].(string)
-		if !ok {
-			return fmt.Errorf("got a non string for bson name: %t", args[idx])
-		}
-		doc = append(doc, bson.DocElem{name, args[idx+1]})
-		if name == "ok" {
-			gotOk = true
-		}
-	}
-
-	if !gotOk {
-		doc = append(doc, bson.DocElem{"ok", 1})
-	}
-
-	doc2, err := SimpleBSONConvert(doc)
-	if err != nil {
-		return err
-	}
-	return s.RespondToCommand(clientMessage, doc2)
-}
-
-func (s *Session) RespondToCommand(clientMessage Message, doc SimpleBSON) error {
-	switch clientMessage.Header().OpCode {
-
-	case OP_QUERY:
-		rm := &ReplyMessage{
-			MessageHeader{
-				0,
-				17, // TODO
-				clientMessage.Header().RequestID,
-				OP_REPLY},
-			0, // flags - error bit
-			0, // cursor id
-			0, // StartingFrom
-			1, // NumberReturned
-			[]SimpleBSON{doc},
-		}
-		return SendMessage(rm, s.conn)
-
-	case OP_INSERT, OP_UPDATE, OP_DELETE:
-		// For MongoDB 2.6+, and wpv 3+, these are only used for unacknowledged writes, so do nothing
-		return nil
-
-	case OP_COMMAND:
-		rm := &CommandReplyMessage{
-			MessageHeader{
-				0,
-				17, // TODO
-				clientMessage.Header().RequestID,
-				OP_COMMAND_REPLY},
-			doc,
-			SimpleBSONEmpty(),
-			[]SimpleBSON{},
-		}
-		return SendMessage(rm, s.conn)
-
-	case OP_MSG:
-		rm := &MessageMessage{
-			MessageHeader{
-				0,
-				17, // TODO
-				clientMessage.Header().RequestID,
-				OP_MSG},
-			0,
-			[]MessageMessageSection{
-				&BodySection{
-					doc,
-				},
-			},
-		}
-		return SendMessage(rm, s.conn)
-
-	default:
-		return ErrUnknownOpcode
-	}
-
-}
-
-func (s *Session) RespondWithError(clientMessage Message, err error) error {
-	s.logger.Logf(slogger.INFO, "RespondWithError %v", err)
-
-	var errBSON bson.D
-	if err == nil {
-		errBSON = bson.D{{"ok", 1}}
-	} else if mongoErr, ok := err.(MongoError); ok {
-		errBSON = mongoErr.ToBSON()
-	} else {
-		errBSON = bson.D{{"ok", 0}, {"errmsg", err.Error()}}
-	}
-
-	doc, myErr := SimpleBSONConvert(errBSON)
-	if myErr != nil {
-		return myErr
-	}
-
-	switch clientMessage.Header().OpCode {
-	case OP_QUERY, OP_GET_MORE:
-		rm := &ReplyMessage{
-			MessageHeader{
-				0,
-				17, // TODO
-				clientMessage.Header().RequestID,
-				OP_REPLY},
-
-			// We should not set the error bit because we are
-			// responding with errmsg instead of $err
-			0, // flags - error bit
-
-			0, // cursor id
-			0, // StartingFrom
-			1, // NumberReturned
-			[]SimpleBSON{doc},
-		}
-		return SendMessage(rm, s.conn)
-
-	case OP_INSERT, OP_UPDATE, OP_DELETE:
-		// For MongoDB 2.6+, and wpv 3+, these are only used for unacknowledged writes, so do nothing
-		return nil
-
-	case OP_COMMAND:
-		rm := &CommandReplyMessage{
-			MessageHeader{
-				0,
-				17, // TODO
-				clientMessage.Header().RequestID,
-				OP_COMMAND_REPLY},
-			doc,
-			SimpleBSONEmpty(),
-			[]SimpleBSON{},
-		}
-		return SendMessage(rm, s.conn)
-
-	case OP_MSG:
-		rm := &MessageMessage{
-			MessageHeader{
-				0,
-				17, // TODO
-				clientMessage.Header().RequestID,
-				OP_MSG},
-			0,
-			[]MessageMessageSection{
-				&BodySection{
-					doc,
-				},
-			},
-		}
-		return SendMessage(rm, s.conn)
-
-	default:
-		return ErrUnknownOpcode
-	}
-
-}
-
-// -------------------
-
 func (s *Server) Run() error {
 	bindTo := fmt.Sprintf("%s:%d", s.config.BindHost, s.config.BindPort)
+
 	s.logger.Logf(slogger.WARN, "listening on %s", bindTo)
 
 	var tlsConfig *tls.Config
@@ -322,8 +106,15 @@ func (s *Server) Run() error {
 	s.Addr = ln.Addr()
 	s.initChan <- nil
 
-	defer close(s.doneChan)
-	defer ln.Close()
+	defer func() {
+		ln.Close()
+		// wait for all sessions to end
+		s.logger.Logf(slogger.WARN, "waiting for sessions to close...")
+		s.sessionManager.sessionWG.Wait()
+		s.logger.Logf(slogger.WARN, "done")
+
+		close(s.doneChan)
+	}()
 
 	type accepted struct {
 		conn net.Conn
@@ -340,9 +131,11 @@ func (s *Server) Run() error {
 
 		select {
 		case <-s.killChan:
-			// TODO close down all active connections before returning
+			// close the Done channel on the sessions ctx
+			s.sessionManager.stopSessions()
 			return nil
 		case connectionEvent := <-incomingConnections:
+
 			if connectionEvent.err != nil {
 				return NewStackErrorf("could not accept in proxy: %s", err)
 			}
@@ -363,6 +156,10 @@ func (s *Server) Run() error {
 
 			remoteAddr := conn.RemoteAddr()
 			c := &Session{s, nil, remoteAddr, s.NewLogger(fmt.Sprintf("Session %s", remoteAddr)), ""}
+			if _, ok := s.contextualWorkerFactory(); ok {
+				s.sessionManager.sessionWG.Add(1)
+			}
+
 			go c.Run(conn)
 		}
 
@@ -392,6 +189,7 @@ func (s *Server) NewLogger(prefix string) *slogger.Logger {
 }
 
 func NewServer(config ServerConfig, factory ServerWorkerFactory) Server {
+	sessionCtx, stopSessions := context.WithCancel(context.Background())
 	return Server{
 		config,
 		&slogger.Logger{"Server", config.Appenders, 0, nil},
@@ -399,6 +197,16 @@ func NewServer(config ServerConfig, factory ServerWorkerFactory) Server {
 		make(chan struct{}),
 		make(chan error, 1),
 		make(chan struct{}),
+		&sessionManager{
+			&sync.WaitGroup{},
+			&sessionCtx,
+			stopSessions,
+		},
 		nil,
 	}
+}
+
+func (s *Server) contextualWorkerFactory() (ServerWorkerWithContextFactory, bool) {
+	swf, ok := s.workerFactory.(ServerWorkerWithContextFactory)
+	return swf, ok
 }

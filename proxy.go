@@ -307,6 +307,7 @@ func (p *Proxy) Run() error {
 		make(chan error, 1),
 		make(chan struct{}),
 		nil,
+		nil,
 	}
 	return server.Run()
 }
