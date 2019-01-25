@@ -239,7 +239,7 @@ func (tsc *TestSessionWithContext) handleMessage(m mongonet.Message) (error, boo
 	case *mongonet.QueryMessage:
 		cmd, err := mm.Query.ToBSOND()
 		if err != nil {
-			return fmt.Errorf("error converting query to bsond", err), true
+			return fmt.Errorf("error converting query to bsond: %v", err), true
 		}
 
 		if len(cmd) == 0 {
