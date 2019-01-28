@@ -244,6 +244,7 @@ func (ps *ProxySession) doLoop(pooledConn *PooledConnection) (*PooledConnection,
 
 	err = SendMessage(m, mongoConn)
 	if err != nil {
+		pooledConn.bad = true
 		return pooledConn, NewStackErrorf("error writing to mongo: %s", err)
 	}
 
