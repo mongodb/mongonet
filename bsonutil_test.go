@@ -1,8 +1,10 @@
 package mongonet
 
-import "testing"
+import (
+	"testing"
 
-import "gopkg.in/mgo.v2/bson"
+	"gopkg.in/mgo.v2/bson"
+)
 
 func TestBSONIndexOf(test *testing.T) {
 	doc := bson.D{{"a", 1}, {"b", 3}}
@@ -237,6 +239,99 @@ func TestBSONWalk10(test *testing.T) {
 	}
 	if sub[0].Name != "x" {
 		test.Errorf("deleted wrong one? %s", doc)
+	}
+
+}
+
+func TestBSONWalkAll1(test *testing.T) {
+	doc := bson.D{{"a", 10}}
+	walker := &testWalker{}
+	doc, err := BSONWalkAll(doc, "a", walker)
+	if err != nil {
+		test.Errorf("why did we get an error %s", err)
+	}
+	if len(doc) != 1 {
+		test.Errorf("incorrect doc length")
+	}
+	if doc[0].Name != "a" {
+		test.Errorf("incorrect doc structure")
+	}
+	if doc[0].Value != 17 {
+		test.Errorf("incorrect revised doc value")
+	}
+}
+
+func TestBSONWalkAll2(test *testing.T) {
+	doc := bson.D{{"a", 10}, {"b", bson.D{{"a", 1}}}}
+	walker := &testWalker{}
+	doc, err := BSONWalkAll(doc, "a", walker)
+	if err != nil {
+		test.Errorf("why did we get an error %s", err)
+	}
+	if len(doc) != 2 {
+		test.Errorf("incorrect doc length")
+	}
+	if doc[0].Name != "a" {
+		test.Errorf("incorrect doc structure")
+	}
+	if doc[0].Value != 17 {
+		test.Errorf("incorrect revised doc value")
+	}
+	sub := doc[1].Value.(bson.D)
+	if len(sub) != 1 {
+		test.Errorf("incorrect sub-doc structure")
+	}
+	if sub[0].Value != 17 {
+		test.Errorf("incorrect sub-doc value")
+	}
+}
+
+func TestBSONWalkAll3(test *testing.T) {
+	doc := bson.D{{"a", 10}, {"b", bson.D{{"a", 1}}}, {"c", []bson.D{bson.D{{"x", 5}}, bson.D{{"a", 1}}}}}
+	walker := &testWalker{}
+	doc, err := BSONWalkAll(doc, "a", walker)
+	if err != nil {
+		test.Errorf("why did we get an error %s", err)
+	}
+	if len(doc) != 3 {
+		test.Errorf("incorrect doc length")
+	}
+	if doc[0].Name != "a" {
+		test.Errorf("incorrect doc structure")
+	}
+	if doc[0].Value != 17 {
+		test.Errorf("incorrect revised doc value")
+	}
+	sub := doc[1].Value.(bson.D)
+	if len(sub) != 1 {
+		test.Errorf("incorrect sub-doc structure")
+	}
+	if sub[0].Value != 17 {
+		test.Errorf("incorrect sub-doc value")
+	}
+	if len(walker.seen) != 3 {
+		test.Errorf("wrong # saw %d", len(walker.seen))
+	}
+}
+
+func TestBSONWalkAll4(test *testing.T) {
+	doc := bson.D{{"a", 1}, {"b", 3}, {"c", []interface{}{bson.D{{"x", 5}}, bson.D{{"a", 2}, {"y", 3}}, bson.D{{"a", 7}}}}}
+	walker := &testWalker{}
+	doc, err := BSONWalkAll(doc, "a", walker)
+	if err != nil {
+		test.Errorf("why did we get an error %s", err)
+	}
+	if len(walker.seen) != 3 {
+		test.Errorf("wrong # saw %d", len(walker.seen))
+	}
+	arr := doc[2].Value.([]interface{})
+	val := arr[1].(bson.D)
+	if val[0].Value != 17 {
+		test.Errorf("incorrect sub-doc value")
+	}
+	val2 := arr[0].(bson.D)
+	if val2[0].Value != 5 {
+		test.Errorf("incorrect sub-doc value")
 	}
 
 }

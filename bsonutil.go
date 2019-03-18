@@ -155,6 +155,51 @@ type BSONWalkVisitor interface {
 	Visit(elem *bson.DocElem) error
 }
 
+// BSONWalkAll - recursively walks the BSON doc and applies the visitor when encountering the fieldName
+// Does not support DELETEME for now
+func BSONWalkAll(doc bson.D, fieldName string, visitor BSONWalkVisitor) (bson.D, error) {
+	current := doc
+	for i, elem := range current {
+		elemDoc := &(current)[i]
+		if elem.Name == fieldName {
+			err := visitor.Visit(elemDoc)
+			if err != nil {
+				return nil, fmt.Errorf("error visiting node %s", err)
+			}
+		}
+		switch val := elem.Value.(type) {
+		case bson.D:
+			newDoc, err := BSONWalkAll(val, fieldName, visitor)
+			if err != nil {
+				return nil, fmt.Errorf("error going deeper into doc %s", err)
+			}
+			elem.Value = newDoc
+		case []bson.D:
+			for arrayOffset, sub := range val {
+				newDoc, err := BSONWalkAll(sub, fieldName, visitor)
+				if err != nil {
+					return nil, fmt.Errorf("error going deeper into array %s", err)
+				}
+				val[arrayOffset] = newDoc
+			}
+		case []interface{}:
+			for arrayOffset, subRaw := range val {
+				switch sub := subRaw.(type) {
+				case bson.D:
+					newDoc, err := BSONWalkAll(sub, fieldName, visitor)
+					if err != nil {
+						return nil, fmt.Errorf("error going deeper into doc %s", err)
+					}
+					val[arrayOffset] = newDoc
+				default:
+					return nil, fmt.Errorf("bad type going deeper into array %s", sub)
+				}
+			}
+		}
+	}
+	return doc, nil
+}
+
 func BSONWalk(doc bson.D, pathString string, visitor BSONWalkVisitor) (bson.D, error) {
 	path := strings.Split(pathString, ".")
 	return BSONWalkHelp(doc, path, visitor, false)
