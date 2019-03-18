@@ -73,60 +73,65 @@ func BSONIndexOf(doc bson.D, name string) int {
 	return -1
 }
 
-func GetAsString(elem bson.DocElem) (string, error) {
+func GetAsString(elem bson.DocElem) (string, string, error) {
+	tipe := fmt.Sprintf("%T", elem.Value)
 	switch val := elem.Value.(type) {
 	case string:
-		return val, nil
+		return val, tipe, nil
 	default:
-		return "", NewStackErrorf("not a string %T %s", val, val)
+		return "", tipe, NewStackErrorf("not a string %T %s", val, val)
 	}
 }
 
-func GetAsInt(elem bson.DocElem) (int, error) {
+func GetAsInt(elem bson.DocElem) (int, string, error) {
+	tipe := fmt.Sprintf("%T", elem.Value)
 	switch val := elem.Value.(type) {
 	case int:
-		return val, nil
+		return val, tipe, nil
 	case int32:
-		return int(val), nil
+		return int(val), tipe, nil
 	case int64:
-		return int(val), nil
+		return int(val), tipe, nil
 	case float64:
-		return int(val), nil
+		return int(val), tipe, nil
 	default:
-		return 0, NewStackErrorf("not a number %T %s", val, val)
+		return 0, tipe, NewStackErrorf("not a number %T %s", val, val)
 	}
 }
 
-func GetAsBool(elem bson.DocElem) (bool, error) {
+func GetAsBool(elem bson.DocElem) (bool, string, error) {
+	tipe := fmt.Sprintf("%T", elem.Value)
 	switch val := elem.Value.(type) {
 	case bool:
-		return val, nil
+		return val, tipe, nil
 	case int:
-		return val != 0, nil
+		return val != 0, tipe, nil
 	case int32:
-		return int(val) != 0, nil
+		return int(val) != 0, tipe, nil
 	case int64:
-		return int(val) != 0, nil
+		return int(val) != 0, tipe, nil
 	case float64:
-		return val != 0.0, nil
+		return val != 0.0, tipe, nil
 	default:
-		return false, NewStackErrorf("not a bool %T %s", val, val)
+		return false, tipe, NewStackErrorf("not a bool %T %s", val, val)
 	}
 }
 
-func GetAsBSON(elem bson.DocElem) (bson.D, error) {
+func GetAsBSON(elem bson.DocElem) (bson.D, string, error) {
+	tipe := fmt.Sprintf("%T", elem.Value)
 	switch val := elem.Value.(type) {
 	case bson.D:
-		return val, nil
+		return val, tipe, nil
 	default:
-		return bson.D{}, NewStackErrorf("not bson %T %s", val, val)
+		return bson.D{}, tipe, NewStackErrorf("not bson %T %s", val, val)
 	}
 }
 
-func GetAsBSONDocs(elem bson.DocElem) ([]bson.D, error) {
+func GetAsBSONDocs(elem bson.DocElem) ([]bson.D, string, error) {
+	tipe := fmt.Sprintf("%T", elem.Value)
 	switch val := elem.Value.(type) {
 	case []bson.D:
-		return val, nil
+		return val, tipe, nil
 
 	case []interface{}:
 		a := make([]bson.D, len(val))
@@ -135,13 +140,13 @@ func GetAsBSONDocs(elem bson.DocElem) ([]bson.D, error) {
 			case bson.D:
 				a[num] = fixed
 			default:
-				return []bson.D{}, NewStackErrorf("not bson.D %T %s", raw, raw)
+				return []bson.D{}, tipe, NewStackErrorf("not bson.D %T %s", raw, raw)
 			}
 		}
-		return a, nil
+		return a, tipe, nil
 
 	default:
-		return []bson.D{}, NewStackErrorf("not an array %T", elem.Value)
+		return []bson.D{}, tipe, NewStackErrorf("not an array %T", elem.Value)
 	}
 }
 
