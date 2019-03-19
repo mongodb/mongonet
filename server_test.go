@@ -77,7 +77,7 @@ func (mss *MyServerSession) handleMessage(m mongonet.Message) (error, bool) {
 				old = []bson.D{}
 			}
 
-			toInsert, err := mongonet.GetAsBSONDocs(cmd[docs])
+			toInsert, _, err := mongonet.GetAsBSONDocs(cmd[docs])
 			if err != nil {
 				return fmt.Errorf("documents not a good array: %s", err), false
 			}
