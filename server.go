@@ -20,6 +20,8 @@ type ServerConfig struct {
 
 	TCPKeepAlivePeriod time.Duration // set to 0 for no keep alives
 
+	CipherSuites []uint16
+
 	LogLevel  slogger.Level
 	Appenders []slogger.Appender
 }
@@ -92,6 +94,10 @@ func (s *Server) Run() error {
 
 		if s.config.MinTlsVersion != 0 {
 			tlsConfig.MinVersion = s.config.MinTlsVersion
+		}
+
+		if s.config.CipherSuites != nil {
+			tlsConfig.CipherSuites = s.config.CipherSuites
 		}
 
 		tlsConfig.BuildNameToCertificate()

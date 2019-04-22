@@ -33,6 +33,7 @@ func NewProxyConfig(bindHost string, bindPort int, mongoHost string, mongoPort i
 			nil,         // SSLKeys
 			0,           // MinTlsVersion
 			0,           // TCPKeepAlivePeriod
+			nil,         // CipherSuites
 			slogger.OFF, // LogLevel
 			nil,         // Appenders
 		},
