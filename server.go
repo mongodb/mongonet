@@ -29,8 +29,6 @@ func (s *SyncTlsConfig) getTlsConfig() *tls.Config {
 }
 
 func (s *SyncTlsConfig) setTlsConfig(sslKeys []*SSLPair, cipherSuites []uint16, minTlsVersion uint16, fallbackKeys []SSLPair) error {
-	s.lock.Lock()
-	defer s.lock.Unlock()
 	certs := []tls.Certificate{}
 	for _, pair := range fallbackKeys {
 		cer, err := tls.LoadX509KeyPair(pair.Cert, pair.Key)
@@ -57,6 +55,9 @@ func (s *SyncTlsConfig) setTlsConfig(sslKeys []*SSLPair, cipherSuites []uint16, 
 	if cipherSuites != nil {
 		tlsConfig.CipherSuites = cipherSuites
 	}
+
+	s.lock.Lock()
+	defer s.lock.Unlock()
 	s.tlsConfig = tlsConfig
 	s.tlsConfig.BuildNameToCertificate()
 	return nil
@@ -70,7 +71,7 @@ type ServerConfig struct {
 	SSLKeys       []SSLPair
 	SyncTlsConfig *SyncTlsConfig
 
-	MinTlsVersion      uint16
+	MinTlsVersion      uint16        // see tls.Version* constants
 	TCPKeepAlivePeriod time.Duration // set to 0 for no keep alives
 
 	CipherSuites []uint16
