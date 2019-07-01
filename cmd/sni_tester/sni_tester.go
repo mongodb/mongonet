@@ -105,6 +105,9 @@ func main() {
 
 	proxy := mongonet.NewProxy(pc)
 
+	proxy.InitializeServer()
+	proxy.OnSSLConfig(nil)
+
 	err := proxy.Run()
 	if err != nil {
 		panic(err)
