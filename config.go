@@ -1,10 +1,8 @@
 package mongonet
 
 import (
-	"crypto/tls"
 	"crypto/x509"
 	"fmt"
-	"sync"
 
 	"github.com/mongodb/slogger/v2/slogger"
 )
@@ -29,16 +27,15 @@ type ProxyConfig struct {
 }
 
 func NewProxyConfig(bindHost string, bindPort int, mongoHost string, mongoPort int) ProxyConfig {
+
+	syncTlsConfig := NewSyncTlsConfig()
 	return ProxyConfig{
 		ServerConfig{
 			bindHost,
 			bindPort,
 			false, // UseSSL
 			nil,   // SSLKeys
-			&SyncTlsConfig{
-				sync.RWMutex{},
-				&tls.Config{},
-			},
+			syncTlsConfig,
 			0,           // MinTlsVersion
 			0,           // TCPKeepAlivePeriod
 			nil,         // CipherSuites
