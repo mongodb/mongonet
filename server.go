@@ -10,14 +10,68 @@ import "time"
 
 import "github.com/mongodb/slogger/v2/slogger"
 
+type SyncTlsConfig struct {
+	lock      sync.RWMutex
+	tlsConfig *tls.Config
+}
+
+func NewSyncTlsConfig() *SyncTlsConfig {
+	return &SyncTlsConfig{
+		sync.RWMutex{},
+		&tls.Config{},
+	}
+}
+
+func (s *SyncTlsConfig) getTlsConfig() *tls.Config {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+	return s.tlsConfig
+}
+
+func (s *SyncTlsConfig) setTlsConfig(sslKeys []*SSLPair, cipherSuites []uint16, minTlsVersion uint16, fallbackKeys []SSLPair) error {
+	certs := []tls.Certificate{}
+	for _, pair := range fallbackKeys {
+		cer, err := tls.LoadX509KeyPair(pair.Cert, pair.Key)
+		if err != nil {
+			return fmt.Errorf("cannot load certificate from files %s, %s. Error: %v", pair.Cert, pair.Key, err)
+		}
+		certs = append(certs, cer)
+	}
+
+	for _, pair := range sslKeys {
+		cer, err := tls.X509KeyPair([]byte(pair.Cert), []byte(pair.Key))
+		if err != nil {
+			return fmt.Errorf("cannot construct certificate %v", err)
+		}
+		certs = append(certs, cer)
+	}
+
+	tlsConfig := &tls.Config{Certificates: certs}
+
+	if minTlsVersion != 0 {
+		tlsConfig.MinVersion = minTlsVersion
+	}
+
+	if cipherSuites != nil {
+		tlsConfig.CipherSuites = cipherSuites
+	}
+
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	s.tlsConfig = tlsConfig
+	s.tlsConfig.BuildNameToCertificate()
+	return nil
+}
+
 type ServerConfig struct {
 	BindHost string
 	BindPort int
 
 	UseSSL        bool
 	SSLKeys       []SSLPair
-	MinTlsVersion uint16 // see tls.Version* constants
+	SyncTlsConfig *SyncTlsConfig
 
+	MinTlsVersion      uint16        // see tls.Version* constants
 	TCPKeepAlivePeriod time.Duration // set to 0 for no keep alives
 
 	CipherSuites []uint16
@@ -63,45 +117,17 @@ type Server struct {
 	net.Addr
 }
 
+// called by a synched method
+func (s *Server) OnSSLConfig(sslPairs []*SSLPair) {
+	s.config.SyncTlsConfig.setTlsConfig(sslPairs, s.config.CipherSuites, s.config.MinTlsVersion, s.config.SSLKeys)
+}
+
 func (s *Server) Run() error {
 	bindTo := fmt.Sprintf("%s:%d", s.config.BindHost, s.config.BindPort)
 
 	s.logger.Logf(slogger.WARN, "listening on %s", bindTo)
 
-	var tlsConfig *tls.Config
-
 	defer close(s.initChan)
-
-	if s.config.UseSSL {
-		if len(s.config.SSLKeys) == 0 {
-			returnErr := fmt.Errorf("no ssl keys configured")
-			s.initChan <- returnErr
-			return returnErr
-		}
-
-		certs := []tls.Certificate{}
-		for _, pair := range s.config.SSLKeys {
-			cer, err := tls.LoadX509KeyPair(pair.CertFile, pair.KeyFile)
-			if err != nil {
-				returnErr := fmt.Errorf("cannot LoadX509KeyPair from %s %s %s", pair.CertFile, pair.KeyFile, err)
-				s.initChan <- returnErr
-				return returnErr
-			}
-			certs = append(certs, cer)
-		}
-
-		tlsConfig = &tls.Config{Certificates: certs}
-
-		if s.config.MinTlsVersion != 0 {
-			tlsConfig.MinVersion = s.config.MinTlsVersion
-		}
-
-		if s.config.CipherSuites != nil {
-			tlsConfig.CipherSuites = s.config.CipherSuites
-		}
-
-		tlsConfig.BuildNameToCertificate()
-	}
 
 	ln, err := net.Listen("tcp", bindTo)
 	if err != nil {
@@ -157,6 +183,7 @@ func (s *Server) Run() error {
 			}
 
 			if s.config.UseSSL {
+				tlsConfig := s.config.SyncTlsConfig.getTlsConfig()
 				conn = tls.Server(conn, tlsConfig)
 			}
 

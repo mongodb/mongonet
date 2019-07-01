@@ -12,6 +12,7 @@ import "github.com/mongodb/slogger/v2/slogger"
 type Proxy struct {
 	config   ProxyConfig
 	connPool *ConnectionPool
+	server   *Server
 
 	logger *slogger.Logger
 }
@@ -292,14 +293,14 @@ func (ps *ProxySession) doLoop(pooledConn *PooledConnection) (*PooledConnection,
 }
 
 func NewProxy(pc ProxyConfig) Proxy {
-	p := Proxy{pc, NewConnectionPool(pc.MongoAddress(), pc.MongoSSL, pc.MongoRootCAs, pc.MongoSSLSkipVerify, pc.ConnectionPoolHook), nil}
+	p := Proxy{pc, NewConnectionPool(pc.MongoAddress(), pc.MongoSSL, pc.MongoRootCAs, pc.MongoSSLSkipVerify, pc.ConnectionPoolHook), nil, nil}
 
 	p.logger = p.NewLogger("proxy")
 
 	return p
 }
 
-func (p *Proxy) Run() error {
+func (p *Proxy) InitializeServer() {
 	server := Server{
 		p.config.ServerConfig,
 		p.logger,
@@ -310,7 +311,16 @@ func (p *Proxy) Run() error {
 		nil,
 		nil,
 	}
-	return server.Run()
+	p.server = &server
+}
+
+func (p *Proxy) Run() error {
+	return p.server.Run()
+}
+
+// called by a syched method
+func (p *Proxy) OnSSLConfig(sslPairs []*SSLPair) {
+	p.server.OnSSLConfig(sslPairs)
 }
 
 func (p *Proxy) NewLogger(prefix string) *slogger.Logger {

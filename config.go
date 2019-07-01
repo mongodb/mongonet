@@ -1,13 +1,15 @@
 package mongonet
 
-import "crypto/x509"
-import "fmt"
+import (
+	"crypto/x509"
+	"fmt"
 
-import "github.com/mongodb/slogger/v2/slogger"
+	"github.com/mongodb/slogger/v2/slogger"
+)
 
 type SSLPair struct {
-	CertFile string
-	KeyFile  string
+	Cert string `json:"cert"`
+	Key  string `json:"key"`
 }
 
 type ProxyConfig struct {
@@ -25,12 +27,15 @@ type ProxyConfig struct {
 }
 
 func NewProxyConfig(bindHost string, bindPort int, mongoHost string, mongoPort int) ProxyConfig {
+
+	syncTlsConfig := NewSyncTlsConfig()
 	return ProxyConfig{
 		ServerConfig{
 			bindHost,
 			bindPort,
-			false,       // UseSSL
-			nil,         // SSLKeys
+			false, // UseSSL
+			nil,   // SSLKeys
+			syncTlsConfig,
 			0,           // MinTlsVersion
 			0,           // TCPKeepAlivePeriod
 			nil,         // CipherSuites
