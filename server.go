@@ -15,6 +15,13 @@ type SyncTlsConfig struct {
 	tlsConfig *tls.Config
 }
 
+func NewSyncTlsConfig() *SyncTlsConfig {
+	return &SyncTlsConfig{
+		sync.RWMutex{},
+		&tls.Config{},
+	}
+}
+
 func (s *SyncTlsConfig) getTlsConfig() *tls.Config {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
@@ -36,7 +43,7 @@ func (s *SyncTlsConfig) setTlsConfig(sslKeys []*SSLPair, cipherSuites []uint16, 
 	for _, pair := range sslKeys {
 		cer, err := tls.X509KeyPair([]byte(pair.Cert), []byte(pair.Key))
 		if err != nil {
-			return fmt.Errorf("cannot construct certificate", err)
+			return fmt.Errorf("cannot construct certificate %v", err)
 		}
 		certs = append(certs, cer)
 	}

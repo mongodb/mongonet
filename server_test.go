@@ -1,19 +1,19 @@
 package mongonet_test
 
-import "context"
-import "fmt"
-import "io"
-import "net"
-import "sync/atomic"
-import "testing"
-import "time"
+import (
+	"context"
+	"fmt"
+	"io"
+	"net"
+	"sync/atomic"
+	"testing"
+	"time"
 
-import "github.com/mongodb/slogger/v2/slogger"
-
-import "gopkg.in/mgo.v2"
-import "gopkg.in/mgo.v2/bson"
-
-import "github.com/erh/mongonet"
+	"github.com/erh/mongonet"
+	"github.com/mongodb/slogger/v2/slogger"
+	"gopkg.in/mgo.v2"
+	"gopkg.in/mgo.v2/bson"
+)
 
 type MyServerSession struct {
 	session *mongonet.Session
@@ -158,15 +158,17 @@ func (sf *MyServerTestFactory) GetConnection(conn net.Conn) io.ReadWriteCloser {
 
 func TestServer(t *testing.T) {
 	port := 9919 // TODO: pick randomly or check?
-
+	syncTlsConfig := mongonet.NewSyncTlsConfig()
 	server := mongonet.NewServer(
 		mongonet.ServerConfig{
 			"127.0.0.1",
 			port,
 			false,
 			nil,
+			syncTlsConfig,
 			0,
 			0,
+			nil,
 			slogger.DEBUG,
 			nil,
 		},
@@ -321,14 +323,17 @@ func TestServerWorkerWithContext(t *testing.T) {
 	port := 27027
 
 	var sessCtr int32
+	syncTlsConfig := mongonet.NewSyncTlsConfig()
 	server := mongonet.NewServer(
 		mongonet.ServerConfig{
 			"127.0.0.1",
 			port,
 			false,
 			nil,
+			syncTlsConfig,
 			0,
 			0,
+			nil,
 			slogger.DEBUG,
 			nil,
 		},
