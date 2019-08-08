@@ -169,21 +169,21 @@ func BSONWalkAll(doc bson.D, fieldName string, visitor BSONWalkVisitor) (bson.D,
 		if elem.Name == fieldName {
 			err := visitor.Visit(elemDoc)
 			if err != nil {
-				return nil, fmt.Errorf("error visiting node %s", err)
+				return nil, fmt.Errorf("error visiting node %v", err)
 			}
 		}
 		switch val := elem.Value.(type) {
 		case bson.D:
 			newDoc, err := BSONWalkAll(val, fieldName, visitor)
 			if err != nil {
-				return nil, fmt.Errorf("error going deeper into doc %s", err)
+				return nil, fmt.Errorf("error going deeper into doc %v", err)
 			}
 			elem.Value = newDoc
 		case []bson.D:
 			for arrayOffset, sub := range val {
 				newDoc, err := BSONWalkAll(sub, fieldName, visitor)
 				if err != nil {
-					return nil, fmt.Errorf("error going deeper into array %s", err)
+					return nil, fmt.Errorf("error going deeper into array %v", err)
 				}
 				val[arrayOffset] = newDoc
 			}
@@ -193,11 +193,12 @@ func BSONWalkAll(doc bson.D, fieldName string, visitor BSONWalkVisitor) (bson.D,
 				case bson.D:
 					newDoc, err := BSONWalkAll(sub, fieldName, visitor)
 					if err != nil {
-						return nil, fmt.Errorf("error going deeper into doc %s", err)
+						return nil, fmt.Errorf("error going deeper into doc %v", err)
 					}
 					val[arrayOffset] = newDoc
 				default:
-					return nil, fmt.Errorf("bad type going deeper into array %s", sub)
+					// won't alter nested arrays (e.g. [[1,2,3],[4,5,6]]) - will set them as-is
+					val[arrayOffset] = sub
 				}
 			}
 		}
@@ -307,7 +308,7 @@ func BSONWalkHelp(doc bson.D, path []string, visitor BSONWalkVisitor, inArray bo
 
 					val[arrayOffset] = newDoc
 				default:
-					return nil, fmt.Errorf("bad type going deeper into array %s", sub)
+					val[arrayOffset] = sub
 				}
 			}
 
