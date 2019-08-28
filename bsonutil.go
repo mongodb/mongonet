@@ -152,6 +152,8 @@ func GetAsBSONDocs(elem bson.DocElem) ([]bson.D, string, error) {
 
 // ---
 
+var DELETE_ME = fmt.Errorf("delete_me")
+
 type BSONWalkVisitor interface {
 	/**
 	change value
@@ -161,7 +163,7 @@ type BSONWalkVisitor interface {
 }
 
 // BSONWalkAll - recursively walks the BSON doc and applies the visitor when encountering the fieldName
-// Does not support DELETEME for now
+// If delete_me is encountered, it'll return an empty document for that element
 func BSONWalkAll(doc bson.D, fieldName string, visitor BSONWalkVisitor) (bson.D, error) {
 	current := doc
 	for i, elem := range current {
@@ -169,6 +171,9 @@ func BSONWalkAll(doc bson.D, fieldName string, visitor BSONWalkVisitor) (bson.D,
 		if elem.Name == fieldName {
 			err := visitor.Visit(elemDoc)
 			if err != nil {
+				if err == DELETE_ME {
+					return nil, nil
+				}
 				return nil, fmt.Errorf("error visiting node %v", err)
 			}
 		}
@@ -206,12 +211,11 @@ func BSONWalkAll(doc bson.D, fieldName string, visitor BSONWalkVisitor) (bson.D,
 	return doc, nil
 }
 
+// BSONWalk - applies the visitor on the select path
 func BSONWalk(doc bson.D, pathString string, visitor BSONWalkVisitor) (bson.D, error) {
 	path := strings.Split(pathString, ".")
 	return BSONWalkHelp(doc, path, visitor, false)
 }
-
-var DELETE_ME = fmt.Errorf("delete_me")
 
 func BSONWalkHelp(doc bson.D, path []string, visitor BSONWalkVisitor, inArray bool) (bson.D, error) {
 	prev := doc
@@ -240,15 +244,14 @@ func BSONWalkHelp(doc bson.D, path []string, visitor BSONWalkVisitor, inArray bo
 				if err == DELETE_ME {
 					if inArray {
 						return bson.D{}, DELETE_ME
-					} else {
-						fixed := append(current[0:idx], current[idx+1:]...)
-						if pieceOffset == 0 {
-							return fixed, nil
-						}
-
-						prev[docPath[len(docPath)-2]].Value = fixed
-						return doc, nil
 					}
+					fixed := append(current[0:idx], current[idx+1:]...)
+					if pieceOffset == 0 {
+						return fixed, nil
+					}
+
+					prev[docPath[len(docPath)-2]].Value = fixed
+					return doc, nil
 				}
 
 				return nil, fmt.Errorf("error visiting node %s", err)
@@ -293,9 +296,7 @@ func BSONWalkHelp(doc bson.D, path []string, visitor BSONWalkVisitor, inArray bo
 			return doc, nil
 		case []interface{}:
 			numDeleted := 0
-
 			for arrayOffset, subRaw := range val {
-
 				switch sub := subRaw.(type) {
 				case bson.D:
 					newDoc, err := BSONWalkHelp(sub, path[pieceOffset+1:], visitor, true)
@@ -326,7 +327,6 @@ func BSONWalkHelp(doc bson.D, path []string, visitor BSONWalkVisitor, inArray bo
 
 			return doc, nil
 		default:
-			//fmt.Printf("hi %#v\n", elem.Value)
 			return doc, nil
 		}
 	}

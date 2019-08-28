@@ -360,3 +360,33 @@ func TestBSONWalkAll5(test *testing.T) {
 		test.Errorf("incorrect sub-doc value")
 	}
 }
+
+func TestBSONWalkAll6(test *testing.T) {
+	doc := bson.D{
+		{"a", 1},
+		{"b", 3},
+		{"c", []interface{}{bson.D{{"x", 5}}, bson.D{{"a", 2}, {"y", 3}}, bson.D{{"a", 111}}}},
+		{"d", []interface{}{"1", "2"}},
+	}
+	walker := &testWalker{}
+	doc, err := BSONWalkAll(doc, "a", walker)
+	if err != nil {
+		test.Errorf("why did we get an error %s", err)
+	}
+	if len(walker.seen) != 3 {
+		test.Errorf("wrong # saw %d", len(walker.seen))
+	}
+	arr := doc[2].Value.([]interface{})
+	val := arr[1].(bson.D)
+	if val[0].Value != 17 {
+		test.Errorf("incorrect sub-doc value")
+	}
+	val2 := arr[0].(bson.D)
+	if val2[0].Value != 5 {
+		test.Errorf("incorrect sub-doc value")
+	}
+	val3 := arr[2].(bson.D)
+	if len(val3) != 0 {
+		test.Errorf("element should've been deleted %s", doc)
+	}
+}
