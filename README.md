@@ -1,4 +1,4 @@
-# mongonet - mongo wire protocol tolls
+# mongonet - mongo wire protocol tools
 
 The purpose of this library is to have a number of low level tools for building a variety of things.
 This is not a driver, though could be turned into one if someone wanted.
