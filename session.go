@@ -1,14 +1,16 @@
 package mongonet
 
-import "crypto/tls"
-import "errors"
-import "fmt"
-import "io"
-import "net"
-import "strings"
+import (
+	"crypto/tls"
+	"errors"
+	"fmt"
+	"io"
+	"net"
+	"strings"
 
-import "github.com/mongodb/slogger/v2/slogger"
-import "gopkg.in/mgo.v2/bson"
+	"github.com/mongodb/slogger/v2/slogger"
+	"gopkg.in/mgo.v2/bson"
+)
 
 type Session struct {
 	server     *Server
@@ -29,6 +31,10 @@ func (s *Session) Connection() io.ReadWriteCloser {
 
 func (s *Session) Logf(level slogger.Level, messageFmt string, args ...interface{}) (*slogger.Log, []error) {
 	return s.logger.Logf(level, messageFmt, args...)
+}
+
+func (s *Session) SetRemoteAddr(v net.Addr) {
+	s.remoteAddr = v
 }
 
 func (s *Session) ReadMessage() (Message, error) {
