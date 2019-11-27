@@ -1,9 +1,11 @@
 package mongonet
 
-import "fmt"
-import "strings"
+import (
+	"fmt"
+	"strings"
 
-import "gopkg.in/mgo.v2/bson"
+	"gopkg.in/mgo.v2/bson"
+)
 
 type SimpleBSON struct {
 	Size int32
@@ -47,7 +49,7 @@ func parseSimpleBSON(b []byte) (SimpleBSON, error) {
 		return SimpleBSON{4, b}, nil
 	}
 
-	if int(size) > (128 * 1024 * 1024) {
+	if int(size) > (128*1024*1024) || int(size) < 0 {
 		return SimpleBSON{}, NewStackErrorf("bson size invalid %d", size)
 	}
 
