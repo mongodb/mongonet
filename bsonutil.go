@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"gopkg.in/mgo.v2/bson"
+	"go.mongodb.org/mongo-driver/bson"
 )
 
 type SimpleBSON struct {
@@ -68,14 +68,14 @@ func SimpleBSONEmpty() SimpleBSON {
 
 func BSONIndexOf(doc bson.D, name string) int {
 	for i, elem := range doc {
-		if elem.Name == name {
+		if elem.Key == name {
 			return i
 		}
 	}
 	return -1
 }
 
-func GetAsString(elem bson.DocElem) (string, string, error) {
+func GetAsString(elem bson.E) (string, string, error) {
 	tipe := fmt.Sprintf("%T", elem.Value)
 	switch val := elem.Value.(type) {
 	case string:
@@ -85,7 +85,7 @@ func GetAsString(elem bson.DocElem) (string, string, error) {
 	}
 }
 
-func GetAsInt(elem bson.DocElem) (int, string, error) {
+func GetAsInt(elem bson.E) (int, string, error) {
 	tipe := fmt.Sprintf("%T", elem.Value)
 	switch val := elem.Value.(type) {
 	case int:
@@ -101,7 +101,7 @@ func GetAsInt(elem bson.DocElem) (int, string, error) {
 	}
 }
 
-func GetAsBool(elem bson.DocElem) (bool, string, error) {
+func GetAsBool(elem bson.E) (bool, string, error) {
 	tipe := fmt.Sprintf("%T", elem.Value)
 	switch val := elem.Value.(type) {
 	case bool:
@@ -119,7 +119,7 @@ func GetAsBool(elem bson.DocElem) (bool, string, error) {
 	}
 }
 
-func GetAsBSON(elem bson.DocElem) (bson.D, string, error) {
+func GetAsBSON(elem bson.E) (bson.D, string, error) {
 	tipe := fmt.Sprintf("%T", elem.Value)
 	switch val := elem.Value.(type) {
 	case bson.D:
@@ -129,7 +129,7 @@ func GetAsBSON(elem bson.DocElem) (bson.D, string, error) {
 	}
 }
 
-func GetAsBSONDocs(elem bson.DocElem) ([]bson.D, string, error) {
+func GetAsBSONDocs(elem bson.E) ([]bson.D, string, error) {
 	tipe := fmt.Sprintf("%T", elem.Value)
 	switch val := elem.Value.(type) {
 	case []bson.D:
@@ -161,7 +161,7 @@ type BSONWalkVisitor interface {
 	change value
 	set Name = "" to delete
 	*/
-	Visit(elem *bson.DocElem) error
+	Visit(elem *bson.E) error
 }
 
 // BSONWalkAll - recursively walks the BSON doc and applies the visitor when encountering the fieldName
@@ -170,7 +170,7 @@ func BSONWalkAll(doc bson.D, fieldName string, visitor BSONWalkVisitor) (bson.D,
 	current := doc
 	for i, elem := range current {
 		elemDoc := &(current)[i]
-		if elem.Name == fieldName {
+		if elem.Key == fieldName {
 			err := visitor.Visit(elemDoc)
 			if err != nil {
 				if err == DELETE_ME {
@@ -238,7 +238,7 @@ func BSONWalkHelp(doc bson.D, path []string, visitor BSONWalkVisitor, inArray bo
 
 		if pieceOffset == len(path)-1 {
 			// this is the end
-			if len(elem.Name) == 0 {
+			if len(elem.Key) == 0 {
 				panic("this is not ok right now")
 			}
 			err := visitor.Visit(elem)

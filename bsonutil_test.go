@@ -3,7 +3,7 @@ package mongonet
 import (
 	"testing"
 
-	"gopkg.in/mgo.v2/bson"
+	"go.mongodb.org/mongo-driver/bson"
 )
 
 func TestBSONIndexOf(test *testing.T) {
@@ -23,10 +23,10 @@ func TestBSONIndexOf(test *testing.T) {
 }
 
 type testWalker struct {
-	seen []bson.DocElem
+	seen []bson.E
 }
 
-func (tw *testWalker) Visit(elem *bson.DocElem) error {
+func (tw *testWalker) Visit(elem *bson.E) error {
 	tw.seen = append(tw.seen, *elem)
 	if elem.Value.(int) == 111 {
 		return DELETE_ME
@@ -45,8 +45,8 @@ func TestBSONWalk1(test *testing.T) {
 	if len(walker.seen) != 1 {
 		test.Errorf("wrong # saw")
 	}
-	if walker.seen[0].Name != "b" {
-		test.Errorf("name wrong %s", walker.seen[0].Name)
+	if walker.seen[0].Key != "b" {
+		test.Errorf("name wrong %s", walker.seen[0].Key)
 	}
 	if doc[1].Value.(int) != 17 {
 		test.Errorf("we didn't change it %d", doc[1].Value.(int))
@@ -177,7 +177,7 @@ func TestBSONWalk7(test *testing.T) {
 	if len(doc) != 1 {
 		test.Errorf("didn't delete 1 %s", doc)
 	}
-	if doc[0].Name != "b" {
+	if doc[0].Key != "b" {
 		test.Errorf("deleted wrong one? %s", doc)
 	}
 
@@ -193,7 +193,7 @@ func TestBSONWalk8(test *testing.T) {
 	if len(doc) != 1 {
 		test.Errorf("didn't delete 1 %s", doc)
 	}
-	if doc[0].Name != "b" {
+	if doc[0].Key != "b" {
 		test.Errorf("deleted wrong one? %s", doc)
 	}
 
@@ -209,10 +209,10 @@ func TestBSONWalk9(test *testing.T) {
 	if len(doc) != 2 {
 		test.Errorf("didn't delete 1 %s", doc)
 	}
-	if doc[0].Name != "b" {
+	if doc[0].Key != "b" {
 		test.Errorf("deleted wrong one? %s", doc)
 	}
-	if doc[1].Name != "c" {
+	if doc[1].Key != "c" {
 		test.Errorf("deleted wrong one? %s", doc)
 	}
 
@@ -229,7 +229,7 @@ func TestBSONWalk10(test *testing.T) {
 		test.Errorf("what did i do! %s", doc)
 	}
 
-	if doc[1].Name != "a" {
+	if doc[1].Key != "a" {
 		test.Errorf("what did i do! %s", doc)
 	}
 
@@ -237,7 +237,7 @@ func TestBSONWalk10(test *testing.T) {
 	if len(sub) != 1 {
 		test.Errorf("didn't delete %s", doc)
 	}
-	if sub[0].Name != "x" {
+	if sub[0].Key != "x" {
 		test.Errorf("deleted wrong one? %s", doc)
 	}
 
@@ -253,7 +253,7 @@ func TestBSONWalkAll1(test *testing.T) {
 	if len(doc) != 1 {
 		test.Errorf("incorrect doc length")
 	}
-	if doc[0].Name != "a" {
+	if doc[0].Key != "a" {
 		test.Errorf("incorrect doc structure")
 	}
 	if doc[0].Value != 17 {
@@ -271,7 +271,7 @@ func TestBSONWalkAll2(test *testing.T) {
 	if len(doc) != 2 {
 		test.Errorf("incorrect doc length")
 	}
-	if doc[0].Name != "a" {
+	if doc[0].Key != "a" {
 		test.Errorf("incorrect doc structure")
 	}
 	if doc[0].Value != 17 {
@@ -296,7 +296,7 @@ func TestBSONWalkAll3(test *testing.T) {
 	if len(doc) != 3 {
 		test.Errorf("incorrect doc length")
 	}
-	if doc[0].Name != "a" {
+	if doc[0].Key != "a" {
 		test.Errorf("incorrect doc structure")
 	}
 	if doc[0].Value != 17 {

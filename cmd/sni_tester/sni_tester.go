@@ -1,13 +1,14 @@
 package main
 
-import "flag"
-import "fmt"
-import "os"
-import "time"
+import (
+	"flag"
+	"fmt"
+	"os"
+	"time"
 
-import "gopkg.in/mgo.v2/bson"
-
-import "github.com/erh/mongonet"
+	"github.com/erh/mongonet"
+	"go.mongodb.org/mongo-driver/bson"
+)
 
 const (
 	errorCode     = 20000
@@ -47,7 +48,7 @@ func (myi *MyInterceptor) InterceptClientToMongo(m mongonet.Message) (mongonet.M
 			return m, nil, nil
 		}
 
-		cmdName := query[0].Name
+		cmdName := query[0].Key
 		if cmdName != "sni" {
 			return m, nil, nil
 		}

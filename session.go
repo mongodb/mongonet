@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/mongodb/slogger/v2/slogger"
-	"gopkg.in/mgo.v2/bson"
+	"go.mongodb.org/mongo-driver/bson"
 )
 
 type Session struct {
@@ -101,14 +101,14 @@ func (s *Session) RespondToCommandMakeBSON(clientMessage Message, args ...interf
 		if !ok {
 			return fmt.Errorf("got a non string for bson name: %t", args[idx])
 		}
-		doc = append(doc, bson.DocElem{name, args[idx+1]})
+		doc = append(doc, bson.E{name, args[idx+1]})
 		if name == "ok" {
 			gotOk = true
 		}
 	}
 
 	if !gotOk {
-		doc = append(doc, bson.DocElem{"ok", 1})
+		doc = append(doc, bson.E{"ok", 1})
 	}
 
 	doc2, err := SimpleBSONConvert(doc)
