@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 type SimpleBSON struct {
@@ -129,24 +130,28 @@ func GetAsBSON(elem bson.E) (bson.D, string, error) {
 	}
 }
 
+func getAsBsonDocsArray(val []interface{}, tipe string) ([]bson.D, string, error) {
+	a := make([]bson.D, len(val))
+	for num, raw := range val {
+		switch fixed := raw.(type) {
+		case bson.D:
+			a[num] = fixed
+		default:
+			return []bson.D{}, tipe, NewStackErrorf("not bson.D %T %s", raw, raw)
+		}
+	}
+	return a, tipe, nil
+}
+
 func GetAsBSONDocs(elem bson.E) ([]bson.D, string, error) {
 	tipe := fmt.Sprintf("%T", elem.Value)
 	switch val := elem.Value.(type) {
 	case []bson.D:
 		return val, tipe, nil
-
+	case primitive.A:
+		return getAsBsonDocsArray([]interface{}(val), tipe)
 	case []interface{}:
-		a := make([]bson.D, len(val))
-		for num, raw := range val {
-			switch fixed := raw.(type) {
-			case bson.D:
-				a[num] = fixed
-			default:
-				return []bson.D{}, tipe, NewStackErrorf("not bson.D %T %s", raw, raw)
-			}
-		}
-		return a, tipe, nil
-
+		return getAsBsonDocsArray(val, tipe)
 	default:
 		return []bson.D{}, tipe, NewStackErrorf("not an array %T", elem.Value)
 	}
@@ -179,6 +184,7 @@ func BSONWalkAll(doc bson.D, fieldName string, visitor BSONWalkVisitor) (bson.D,
 				return nil, fmt.Errorf("error visiting node %v", err)
 			}
 		}
+		var valToUse []interface{}
 		switch val := elem.Value.(type) {
 		case bson.D:
 			newDoc, err := BSONWalkAll(val, fieldName, visitor)
@@ -194,21 +200,28 @@ func BSONWalkAll(doc bson.D, fieldName string, visitor BSONWalkVisitor) (bson.D,
 				}
 				val[arrayOffset] = newDoc
 			}
+		case primitive.A:
+			valToUse = []interface{}(val)
 		case []interface{}:
-			for arrayOffset, subRaw := range val {
-				switch sub := subRaw.(type) {
-				case bson.D:
-					newDoc, err := BSONWalkAll(sub, fieldName, visitor)
-					if err != nil {
-						return nil, fmt.Errorf("error going deeper into doc %v", err)
-					}
-					val[arrayOffset] = newDoc
-				default:
-					// won't alter nested arrays (e.g. [[1,2,3],[4,5,6]]) - will set them as-is
-					val[arrayOffset] = sub
+			valToUse = val
+		}
+		if len(valToUse) == 0 {
+			continue
+		}
+		for arrayOffset, subRaw := range valToUse {
+			switch sub := subRaw.(type) {
+			case bson.D:
+				newDoc, err := BSONWalkAll(sub, fieldName, visitor)
+				if err != nil {
+					return nil, fmt.Errorf("error going deeper into doc %v", err)
 				}
+				valToUse[arrayOffset] = newDoc
+			default:
+				// won't alter nested arrays (e.g. [[1,2,3],[4,5,6]]) - will set them as-is
+				valToUse[arrayOffset] = sub
 			}
 		}
+
 	}
 	return doc, nil
 }
@@ -263,7 +276,7 @@ func BSONWalkHelp(doc bson.D, path []string, visitor BSONWalkVisitor, inArray bo
 		}
 
 		// more to walk down
-
+		var valToUse []interface{}
 		switch val := elem.Value.(type) {
 		case bson.D:
 			prev = current
@@ -296,41 +309,47 @@ func BSONWalkHelp(doc bson.D, path []string, visitor BSONWalkVisitor, inArray bo
 			}
 
 			return doc, nil
+		case primitive.A:
+			valToUse = []interface{}(val)
 		case []interface{}:
-			numDeleted := 0
-			for arrayOffset, subRaw := range val {
-				switch sub := subRaw.(type) {
-				case bson.D:
-					newDoc, err := BSONWalkHelp(sub, path[pieceOffset+1:], visitor, true)
-					if err == DELETE_ME {
-						newDoc = nil
-						numDeleted++
-					} else if err != nil {
-						return nil, fmt.Errorf("error going deeper into array %s", err)
-					}
-
-					val[arrayOffset] = newDoc
-				default:
-					val[arrayOffset] = sub
-				}
-			}
-
-			if numDeleted > 0 {
-				newArr := make([]interface{}, len(val)-numDeleted)
-				pos := 0
-				for _, sub := range val {
-					if sub != nil && len(sub.(bson.D)) > 0 {
-						newArr[pos] = sub
-						pos++
-					}
-				}
-				current[idx].Value = newArr
-			}
-
-			return doc, nil
+			valToUse = val
 		default:
+			fmt.Printf("*** bsonWalk - this is a different type - %v %T\n", val, val)
 			return doc, nil
 		}
+		if len(valToUse) == 0 {
+			continue
+		}
+		numDeleted := 0
+		for arrayOffset, subRaw := range valToUse {
+			switch sub := subRaw.(type) {
+			case bson.D:
+				newDoc, err := BSONWalkHelp(sub, path[pieceOffset+1:], visitor, true)
+				if err == DELETE_ME {
+					newDoc = nil
+					numDeleted++
+				} else if err != nil {
+					return nil, fmt.Errorf("error going deeper into array %s", err)
+				}
+
+				valToUse[arrayOffset] = newDoc
+			default:
+				valToUse[arrayOffset] = sub
+			}
+		}
+
+		if numDeleted > 0 {
+			newArr := make([]interface{}, len(valToUse)-numDeleted)
+			pos := 0
+			for _, sub := range valToUse {
+				if sub != nil && len(sub.(bson.D)) > 0 {
+					newArr[pos] = sub
+					pos++
+				}
+			}
+			current[idx].Value = newArr
+		}
+		return doc, nil
 	}
 
 	return doc, nil
