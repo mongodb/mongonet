@@ -22,7 +22,6 @@ type MyServerSession struct {
 }
 
 func (mss *MyServerSession) handleIsMaster(mm mongonet.Message) error {
-	fmt.Println("handleIsMaster:in")
 	return mss.session.RespondToCommandMakeBSON(mm,
 		"ismaster", true,
 		"maxBsonObjectSize", 16777216,
@@ -37,13 +36,11 @@ func (mss *MyServerSession) handleIsMaster(mm mongonet.Message) error {
 }
 
 func (mss *MyServerSession) handleInsert(mm mongonet.Message, cmd bson.D, ns string) error {
-	fmt.Println("handleInsert:in:", cmd)
 	mss.mydata[ns] = []bson.D{}
 	return mss.session.RespondToCommandMakeBSON(mm)
 }
 
 func (mss *MyServerSession) handleEndSessions(mm mongonet.Message) error {
-	fmt.Println("handleEndSessions:in")
 	return mss.session.RespondToCommandMakeBSON(mm)
 }
 
@@ -71,7 +68,6 @@ func (mss *MyServerSession) handleMessage(m mongonet.Message) (error, bool) {
 		db := mongonet.NamespaceToDB(mm.Namespace)
 		cmdName := cmd[0].Key
 
-		fmt.Println("got message - ", cmdName)
 		if cmdName == "getnonce" {
 			return mss.session.RespondToCommandMakeBSON(mm, "nonce", "914653afbdbdb833"), false
 		}
@@ -258,7 +254,7 @@ func TestServer(t *testing.T) {
 	docIn := bson.D{{"foo", 17}}
 	res, err := coll.InsertOne(ctx, docIn)
 	if err != nil {
-		t.Errorf("can't insert: %s", err)
+		t.Errorf("can't insert: %v", err)
 		return
 	}
 	fmt.Println(res)
@@ -267,20 +263,19 @@ func TestServer(t *testing.T) {
 	docOut := bson.D{}
 	fres := coll.FindOne(ctx, bson.D{})
 	fmt.Println(fres)
-	/*
-		if err != nil {
-			t.Errorf("can't find: %s", err)
-			return
-		}
-	*/
+	if fres.Err() != nil {
+		t.Errorf("can't find: %v", fres.Err())
+		return
+	}
+	
 
 	if len(docIn) != len(docOut) {
-		t.Errorf("docs don't match\n %s\n %s\n", docIn, docOut)
+		t.Errorf("docs don't match\n %v\n %v\n", docIn, docOut)
 		return
 	}
 
 	if docIn[0] != docOut[0] {
-		t.Errorf("docs don't match\n %s\n %s\n", docIn, docOut)
+		t.Errorf("docs don't match\n %v\n %v\n", docIn, docOut)
 		return
 	}
 
