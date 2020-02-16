@@ -216,7 +216,6 @@ func (sf *MyServerTestFactory) GetConnection(conn net.Conn) io.ReadWriteCloser {
 	return conn
 }
 
-// disabled as the go driver attempts to run isMaster
 func TestServer(t *testing.T) {
 	port := 9919 // TODO: pick randomly or check?
 	syncTlsConfig := mongonet.NewSyncTlsConfig()

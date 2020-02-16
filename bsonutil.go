@@ -314,7 +314,6 @@ func BSONWalkHelp(doc bson.D, path []string, visitor BSONWalkVisitor, inArray bo
 		case []interface{}:
 			valToUse = val
 		default:
-			fmt.Printf("*** bsonWalk - this is a different type - %v %T\n", val, val)
 			return doc, nil
 		}
 		if len(valToUse) == 0 {
