@@ -243,7 +243,8 @@ func TestServer(t *testing.T) {
 		t.Errorf("cannot create a mongo client. err: %v", err)
 	}
 
-	ctx := context.Background()
+	ctx, cancelFunc := context.WithTimeout(context.Background(), 5 * time.Second)
+	defer cancelFunc()
 	if err := client.Connect(ctx); err != nil {
 		t.Errorf("cannot connect to server. err: %v", err)
 		return
@@ -427,13 +428,15 @@ func TestServerWorkerWithContext(t *testing.T) {
 			t.Errorf("cannot create a mongo client. err: %v", err)
 			return
 		}
-
-		ctx := context.Background()
+		
+		ctx, cancelFunc := context.WithTimeout(context.Background(), 5 * time.Second)
 		if err := client.Connect(ctx); err != nil {
 			t.Errorf("cannot connect to server. err: %v", err)
+			cancelFunc()
 			return
 		}
 		client.Disconnect(ctx)
+		cancelFunc()
 	}
 
 	sessCtrCurr := atomic.LoadInt32(&sessCtr)
