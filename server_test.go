@@ -11,8 +11,9 @@ import (
 
 	"github.com/erh/mongonet"
 	"github.com/mongodb/slogger/v2/slogger"
-	"gopkg.in/mgo.v2"
-	"gopkg.in/mgo.v2/bson"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 type MyServerSession struct {
@@ -20,10 +21,34 @@ type MyServerSession struct {
 	mydata  map[string][]bson.D
 }
 
+func (mss *MyServerSession) handleIsMaster(mm mongonet.Message) error {
+	return mss.session.RespondToCommandMakeBSON(mm,
+		"ismaster", true,
+		"maxBsonObjectSize", 16777216,
+		"maxMessageSizeBytes", 48000000,
+		"maxWriteBatchSize", 100000,
+		//"localTime", ISODate("2017-12-14T17:40:28.640Z"),
+		"logicalSessionTimeoutMinutes", 30,
+		"minWireVersion", 0,
+		"maxWireVersion", 6,
+		"readOnly", false,
+	)
+}
+
+func (mss *MyServerSession) handleInsert(mm mongonet.Message, cmd bson.D, ns string) error {
+	mss.mydata[ns] = []bson.D{}
+	return mss.session.RespondToCommandMakeBSON(mm)
+}
+
+func (mss *MyServerSession) handleEndSessions(mm mongonet.Message) error {
+	return mss.session.RespondToCommandMakeBSON(mm)
+}
+
 /*
 * @return (error, <fatal>)
  */
 func (mss *MyServerSession) handleMessage(m mongonet.Message) (error, bool) {
+
 	switch mm := m.(type) {
 	case *mongonet.QueryMessage:
 
@@ -41,24 +66,14 @@ func (mss *MyServerSession) handleMessage(m mongonet.Message) (error, bool) {
 		}
 
 		db := mongonet.NamespaceToDB(mm.Namespace)
-		cmdName := cmd[0].Name
+		cmdName := cmd[0].Key
 
 		if cmdName == "getnonce" {
 			return mss.session.RespondToCommandMakeBSON(mm, "nonce", "914653afbdbdb833"), false
 		}
 
-		if cmdName == "ismaster" {
-			return mss.session.RespondToCommandMakeBSON(mm,
-				"ismaster", true,
-				"maxBsonObjectSize", 16777216,
-				"maxMessageSizeBytes", 48000000,
-				"maxWriteBatchSize", 100000,
-				//"localTime", ISODate("2017-12-14T17:40:28.640Z"),
-				"logicalSessionTimeoutMinutes", 30,
-				"minWireVersion", 0,
-				"maxWireVersion", 6,
-				"readOnly", false,
-			), false
+		if cmdName == "ismaster" || cmdName == "isMaster" {
+			return mss.handleIsMaster(mm), false
 		}
 
 		if cmdName == "ping" {
@@ -108,6 +123,51 @@ func (mss *MyServerSession) handleMessage(m mongonet.Message) (error, bool) {
 
 	case *mongonet.CommandMessage:
 		fmt.Printf("hi2 %#v\n", mm)
+	case *mongonet.MessageMessage:
+		var bodySection *mongonet.BodySection = nil
+
+		for _, section := range mm.Sections {
+			if bodySec, ok := section.(*mongonet.BodySection); ok {
+				if bodySection != nil {
+					return fmt.Errorf("OP_MSG contains more than one body section"), true
+				}
+
+				bodySection = bodySec
+			}
+		}
+
+		if bodySection == nil {
+			return fmt.Errorf("OP_MSG does not contain a body section"), true
+		}
+
+		cmd, err := bodySection.Body.ToBSOND()
+		if err != nil {
+			return mongonet.NewStackErrorf("can't parse body section bson: %v", err), true
+		}
+
+		if len(cmd) == 0 {
+			return mongonet.NewStackErrorf("can't parse body section bson. length=0"), true
+		}
+		idx := mongonet.BSONIndexOf(cmd, "$db")
+		if idx < 0 {
+			return fmt.Errorf("can't find the db"), true
+		}
+		db, _, err := mongonet.GetAsString(cmd[idx])
+		if err != nil {
+			return mongonet.NewStackErrorf("can't parse the db from bson: %v", err), true
+		}
+		ns := fmt.Sprintf("%s.%s", db, cmd[0].Value)
+		cmdName := cmd[0].Key
+		if cmdName == "ismaster" || cmdName == "isMaster" {
+			return mss.handleIsMaster(mm), false
+		}
+		if cmdName == "insert" {
+			return mss.handleInsert(mm, cmd, ns), false
+		}
+		if cmdName == "endSessions" {
+			return mss.handleEndSessions(mm), false
+		}
+		return nil, false
 	}
 
 	return fmt.Errorf("what are you! %t", m), true
@@ -177,35 +237,45 @@ func TestServer(t *testing.T) {
 
 	go server.Run()
 
-	session, err := mgo.Dial(fmt.Sprintf("127.0.0.1:%d", port))
+	opts := options.Client().ApplyURI(fmt.Sprintf("mongodb://127.0.0.1:%d", port))
+	client, err := mongo.NewClient(opts)
 	if err != nil {
-		t.Errorf("cannot dial: %s", err)
-		return
+		t.Errorf("cannot create a mongo client. err: %v", err)
 	}
-	defer session.Close()
 
-	coll := session.DB("test").C("bar")
-	docIn := bson.D{{"foo", 17}}
-	err = coll.Insert(docIn)
-	if err != nil {
-		t.Errorf("can't insert: %s", err)
+	ctx, cancelFunc := context.WithTimeout(context.Background(), 5 * time.Second)
+	defer cancelFunc()
+	if err := client.Connect(ctx); err != nil {
+		t.Errorf("cannot connect to server. err: %v", err)
 		return
 	}
+	defer client.Disconnect(ctx)
+	coll := client.Database("test").Collection("bar")
+	docIn := bson.D{{"foo", 17}}
+	res, err := coll.InsertOne(ctx, docIn)
+	if err != nil {
+		t.Errorf("can't insert: %v", err)
+		return
+	}
+	fmt.Println(res)
+	return
 
 	docOut := bson.D{}
-	err = coll.Find(bson.D{}).One(&docOut)
-	if err != nil {
-		t.Errorf("can't find: %s", err)
+	fres := coll.FindOne(ctx, bson.D{})
+	fmt.Println(fres)
+	if fres.Err() != nil {
+		t.Errorf("can't find: %v", fres.Err())
 		return
 	}
+	
 
 	if len(docIn) != len(docOut) {
-		t.Errorf("docs don't match\n %s\n %s\n", docIn, docOut)
+		t.Errorf("docs don't match\n %v\n %v\n", docIn, docOut)
 		return
 	}
 
 	if docIn[0] != docOut[0] {
-		t.Errorf("docs don't match\n %s\n %s\n", docIn, docOut)
+		t.Errorf("docs don't match\n %v\n %v\n", docIn, docOut)
 		return
 	}
 
@@ -248,9 +318,9 @@ func (tsc *TestSessionWithContext) handleMessage(m mongonet.Message) (error, boo
 			return fmt.Errorf("invalid command length"), true
 		}
 
-		cmdName := cmd[0].Name
+		cmdName := cmd[0].Key
 
-		if cmdName == "ismaster" {
+		if cmdName == "ismaster" || cmdName == "isMaster" {
 			return tsc.session.RespondToCommandMakeBSON(mm,
 				"ismaster", true,
 				"maxBsonObjectSize", 16777216,
@@ -271,6 +341,11 @@ func (tsc *TestSessionWithContext) handleMessage(m mongonet.Message) (error, boo
 		if cmdName == "ping" {
 			return tsc.session.RespondToCommandMakeBSON(mm), false
 		}
+
+		if cmdName == "endSessions" {
+			return tsc.session.RespondToCommandMakeBSON(mm), false
+		}
+
 		return fmt.Errorf("command (%s) not done", cmdName), true
 	}
 
@@ -319,6 +394,21 @@ func (tsc *TestSessionWithContext) Close() {
 	atomic.AddInt32(tsc.counter, -1)
 }
 
+func checkClient(opts *options.ClientOptions) error {
+	client, err := mongo.NewClient(opts)
+	if err != nil {
+		return fmt.Errorf("cannot create a mongo client. err: %v", err)
+	}
+	
+	ctx, cancelFunc := context.WithTimeout(context.Background(), 5 * time.Second)
+	defer cancelFunc()
+	if err := client.Connect(ctx); err != nil {
+		return fmt.Errorf("cannot connect to server. err: %v", err)
+	}
+	client.Disconnect(ctx)
+	return nil
+}
+
 func TestServerWorkerWithContext(t *testing.T) {
 	port := 27027
 
@@ -346,13 +436,11 @@ func TestServerWorkerWithContext(t *testing.T) {
 		t.Error(err)
 	}
 
+	opts := options.Client().ApplyURI(fmt.Sprintf("mongodb://127.0.0.1:%d", port))
 	for i := 0; i < 10; i++ {
-		session, err := mgo.Dial(fmt.Sprintf("127.0.0.1:%d", port))
-		if err != nil {
-			t.Errorf("cannot dial: %s", err)
-			return
-		}
-		defer session.Close()
+		if err := checkClient(opts); err != nil {
+			t.Error(err)
+		} 
 	}
 
 	sessCtrCurr := atomic.LoadInt32(&sessCtr)

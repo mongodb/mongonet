@@ -1,13 +1,14 @@
 package mongonet
 
-import "fmt"
-import "io"
-import "net"
-import "time"
+import (
+	"fmt"
+	"io"
+	"net"
+	"time"
 
-import "gopkg.in/mgo.v2/bson"
-
-import "github.com/mongodb/slogger/v2/slogger"
+	"github.com/mongodb/slogger/v2/slogger"
+	"go.mongodb.org/mongo-driver/bson"
+)
 
 type Proxy struct {
 	config   ProxyConfig
@@ -39,12 +40,12 @@ func (me MongoError) ToBSON() bson.D {
 	doc := bson.D{{"ok", 0}}
 
 	if me.err != nil {
-		doc = append(doc, bson.DocElem{"errmsg", me.err.Error()})
+		doc = append(doc, bson.E{"errmsg", me.err.Error()})
 	}
 
 	doc = append(doc,
-		bson.DocElem{"code", me.code},
-		bson.DocElem{"codeName", me.codeName})
+		bson.E{"code", me.code},
+		bson.E{"codeName", me.codeName})
 
 	return doc
 }
