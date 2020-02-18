@@ -394,6 +394,21 @@ func (tsc *TestSessionWithContext) Close() {
 	atomic.AddInt32(tsc.counter, -1)
 }
 
+func checkClient(opts *options.ClientOptions) error {
+	client, err := mongo.NewClient(opts)
+	if err != nil {
+		return fmt.Errorf("cannot create a mongo client. err: %v", err)
+	}
+	
+	ctx, cancelFunc := context.WithTimeout(context.Background(), 5 * time.Second)
+	defer cancelFunc()
+	if err := client.Connect(ctx); err != nil {
+		return fmt.Errorf("cannot connect to server. err: %v", err)
+	}
+	client.Disconnect(ctx)
+	return nil
+}
+
 func TestServerWorkerWithContext(t *testing.T) {
 	port := 27027
 
@@ -423,20 +438,9 @@ func TestServerWorkerWithContext(t *testing.T) {
 
 	opts := options.Client().ApplyURI(fmt.Sprintf("mongodb://127.0.0.1:%d", port))
 	for i := 0; i < 10; i++ {
-		client, err := mongo.NewClient(opts)
-		if err != nil {
-			t.Errorf("cannot create a mongo client. err: %v", err)
-			return
-		}
-		
-		ctx, cancelFunc := context.WithTimeout(context.Background(), 5 * time.Second)
-		if err := client.Connect(ctx); err != nil {
-			t.Errorf("cannot connect to server. err: %v", err)
-			cancelFunc()
-			return
-		}
-		client.Disconnect(ctx)
-		cancelFunc()
+		if err := checkClient(opts); err != nil {
+			t.Error(err)
+		} 
 	}
 
 	sessCtrCurr := atomic.LoadInt32(&sessCtr)
