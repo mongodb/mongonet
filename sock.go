@@ -45,7 +45,7 @@ func ReadMessage(reader io.Reader) (Message, error) {
 	if header.Size-4 < 0 || header.Size-4 > MaxInt32 {
 		return nil, NewStackErrorf("message header has invalid size (%v).", header.Size)
 	}
-	restBuf := make([]byte, header.Size-4)
+	restBuf := BufferPoolGet(header.Size - 4)
 
 	for read := 0; int32(read) < header.Size-4; {
 		n, err := reader.Read(restBuf[read:])
