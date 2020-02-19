@@ -5,6 +5,8 @@ import "io"
 const MaxInt32 = 2147483647
 
 func sendBytes(writer io.Writer, buf []byte) error {
+	origBuf := buf
+	defer BufferPoolPut(origBuf)
 	for {
 		written, err := writer.Write(buf)
 		if err != nil {
@@ -20,15 +22,16 @@ func sendBytes(writer io.Writer, buf []byte) error {
 
 }
 
-func ReadMessage(reader io.Reader) (Message, error) {
+// caller must call BufferPoolPut() on bufToReclaim when done
+func ReadMessage(reader io.Reader) (m Message, bufToReclaim []byte, err error) {
 	// read header
 	sizeBuf := make([]byte, 4)
 	n, err := reader.Read(sizeBuf)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if n != 4 {
-		return nil, NewStackErrorf("didn't read message size from socket, got %d", n)
+		return nil, nil, NewStackErrorf("didn't read message size from socket, got %d", n)
 	}
 
 	header := MessageHeader{}
@@ -37,20 +40,21 @@ func ReadMessage(reader io.Reader) (Message, error) {
 
 	if header.Size > int32(200*1024*1024) {
 		if header.Size == 542393671 {
-			return nil, NewStackErrorf("message too big, probably http request %d", header.Size)
+			return nil, nil, NewStackErrorf("message too big, probably http request %d", header.Size)
 		}
-		return nil, NewStackErrorf("message too big %d", header.Size)
+		return nil, nil, NewStackErrorf("message too big %d", header.Size)
 	}
 
 	if header.Size-4 < 0 || header.Size-4 > MaxInt32 {
-		return nil, NewStackErrorf("message header has invalid size (%v).", header.Size)
+		return nil, nil, NewStackErrorf("message header has invalid size (%v).", header.Size)
 	}
-	restBuf := BufferPoolGet(header.Size - 4)
+	restBuf := BufferPoolGet(int(header.Size - 4))
+	bufToReclaim = restBuf
 
 	for read := 0; int32(read) < header.Size-4; {
 		n, err := reader.Read(restBuf[read:])
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if n == 0 {
 			break
@@ -59,7 +63,7 @@ func ReadMessage(reader io.Reader) (Message, error) {
 	}
 
 	if len(restBuf) < 12 {
-		return nil, NewStackErrorf("invalid message header. either header.Size = %v is shorter than message length, or message is missing RequestId, ResponseTo, or OpCode fields.", header.Size)
+		return nil, nil, NewStackErrorf("invalid message header. either header.Size = %v is shorter than message length, or message is missing RequestId, ResponseTo, or OpCode fields.", header.Size)
 	}
 	header.RequestID = readInt32(restBuf)
 	header.ResponseTo = readInt32(restBuf[4:])
@@ -69,29 +73,29 @@ func ReadMessage(reader io.Reader) (Message, error) {
 
 	switch header.OpCode {
 	case OP_REPLY:
-		return parseReplyMessage(header, body)
+		m, err = parseReplyMessage(header, body)
 	case OP_UPDATE:
-		return parseUpdateMessage(header, body)
+		m, err = parseUpdateMessage(header, body)
 	case OP_INSERT:
-		return parseInsertMessage(header, body)
+		m, err = parseInsertMessage(header, body)
 	case OP_QUERY:
-		return parseQueryMessage(header, body)
+		m, err = parseQueryMessage(header, body)
 	case OP_GET_MORE:
-		return parseGetMoreMessage(header, body)
+		m, err = parseGetMoreMessage(header, body)
 	case OP_DELETE:
-		return parseDeleteMessage(header, body)
+		m, err = parseDeleteMessage(header, body)
 	case OP_KILL_CURSORS:
-		return parseKillCursorsMessage(header, body)
+		m, err = parseKillCursorsMessage(header, body)
 	case OP_COMMAND:
-		return parseCommandMessage(header, body)
+		m, err = parseCommandMessage(header, body)
 	case OP_COMMAND_REPLY:
-		return parseCommandReplyMessage(header, body)
+		m, err = parseCommandReplyMessage(header, body)
 	case OP_MSG:
-		return parseMessageMessage(header, body)
+		m, err = parseMessageMessage(header, body)
 	default:
-		return nil, NewStackErrorf("unknown op code: %v", header.OpCode)
+		return nil, nil, NewStackErrorf("unknown op code: %v", header.OpCode)
 	}
-
+	return
 }
 
 func SendMessage(m Message, writer io.Writer) error {

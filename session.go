@@ -37,7 +37,7 @@ func (s *Session) SetRemoteAddr(v net.Addr) {
 	s.remoteAddr = v
 }
 
-func (s *Session) ReadMessage() (Message, error) {
+func (s *Session) ReadMessage() (m Message, bufToReclaim []byte, err error) {
 	return ReadMessage(s.conn)
 }
 

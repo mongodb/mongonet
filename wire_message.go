@@ -21,7 +21,7 @@ func (m *MessageMessage) Serialize() []byte {
 	}
 	m.header.Size = size
 
-	buf := BufferPoolGet(size)
+	buf := BufferPoolGet(int(size))
 	m.header.WriteInto(buf)
 
 	flags := m.FlagBits

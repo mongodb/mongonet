@@ -9,6 +9,9 @@ func BufferPoolGet(n int) []byte {
 }
 
 func BufferPoolPut(slice []byte) {
+	if slice == nil || len(slice) == 0 {
+		return
+	}
 	for i := 0; i < len(slice); i++ {
 		slice[i] = 0
 	}

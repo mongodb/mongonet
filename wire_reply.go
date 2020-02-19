@@ -15,7 +15,7 @@ func (m *ReplyMessage) Serialize() []byte {
 	}
 	m.header.Size = int32(size)
 
-	buf := make([]byte, size)
+	buf := BufferPoolGet(size)
 	m.header.WriteInto(buf)
 
 	writeInt32(m.Flags, buf, 16)

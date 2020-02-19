@@ -195,7 +195,13 @@ func (ps *ProxySession) Close() {
 }
 
 func (ps *ProxySession) doLoop(pooledConn *PooledConnection) (*PooledConnection, error) {
-	m, err := ReadMessage(ps.conn)
+	firstReadBufReclaimed := false
+	m, bufToReclaim, err := ReadMessage(ps.conn)
+	defer func() {
+		if !firstReadBufReclaimed {
+			BufferPoolPut(bufToReclaim)
+		}
+	}()
 	if err != nil {
 		if err == io.EOF {
 			return pooledConn, err
@@ -254,14 +260,17 @@ func (ps *ProxySession) doLoop(pooledConn *PooledConnection) (*PooledConnection,
 	}
 
 	defer pooledConn.Close()
+	firstReadBufReclaimed = true
+	BufferPoolPut(bufToReclaim)
 
 	inExhaustMode :=
 		m.Header().OpCode == OP_QUERY &&
 			m.(*QueryMessage).Flags&(1<<6) != 0
 
 	for {
-		resp, err := ReadMessage(mongoConn)
+		resp, bufToReclaim, err := ReadMessage(mongoConn)
 		if err != nil {
+			BufferPoolPut(bufToReclaim)
 			pooledConn.bad = true
 			return nil, NewStackErrorf("got error reading response from mongo %s", err)
 		}
@@ -269,12 +278,14 @@ func (ps *ProxySession) doLoop(pooledConn *PooledConnection) (*PooledConnection,
 		if respInter != nil {
 			resp, err = respInter.InterceptMongoToClient(resp)
 			if err != nil {
+				BufferPoolPut(bufToReclaim)
 				return nil, NewStackErrorf("error intercepting message %s", err)
 			}
 		}
 
 		err = SendMessage(resp, ps.conn)
 		if err != nil {
+			BufferPoolPut(bufToReclaim)
 			return nil, NewStackErrorf("got error sending response to client %s", err)
 		}
 
@@ -283,12 +294,15 @@ func (ps *ProxySession) doLoop(pooledConn *PooledConnection) (*PooledConnection,
 		}
 
 		if !inExhaustMode {
+			BufferPoolPut(bufToReclaim)
 			return nil, nil
 		}
 
 		if resp.(*ReplyMessage).CursorId == 0 {
+			BufferPoolPut(bufToReclaim)
 			return nil, nil
 		}
+		BufferPoolPut(bufToReclaim)
 	}
 }
 

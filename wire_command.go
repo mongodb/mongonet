@@ -19,7 +19,7 @@ func (m *CommandMessage) Serialize() []byte {
 	}
 	m.header.Size = int32(size)
 
-	buf := make([]byte, size)
+	buf := BufferPoolGet(size)
 	m.header.WriteInto(buf)
 
 	loc := 16
