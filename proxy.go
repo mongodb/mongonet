@@ -64,7 +64,7 @@ type ResponseInterceptor interface {
 }
 
 type ProxyInterceptor interface {
-	InterceptClientToMongo(m Message) (Message, ResponseInterceptor, error)
+	InterceptClientToMongo(m Message) (Message, ResponseInterceptor, bool, error) // bool - expecting response from mongo
 	Close()
 	TrackRequest(MessageHeader)
 	TrackResponse(MessageHeader)
@@ -205,10 +205,11 @@ func (ps *ProxySession) doLoop(pooledConn *PooledConnection) (*PooledConnection,
 	}
 
 	var respInter ResponseInterceptor
+	expectingResponse := true
 	if ps.interceptor != nil {
 		ps.interceptor.TrackRequest(m.Header())
 
-		m, respInter, err = ps.interceptor.InterceptClientToMongo(m)
+		m, respInter, expectingResponse, err = ps.interceptor.InterceptClientToMongo(m)
 		if err != nil {
 			if m == nil {
 				if pooledConn != nil {
@@ -250,7 +251,7 @@ func (ps *ProxySession) doLoop(pooledConn *PooledConnection) (*PooledConnection,
 		return pooledConn, NewStackErrorf("error writing to mongo: %s", err)
 	}
 
-	if !m.HasResponse() {
+	if !expectingResponse || !m.HasResponse() {
 		return pooledConn, nil
 	}
 
