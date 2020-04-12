@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/erh/mongonet"
+	"github.com/mongodb/mongonet"
 	"github.com/mongodb/slogger/v2/slogger"
 	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
