@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/erh/mongonet"
+	"github.com/mongodb/mongonet"
 	"github.com/mongodb/slogger/v2/slogger"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -243,7 +243,7 @@ func TestServer(t *testing.T) {
 		t.Errorf("cannot create a mongo client. err: %v", err)
 	}
 
-	ctx, cancelFunc := context.WithTimeout(context.Background(), 5 * time.Second)
+	ctx, cancelFunc := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancelFunc()
 	if err := client.Connect(ctx); err != nil {
 		t.Errorf("cannot connect to server. err: %v", err)
@@ -267,7 +267,6 @@ func TestServer(t *testing.T) {
 		t.Errorf("can't find: %v", fres.Err())
 		return
 	}
-	
 
 	if len(docIn) != len(docOut) {
 		t.Errorf("docs don't match\n %v\n %v\n", docIn, docOut)
@@ -399,8 +398,8 @@ func checkClient(opts *options.ClientOptions) error {
 	if err != nil {
 		return fmt.Errorf("cannot create a mongo client. err: %v", err)
 	}
-	
-	ctx, cancelFunc := context.WithTimeout(context.Background(), 5 * time.Second)
+
+	ctx, cancelFunc := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancelFunc()
 	if err := client.Connect(ctx); err != nil {
 		return fmt.Errorf("cannot connect to server. err: %v", err)
@@ -440,7 +439,7 @@ func TestServerWorkerWithContext(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		if err := checkClient(opts); err != nil {
 			t.Error(err)
-		} 
+		}
 	}
 
 	sessCtrCurr := atomic.LoadInt32(&sessCtr)

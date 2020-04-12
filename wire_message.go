@@ -1,11 +1,16 @@
 package mongonet
 
 const (
-	BodySectionKind             = 0
-	DocumentSequenceSectionKind = 1
+	BodySectionKind                   = 0
+	DocumentSequenceSectionKind       = 1
+	MoreToComeFlag              int32 = 0x02
 )
 
 func (m *MessageMessage) HasResponse() bool {
+	if m.FlagBits&MoreToComeFlag != 0 {
+		// moreToCome was set on OP_MSG - the client isn't expecting a server response!
+		return false
+	}
 	return true
 }
 

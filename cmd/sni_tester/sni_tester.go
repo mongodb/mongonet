@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/erh/mongonet"
+	"github.com/mongodb/mongonet"
 	"go.mongodb.org/mongo-driver/bson"
 )
 

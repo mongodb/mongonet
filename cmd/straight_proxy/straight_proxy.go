@@ -1,8 +1,10 @@
 package main
 
-import "flag"
+import (
+	"flag"
 
-import "github.com/erh/mongonet"
+	"github.com/mongodb/mongonet"
+)
 
 func main() {
 
