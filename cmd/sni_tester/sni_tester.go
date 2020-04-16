@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/erh/mongonet"
+	"github.com/mongodb/mongonet"
 	"go.mongodb.org/mongo-driver/bson"
 )
 
@@ -35,33 +35,33 @@ func (myi *MyInterceptor) sniResponse() mongonet.SimpleBSON {
 	return raw
 }
 
-func (myi *MyInterceptor) InterceptClientToMongo(m mongonet.Message) (mongonet.Message, mongonet.ResponseInterceptor, bool, error) {
+func (myi *MyInterceptor) InterceptClientToMongo(m mongonet.Message) (mongonet.Message, mongonet.ResponseInterceptor, error) {
 	switch mm := m.(type) {
 	case *mongonet.QueryMessage:
 		if !mongonet.NamespaceIsCommand(mm.Namespace) {
-			return m, nil, true, nil
+			return m, nil, nil
 		}
 
 		query, err := mm.Query.ToBSOND()
 		if err != nil || len(query) == 0 {
 			// let mongod handle error message
-			return m, nil, true, nil
+			return m, nil, nil
 		}
 
 		cmdName := query[0].Key
 		if cmdName != "sni" {
-			return m, nil, true, nil
+			return m, nil, nil
 		}
 
-		return nil, nil, true, newSNIError(myi.ps.RespondToCommand(mm, myi.sniResponse()))
+		return nil, nil, newSNIError(myi.ps.RespondToCommand(mm, myi.sniResponse()))
 	case *mongonet.CommandMessage:
 		if mm.CmdName != "sni" {
-			return mm, nil, true, nil
+			return mm, nil, nil
 		}
-		return nil, nil, true, newSNIError(myi.ps.RespondToCommand(mm, myi.sniResponse()))
+		return nil, nil, newSNIError(myi.ps.RespondToCommand(mm, myi.sniResponse()))
 	}
 
-	return m, nil, true, nil
+	return m, nil, nil
 }
 
 func (myi *MyInterceptor) Close() {
