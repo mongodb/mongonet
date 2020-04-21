@@ -4,6 +4,10 @@ func (m *QueryMessage) HasResponse() bool {
 	return true
 }
 
+func (m *QueryMessage) IsExhaust() bool {
+	return m.Flags&(1<<6) != 0
+}
+
 func (m *QueryMessage) Header() MessageHeader {
 	return m.header
 }

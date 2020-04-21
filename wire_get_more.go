@@ -4,6 +4,10 @@ func (m *GetMoreMessage) HasResponse() bool {
 	return true
 }
 
+func (m *GetMoreMessage) IsExhaust() bool {
+	return false
+}
+
 func (m *GetMoreMessage) Header() MessageHeader {
 	return m.header
 }

@@ -4,6 +4,10 @@ func (m *CommandMessage) HasResponse() bool {
 	return true
 }
 
+func (m *CommandMessage) IsExhaust() bool {
+	return false
+}
+
 func (m *CommandMessage) Header() MessageHeader {
 	return m.header
 }

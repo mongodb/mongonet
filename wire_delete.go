@@ -4,6 +4,10 @@ func (m *DeleteMessage) HasResponse() bool {
 	return false
 }
 
+func (m *DeleteMessage) IsExhaust() bool {
+	return false
+}
+
 func (m *DeleteMessage) Header() MessageHeader {
 	return m.header
 }
