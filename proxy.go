@@ -1,13 +1,14 @@
 package mongonet
 
-import "fmt"
-import "io"
-import "net"
-import "time"
+import (
+	"github.com/mongodb/slogger/v2/slogger"
+	"gopkg.in/mgo.v2/bson"
 
-import "gopkg.in/mgo.v2/bson"
-
-import "github.com/mongodb/slogger/v2/slogger"
+	"fmt"
+	"io"
+	"net"
+	"time"
+)
 
 type Proxy struct {
 	config   ProxyConfig
@@ -108,7 +109,7 @@ func (ps *ProxySession) DoLoopTemp() {
 				ps.pooledConn.Close()
 			}
 			if err != io.EOF {
-				ps.logger.Logf(slogger.WARN, "error doing loop: %s", err)
+				ps.logger.Logf(slogger.WARN, "error doing loop: %v", err)
 			}
 			return
 		}
@@ -200,7 +201,7 @@ func (ps *ProxySession) doLoop(pooledConn *PooledConnection) (*PooledConnection,
 		if err == io.EOF {
 			return pooledConn, err
 		}
-		return pooledConn, NewStackErrorf("got error reading from client: %s", err)
+		return pooledConn, NewStackErrorf("got error reading from client: %v", err)
 	}
 
 	var respInter ResponseInterceptor
@@ -221,7 +222,7 @@ func (ps *ProxySession) doLoop(pooledConn *PooledConnection) (*PooledConnection,
 			}
 			err = ps.RespondWithError(m, err)
 			if err != nil {
-				return pooledConn, NewStackErrorf("couldn't send error response to client %s", err)
+				return pooledConn, NewStackErrorf("couldn't send error response to client %v", err)
 			}
 			return pooledConn, nil
 		}
@@ -234,7 +235,7 @@ func (ps *ProxySession) doLoop(pooledConn *PooledConnection) (*PooledConnection,
 	if pooledConn == nil {
 		pooledConn, err = ps.proxy.connPool.Get()
 		if err != nil {
-			return nil, NewStackErrorf("cannot get connection to mongo %s", err)
+			return nil, NewStackErrorf("cannot get connection to mongo %v", err)
 		}
 	}
 
@@ -246,7 +247,7 @@ func (ps *ProxySession) doLoop(pooledConn *PooledConnection) (*PooledConnection,
 	err = SendMessage(m, mongoConn)
 	if err != nil {
 		pooledConn.bad = true
-		return pooledConn, NewStackErrorf("error writing to mongo: %s", err)
+		return pooledConn, NewStackErrorf("error writing to mongo: %v", err)
 	}
 
 	if !m.HasResponse() {
@@ -255,27 +256,25 @@ func (ps *ProxySession) doLoop(pooledConn *PooledConnection) (*PooledConnection,
 
 	defer pooledConn.Close()
 
-	inExhaustMode :=
-		m.Header().OpCode == OP_QUERY &&
-			m.(*QueryMessage).Flags&(1<<6) != 0
+	inExhaustMode := m.IsExhaust()
 
 	for {
 		resp, err := ReadMessage(mongoConn)
 		if err != nil {
 			pooledConn.bad = true
-			return nil, NewStackErrorf("got error reading response from mongo %s", err)
+			return nil, NewStackErrorf("got error reading response from mongo %v", err)
 		}
 
 		if respInter != nil {
 			resp, err = respInter.InterceptMongoToClient(resp)
 			if err != nil {
-				return nil, NewStackErrorf("error intercepting message %s", err)
+				return nil, NewStackErrorf("error intercepting message %v", err)
 			}
 		}
 
 		err = SendMessage(resp, ps.conn)
 		if err != nil {
-			return nil, NewStackErrorf("got error sending response to client %s", err)
+			return nil, NewStackErrorf("got error sending response to client %v", err)
 		}
 
 		if ps.interceptor != nil {
@@ -286,8 +285,18 @@ func (ps *ProxySession) doLoop(pooledConn *PooledConnection) (*PooledConnection,
 			return nil, nil
 		}
 
-		if resp.(*ReplyMessage).CursorId == 0 {
-			return nil, nil
+		switch r := resp.(type) {
+		case *ReplyMessage:
+			if r.CursorId == 0 {
+				return nil, nil
+			}
+		case *MessageMessage:
+			if !r.HasMoreToCome() {
+				// moreToCome wasn't set - stop the loop
+				return nil, nil
+			}
+		default:
+			return nil, NewStackErrorf("bad response type from server %T", r)
 		}
 	}
 }

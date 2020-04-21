@@ -4,6 +4,10 @@ func (m *InsertMessage) HasResponse() bool {
 	return false
 }
 
+func (m *InsertMessage) IsExhaust() bool {
+	return false
+}
+
 func (m *InsertMessage) Header() MessageHeader {
 	return m.header
 }

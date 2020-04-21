@@ -35,6 +35,7 @@ type Message interface {
 	Header() MessageHeader
 	Serialize() []byte
 	HasResponse() bool
+	IsExhaust() bool
 }
 
 // OP_REPLY
