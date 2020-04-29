@@ -4,14 +4,23 @@ const (
 	BodySectionKind                   = 0
 	DocumentSequenceSectionKind       = 1
 	MoreToComeFlag              int32 = 0x02
+	ExhaustAllowedFlag          int32 = 1 << 16
 )
 
-func (m *MessageMessage) HasResponse() bool {
+func (m *MessageMessage) HasMoreToCome() bool {
 	if m.FlagBits&MoreToComeFlag != 0 {
-		// moreToCome was set on OP_MSG - the client isn't expecting a server response!
-		return false
+		return true
 	}
-	return true
+	return false
+}
+
+func (m *MessageMessage) HasResponse() bool {
+	// moreToCome was set on OP_MSG - the client isn't expecting a server response!
+	return !m.HasMoreToCome()
+}
+
+func (m *MessageMessage) IsExhaust() bool {
+	return m.FlagBits&ExhaustAllowedFlag != 0
 }
 
 func (m *MessageMessage) Header() MessageHeader {

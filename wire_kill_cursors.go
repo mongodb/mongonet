@@ -4,6 +4,10 @@ func (m *KillCursorsMessage) HasResponse() bool {
 	return false
 }
 
+func (m *KillCursorsMessage) IsExhaust() bool {
+	return false
+}
+
 func (m *KillCursorsMessage) Header() MessageHeader {
 	return m.header
 }

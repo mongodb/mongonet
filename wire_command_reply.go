@@ -4,6 +4,10 @@ func (m *CommandReplyMessage) HasResponse() bool {
 	return false // because its a response
 }
 
+func (m *CommandReplyMessage) IsExhaust() bool {
+	return false
+}
+
 func (m *CommandReplyMessage) Header() MessageHeader {
 	return m.header
 }
