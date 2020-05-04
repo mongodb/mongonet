@@ -1,14 +1,18 @@
 package mongonet
 
-import "context"
-import "crypto/tls"
-import "fmt"
-import "io"
-import "net"
-import "sync"
-import "time"
+import (
+	"context"
+	"crypto/tls"
+	"fmt"
+	"io"
+	"net"
+	"sync"
+	"syscall"
+	"time"
 
-import "github.com/mongodb/slogger/v2/slogger"
+	"github.com/mongodb/slogger/v2/slogger"
+	"golang.org/x/sys/unix"
+)
 
 type SyncTlsConfig struct {
 	lock      sync.RWMutex
@@ -122,6 +126,15 @@ func (s *Server) OnSSLConfig(sslPairs []*SSLPair) {
 	s.config.SyncTlsConfig.setTlsConfig(sslPairs, s.config.CipherSuites, s.config.MinTlsVersion, s.config.SSLKeys)
 }
 
+// we assume this runs on an OS that supports TFO
+func listenerSetup(network, address string, cnx syscall.RawConn) error {
+	cnx.Write(func(fd uintptr) bool {
+		_ = syscall.SetsockoptInt(int(fd), unix.IPPROTO_TCP, unix.TCP_FASTOPEN, 10)
+		return true
+	})
+	return nil
+}
+
 func (s *Server) Run() error {
 	bindTo := fmt.Sprintf("%s:%d", s.config.BindHost, s.config.BindPort)
 
@@ -129,7 +142,8 @@ func (s *Server) Run() error {
 
 	defer close(s.initChan)
 
-	ln, err := net.Listen("tcp", bindTo)
+	listenConfig := net.ListenConfig{Control: listenerSetup}
+	ln, err := listenConfig.Listen(context.Background(), "tcp", bindTo)
 	if err != nil {
 		returnErr := NewStackErrorf("cannot start listening in proxy: %s", err)
 		s.initChan <- returnErr
