@@ -268,12 +268,14 @@ func (ps *ProxySession) doLoop(pooledConn *PooledConnection) (*PooledConnection,
 		if respInter != nil {
 			resp, err = respInter.InterceptMongoToClient(resp)
 			if err != nil {
+				pooledConn.bad = true
 				return nil, NewStackErrorf("error intercepting message %v", err)
 			}
 		}
 
 		err = SendMessage(resp, ps.conn)
 		if err != nil {
+			pooledConn.bad = true
 			return nil, NewStackErrorf("got error sending response to client %v", err)
 		}
 
