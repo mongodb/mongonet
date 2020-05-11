@@ -181,7 +181,7 @@ func BSONWalkAll(doc bson.D, fieldName string, visitor BSONWalkVisitor) (bson.D,
 				if err == DELETE_ME {
 					return nil, nil
 				}
-				return nil, fmt.Errorf("error visiting node %v", err)
+				return nil, err
 			}
 		}
 		var valToUse []interface{}
@@ -189,14 +189,14 @@ func BSONWalkAll(doc bson.D, fieldName string, visitor BSONWalkVisitor) (bson.D,
 		case bson.D:
 			newDoc, err := BSONWalkAll(val, fieldName, visitor)
 			if err != nil {
-				return nil, fmt.Errorf("error going deeper into doc %v", err)
+				return nil, err
 			}
 			elem.Value = newDoc
 		case []bson.D:
 			for arrayOffset, sub := range val {
 				newDoc, err := BSONWalkAll(sub, fieldName, visitor)
 				if err != nil {
-					return nil, fmt.Errorf("error going deeper into array %v", err)
+					return nil, err
 				}
 				val[arrayOffset] = newDoc
 			}
@@ -213,7 +213,7 @@ func BSONWalkAll(doc bson.D, fieldName string, visitor BSONWalkVisitor) (bson.D,
 			case bson.D:
 				newDoc, err := BSONWalkAll(sub, fieldName, visitor)
 				if err != nil {
-					return nil, fmt.Errorf("error going deeper into doc %v", err)
+					return nil, err
 				}
 				valToUse[arrayOffset] = newDoc
 			default:
@@ -240,7 +240,6 @@ func BSONWalkHelp(doc bson.D, path []string, visitor BSONWalkVisitor, inArray bo
 
 	for pieceOffset, piece := range path {
 		idx := BSONIndexOf(current, piece)
-		//fmt.Printf("XX %d %s %d\n", pieceOffset, piece, idx)
 
 		if idx < 0 {
 			return doc, nil
@@ -269,7 +268,7 @@ func BSONWalkHelp(doc bson.D, path []string, visitor BSONWalkVisitor, inArray bo
 					return doc, nil
 				}
 
-				return nil, fmt.Errorf("error visiting node %s", err)
+				return nil, err
 			}
 
 			return doc, nil
@@ -290,7 +289,7 @@ func BSONWalkHelp(doc bson.D, path []string, visitor BSONWalkVisitor, inArray bo
 					newDoc = nil
 					numDeleted++
 				} else if err != nil {
-					return nil, fmt.Errorf("error going deeper into array %s", err)
+					return nil, err
 				}
 
 				val[arrayOffset] = newDoc
@@ -328,7 +327,7 @@ func BSONWalkHelp(doc bson.D, path []string, visitor BSONWalkVisitor, inArray bo
 					newDoc = nil
 					numDeleted++
 				} else if err != nil {
-					return nil, fmt.Errorf("error going deeper into array %s", err)
+					return nil, err
 				}
 
 				valToUse[arrayOffset] = newDoc
