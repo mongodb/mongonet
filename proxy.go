@@ -274,6 +274,7 @@ func (ps *ProxySession) doLoop(pooledConn *PooledConnection) (*PooledConnection,
 
 		err = SendMessage(resp, ps.conn)
 		if err != nil {
+			pooledConn.bad = true
 			return nil, NewStackErrorf("got error sending response to client %v", err)
 		}
 
