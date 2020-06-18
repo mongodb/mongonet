@@ -390,3 +390,44 @@ func TestBSONWalkAll6(test *testing.T) {
 		test.Errorf("element should've been deleted %s", doc)
 	}
 }
+
+func BenchmarkSimpleBSONConvertEmptyDoc(b *testing.B) {
+	b.ReportAllocs()
+	doc := bson.D{}
+	for i := 0; i < b.N; i++ {
+		_, err := SimpleBSONConvert(doc)
+		if err != nil {
+			b.Error(err)
+		}
+	}
+}
+func BenchmarkSimpleBSONConvertSmallDoc(b *testing.B) {
+	b.ReportAllocs()
+	doc := bson.D{
+		{"ok", 1},
+	}
+	for i := 0; i < b.N; i++ {
+		_, err := SimpleBSONConvert(doc)
+		if err != nil {
+			b.Error(err)
+		}
+	}
+}
+func BenchmarkSimpleBSONConvertMedDoc(b *testing.B) {
+	b.ReportAllocs()
+	doc := bson.D{
+		{"ok", 1},
+		{"nested", bson.D{{"bla", 1}}},
+		{"nested2", bson.D{{"bla", 1}}},
+		{"nested3", bson.D{{"bla", 1}}},
+		{"nested4", bson.D{{"bla", 1}}},
+		{"nested5", bson.D{{"bla", 1}}},
+		{"another", "blabla"},
+	}
+	for i := 0; i < b.N; i++ {
+		_, err := SimpleBSONConvert(doc)
+		if err != nil {
+			b.Error(err)
+		}
+	}
+}
