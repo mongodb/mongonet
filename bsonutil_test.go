@@ -1,6 +1,7 @@
 package mongonet
 
 import (
+	"fmt"
 	"testing"
 
 	"gopkg.in/mgo.v2/bson"
@@ -413,17 +414,61 @@ func BenchmarkSimpleBSONConvertSmallDoc(b *testing.B) {
 		}
 	}
 }
-func BenchmarkSimpleBSONConvertMedDoc(b *testing.B) {
-	b.ReportAllocs()
-	doc := bson.D{
-		{"ok", 1},
-		{"nested", bson.D{{"bla", 1}}},
-		{"nested2", bson.D{{"bla", 1}}},
-		{"nested3", bson.D{{"bla", 1}}},
-		{"nested4", bson.D{{"bla", 1}}},
-		{"nested5", bson.D{{"bla", 1}}},
-		{"another", "blabla"},
+
+func getDocOfSize(n int) bson.D {
+	doc := bson.D{}
+	for i := 0; i < n; i++ {
+		doc = append(doc, bson.DocElem{fmt.Sprintf("field%v", i), "blabla"})
 	}
+	return doc
+}
+
+func BenchmarkSimpleBSONConvertLarge10Doc(b *testing.B) {
+	b.ReportAllocs()
+	doc := getDocOfSize(10)
+	for i := 0; i < b.N; i++ {
+		_, err := SimpleBSONConvert(doc)
+		if err != nil {
+			b.Error(err)
+		}
+	}
+}
+
+func BenchmarkSimpleBSONConvertLarge50Doc(b *testing.B) {
+	b.ReportAllocs()
+	doc := getDocOfSize(10)
+	for i := 0; i < b.N; i++ {
+		_, err := SimpleBSONConvert(doc)
+		if err != nil {
+			b.Error(err)
+		}
+	}
+}
+
+func BenchmarkSimpleBSONConvertLarge100Doc(b *testing.B) {
+	b.ReportAllocs()
+	doc := getDocOfSize(100)
+	for i := 0; i < b.N; i++ {
+		_, err := SimpleBSONConvert(doc)
+		if err != nil {
+			b.Error(err)
+		}
+	}
+}
+func BenchmarkSimpleBSONConvertLarge500Doc(b *testing.B) {
+	b.ReportAllocs()
+	doc := getDocOfSize(500)
+	for i := 0; i < b.N; i++ {
+		_, err := SimpleBSONConvert(doc)
+		if err != nil {
+			b.Error(err)
+		}
+	}
+}
+
+func BenchmarkSimpleBSONConvertLarge1000Doc(b *testing.B) {
+	b.ReportAllocs()
+	doc := getDocOfSize(1000)
 	for i := 0; i < b.N; i++ {
 		_, err := SimpleBSONConvert(doc)
 		if err != nil {
