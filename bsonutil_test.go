@@ -436,7 +436,7 @@ func BenchmarkSimpleBSONConvertLarge10Doc(b *testing.B) {
 
 func BenchmarkSimpleBSONConvertLarge50Doc(b *testing.B) {
 	b.ReportAllocs()
-	doc := getDocOfSize(10)
+	doc := getDocOfSize(50)
 	for i := 0; i < b.N; i++ {
 		_, err := SimpleBSONConvert(doc)
 		if err != nil {
