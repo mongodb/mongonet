@@ -423,6 +423,26 @@ func getDocOfSize(n int) bson.D {
 	return doc
 }
 
+func BenchmarkSimpleBSONConvertLarge10Doc(b *testing.B) {
+	b.ReportAllocs()
+	doc := getDocOfSize(10)
+	for i := 0; i < b.N; i++ {
+		_, err := SimpleBSONConvert(doc)
+		if err != nil {
+			b.Error(err)
+		}
+	}
+}
+func BenchmarkSimpleBSONConvertLarge50Doc(b *testing.B) {
+	b.ReportAllocs()
+	doc := getDocOfSize(50)
+	for i := 0; i < b.N; i++ {
+		_, err := SimpleBSONConvert(doc)
+		if err != nil {
+			b.Error(err)
+		}
+	}
+}
 func BenchmarkSimpleBSONConvertLarge100Doc(b *testing.B) {
 	b.ReportAllocs()
 	doc := getDocOfSize(100)
