@@ -3,6 +3,7 @@ package mongonet
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"gopkg.in/mgo.v2/bson"
 )
@@ -477,6 +478,44 @@ func BenchmarkSimpleBSONConvertLarge1000Doc(b *testing.B) {
 	}
 }
 
+func getIsMaster() bson.D {
+	return bson.D{
+		{"ismaster", true},
+		{"maxBsonObjectSize", 16777216},
+		{"maxMessageSizeBytes", 48000000},
+		{"maxWriteBatchSize", 100000},
+		{"localTime", time.Now()},
+		{"logicalSessionTimeoutMinutes", 30},
+		{"minWireVersion", 0},
+		{"maxWireVersion", 6},
+		{"readOnly", false},
+		{"hostsBsonD", []bson.D{
+			bson.D{{"host", "blabla1"}},
+			bson.D{{"host", "blabla2"}},
+			bson.D{{"host", "blabla3"}},
+		}},
+		{"hostsIf", []interface{}{
+			bson.D{{"host", "blabla1"}},
+			bson.D{{"host", "blabla2"}},
+			bson.D{{"host", "blabla3"}},
+		}},
+	}
+}
+
+func BenchmarkToBSONIsMasterResponse(b *testing.B) {
+	b.ReportAllocs()
+	doc := getIsMaster()
+	simple, err := SimpleBSONConvert(doc)
+	if err != nil {
+		b.Error(err)
+	}
+	for i := 0; i < b.N; i++ {
+		_, err := simple.ToBSOND()
+		if err != nil {
+			b.Error(err)
+		}
+	}
+}
 func BenchmarkToBSONEmpty(b *testing.B) {
 	b.ReportAllocs()
 	doc := bson.D{}
