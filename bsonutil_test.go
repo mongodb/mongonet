@@ -3,8 +3,10 @@ package mongonet
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 func TestBSONIndexOf(test *testing.T) {
@@ -467,6 +469,101 @@ func BenchmarkSimpleBSONConvertLarge500Doc(b *testing.B) {
 func BenchmarkSimpleBSONConvertLarge1000Doc(b *testing.B) {
 	b.ReportAllocs()
 	doc := getDocOfSize(1000)
+	for i := 0; i < b.N; i++ {
+		_, err := SimpleBSONConvert(doc)
+		if err != nil {
+			b.Error(err)
+		}
+	}
+}
+
+func getIsMaster() bson.D {
+	return bson.D{
+		{"ismaster", true},
+		{"maxBsonObjectSize", 16777216},
+		{"maxMessageSizeBytes", 48000000},
+		{"maxWriteBatchSize", 100000},
+		{"localTime", time.Now()},
+		{"logicalSessionTimeoutMinutes", 30},
+		{"minWireVersion", 0},
+		{"maxWireVersion", 6},
+		{"readOnly", false},
+		{"hostsBsonD", primitive.A{
+			primitive.E{"host", "blabla1"},
+			primitive.E{"host", "blabla2"},
+			primitive.E{"host", "blabla3"},
+		}},
+		{"hostsIf", []interface{}{
+			bson.D{{"host", "blabla1"}},
+			bson.D{{"host", "blabla2"}},
+			bson.D{{"host", "blabla3"}},
+		}},
+	}
+}
+
+func BenchmarkSimpleBSONConvertIsMasterResponse(b *testing.B) {
+	b.ReportAllocs()
+	doc := getIsMaster()
+	for i := 0; i < b.N; i++ {
+		_, err := SimpleBSONConvert(doc)
+		if err != nil {
+			b.Error(err)
+		}
+	}
+}
+
+func BenchmarkSimpleBSONConvertIsMasterRequest(b *testing.B) {
+	b.ReportAllocs()
+	doc := bson.D{
+		{"ismaster", 1},
+		{"db", "$db"},
+	}
+	for i := 0; i < b.N; i++ {
+		_, err := SimpleBSONConvert(doc)
+		if err != nil {
+			b.Error(err)
+		}
+	}
+}
+
+func BenchmarkToBSONIsMasterResponse(b *testing.B) {
+	b.ReportAllocs()
+	doc := getIsMaster()
+	simple, err := SimpleBSONConvert(doc)
+	if err != nil {
+		b.Error(err)
+	}
+	for i := 0; i < b.N; i++ {
+		_, err := simple.ToBSOND()
+		if err != nil {
+			b.Error(err)
+		}
+	}
+}
+
+func BenchmarkSimpleBSONConvertFindOne(b *testing.B) {
+	b.ReportAllocs()
+	doc := bson.D{
+		{"ismaster", true},
+		{"maxBsonObjectSize", 16777216},
+		{"maxMessageSizeBytes", 48000000},
+		{"maxWriteBatchSize", 100000},
+		{"localTime", time.Now()},
+		{"logicalSessionTimeoutMinutes", 30},
+		{"minWireVersion", 0},
+		{"maxWireVersion", 6},
+		{"readOnly", false},
+		{"hostsBsonD", primitive.A{
+			primitive.E{"host", "blabla1"},
+			primitive.E{"host", "blabla2"},
+			primitive.E{"host", "blabla3"},
+		}},
+		{"hostsIf", []interface{}{
+			bson.D{{"host", "blabla1"}},
+			bson.D{{"host", "blabla2"}},
+			bson.D{{"host", "blabla3"}},
+		}},
+	}
 	for i := 0; i < b.N; i++ {
 		_, err := SimpleBSONConvert(doc)
 		if err != nil {
