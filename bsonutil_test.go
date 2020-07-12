@@ -1,9 +1,12 @@
 package mongonet
 
 import (
+	"fmt"
 	"testing"
+	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 func TestBSONIndexOf(test *testing.T) {
@@ -388,5 +391,375 @@ func TestBSONWalkAll6(test *testing.T) {
 	val3 := arr[2].(bson.D)
 	if len(val3) != 0 {
 		test.Errorf("element should've been deleted %s", doc)
+	}
+}
+
+func BenchmarkSimpleBSONConvertEmptyDoc(b *testing.B) {
+	b.ReportAllocs()
+	doc := bson.D{}
+	for i := 0; i < b.N; i++ {
+		_, err := SimpleBSONConvert(doc)
+		if err != nil {
+			b.Error(err)
+		}
+	}
+}
+func BenchmarkSimpleBSONConvertSmallDoc(b *testing.B) {
+	b.ReportAllocs()
+	doc := bson.D{
+		{"ok", 1},
+	}
+	for i := 0; i < b.N; i++ {
+		_, err := SimpleBSONConvert(doc)
+		if err != nil {
+			b.Error(err)
+		}
+	}
+}
+
+func getDocOfSize(n int) bson.D {
+	doc := bson.D{}
+	for i := 0; i < n; i++ {
+		doc = append(doc, bson.E{fmt.Sprintf("field%v", i), "blabla"})
+	}
+	return doc
+}
+
+func BenchmarkSimpleBSONConvertLarge10Doc(b *testing.B) {
+	b.ReportAllocs()
+	doc := getDocOfSize(10)
+	for i := 0; i < b.N; i++ {
+		_, err := SimpleBSONConvert(doc)
+		if err != nil {
+			b.Error(err)
+		}
+	}
+}
+func BenchmarkSimpleBSONConvertLarge50Doc(b *testing.B) {
+	b.ReportAllocs()
+	doc := getDocOfSize(50)
+	for i := 0; i < b.N; i++ {
+		_, err := SimpleBSONConvert(doc)
+		if err != nil {
+			b.Error(err)
+		}
+	}
+}
+func BenchmarkSimpleBSONConvertLarge100Doc(b *testing.B) {
+	b.ReportAllocs()
+	doc := getDocOfSize(100)
+	for i := 0; i < b.N; i++ {
+		_, err := SimpleBSONConvert(doc)
+		if err != nil {
+			b.Error(err)
+		}
+	}
+}
+func BenchmarkSimpleBSONConvertLarge500Doc(b *testing.B) {
+	b.ReportAllocs()
+	doc := getDocOfSize(500)
+	for i := 0; i < b.N; i++ {
+		_, err := SimpleBSONConvert(doc)
+		if err != nil {
+			b.Error(err)
+		}
+	}
+}
+
+func BenchmarkSimpleBSONConvertLarge1000Doc(b *testing.B) {
+	b.ReportAllocs()
+	doc := getDocOfSize(1000)
+	for i := 0; i < b.N; i++ {
+		_, err := SimpleBSONConvert(doc)
+		if err != nil {
+			b.Error(err)
+		}
+	}
+}
+
+func getIsMaster() bson.D {
+	return bson.D{
+		{"ismaster", true},
+		{"maxBsonObjectSize", 16777216},
+		{"maxMessageSizeBytes", 48000000},
+		{"maxWriteBatchSize", 100000},
+		{"localTime", time.Now()},
+		{"logicalSessionTimeoutMinutes", 30},
+		{"minWireVersion", 0},
+		{"maxWireVersion", 6},
+		{"readOnly", false},
+		{"hostsBsonD", primitive.A{
+			primitive.E{"host", "blabla1"},
+			primitive.E{"host", "blabla2"},
+			primitive.E{"host", "blabla3"},
+		}},
+		{"hostsIf", []interface{}{
+			bson.D{{"host", "blabla1"}},
+			bson.D{{"host", "blabla2"}},
+			bson.D{{"host", "blabla3"}},
+		}},
+	}
+}
+
+func BenchmarkSimpleBSONConvertIsMasterResponse(b *testing.B) {
+	b.ReportAllocs()
+	doc := getIsMaster()
+	for i := 0; i < b.N; i++ {
+		_, err := SimpleBSONConvert(doc)
+		if err != nil {
+			b.Error(err)
+		}
+	}
+}
+
+func BenchmarkSimpleBSONConvertIsMasterRequest(b *testing.B) {
+	b.ReportAllocs()
+	doc := bson.D{
+		{"ismaster", 1},
+		{"db", "$db"},
+	}
+	for i := 0; i < b.N; i++ {
+		_, err := SimpleBSONConvert(doc)
+		if err != nil {
+			b.Error(err)
+		}
+	}
+}
+
+func BenchmarkSimpleBSONConvertFindOne(b *testing.B) {
+	b.ReportAllocs()
+	doc := bson.D{
+		{"ismaster", true},
+		{"maxBsonObjectSize", 16777216},
+		{"maxMessageSizeBytes", 48000000},
+		{"maxWriteBatchSize", 100000},
+		{"localTime", time.Now()},
+		{"logicalSessionTimeoutMinutes", 30},
+		{"minWireVersion", 0},
+		{"maxWireVersion", 6},
+		{"readOnly", false},
+		{"hostsBsonD", primitive.A{
+			primitive.E{"host", "blabla1"},
+			primitive.E{"host", "blabla2"},
+			primitive.E{"host", "blabla3"},
+		}},
+		{"hostsIf", []interface{}{
+			bson.D{{"host", "blabla1"}},
+			bson.D{{"host", "blabla2"}},
+			bson.D{{"host", "blabla3"}},
+		}},
+	}
+	for i := 0; i < b.N; i++ {
+		_, err := SimpleBSONConvert(doc)
+		if err != nil {
+			b.Error(err)
+		}
+	}
+}
+
+func BenchmarkToBSONEmpty(b *testing.B) {
+	b.ReportAllocs()
+	doc := bson.D{}
+	simple, err := SimpleBSONConvert(doc)
+	if err != nil {
+		b.Error(err)
+	}
+	for i := 0; i < b.N; i++ {
+		_, err := simple.ToBSOND()
+		if err != nil {
+			b.Error(err)
+		}
+	}
+}
+func BenchmarkToBSONSmall(b *testing.B) {
+	b.ReportAllocs()
+	doc := bson.D{
+		{"ok", 1},
+	}
+	simple, err := SimpleBSONConvert(doc)
+	if err != nil {
+		b.Error(err)
+	}
+	for i := 0; i < b.N; i++ {
+		_, err := simple.ToBSOND()
+		if err != nil {
+			b.Error(err)
+		}
+	}
+}
+func BenchmarkToBSONLarge10(b *testing.B) {
+	b.ReportAllocs()
+	doc := getDocOfSize(10)
+	simple, err := SimpleBSONConvert(doc)
+	if err != nil {
+		b.Error(err)
+	}
+	for i := 0; i < b.N; i++ {
+		_, err := simple.ToBSOND()
+		if err != nil {
+			b.Error(err)
+		}
+	}
+}
+func BenchmarkToBSONLarge50(b *testing.B) {
+	b.ReportAllocs()
+	doc := getDocOfSize(50)
+	simple, err := SimpleBSONConvert(doc)
+	if err != nil {
+		b.Error(err)
+	}
+	for i := 0; i < b.N; i++ {
+		_, err := simple.ToBSOND()
+		if err != nil {
+			b.Error(err)
+		}
+	}
+}
+func BenchmarkToBSONLarge100(b *testing.B) {
+	b.ReportAllocs()
+	doc := getDocOfSize(100)
+	simple, err := SimpleBSONConvert(doc)
+	if err != nil {
+		b.Error(err)
+	}
+	for i := 0; i < b.N; i++ {
+		_, err := simple.ToBSOND()
+		if err != nil {
+			b.Error(err)
+		}
+	}
+}
+func BenchmarkToBSONLarge500(b *testing.B) {
+	b.ReportAllocs()
+	doc := getDocOfSize(500)
+	simple, err := SimpleBSONConvert(doc)
+	if err != nil {
+		b.Error(err)
+	}
+	for i := 0; i < b.N; i++ {
+		_, err := simple.ToBSOND()
+		if err != nil {
+			b.Error(err)
+		}
+	}
+}
+func BenchmarkToBSONLarge1000(b *testing.B) {
+	b.ReportAllocs()
+	doc := getDocOfSize(1000)
+	simple, err := SimpleBSONConvert(doc)
+	if err != nil {
+		b.Error(err)
+	}
+	for i := 0; i < b.N; i++ {
+		_, err := simple.ToBSOND()
+		if err != nil {
+			b.Error(err)
+		}
+	}
+}
+
+func BenchmarkToBSONIsMasterResponse(b *testing.B) {
+	b.ReportAllocs()
+	doc := getIsMaster()
+	simple, err := SimpleBSONConvert(doc)
+	if err != nil {
+		b.Error(err)
+	}
+	for i := 0; i < b.N; i++ {
+		_, err := simple.ToBSOND()
+		if err != nil {
+			b.Error(err)
+		}
+	}
+}
+
+func BenchmarkToBSONFindOneRequest(b *testing.B) {
+	b.ReportAllocs()
+	doc := bson.D{
+		{"find", "bla"},
+		{"$db", "test"},
+		{"filter", bson.D{{"b", 1}}},
+		{"limit", float64(1)},
+		{"singleBatch", true},
+		{"lsid", bson.D{
+			{"id", primitive.Binary{
+				Subtype: uint8(4),
+				Data:    []byte("blalblalbalblablalabl"),
+			}},
+		}},
+		{"$clusterTime", bson.D{
+			{"clusterTime", primitive.Timestamp{
+				T: uint32(1593340459),
+				I: uint32(1),
+			}},
+			{"signature", bson.D{
+				{"hash", primitive.Binary{
+					Subtype: uint8(4),
+					Data:    []byte("blalblalbalblablalablibibibibibibibi"),
+				}},
+				{"keyId", int64(6843344346754842627)},
+			}},
+		}},
+	}
+	simple, err := SimpleBSONConvert(doc)
+	if err != nil {
+		b.Error(err)
+	}
+	for i := 0; i < b.N; i++ {
+		_, err := simple.ToBSOND()
+		if err != nil {
+			b.Error(err)
+		}
+	}
+}
+
+func BenchmarkToBSONFindOneResponse(b *testing.B) {
+	b.ReportAllocs()
+	doc := bson.D{
+		{"cursor", bson.D{
+			{"id", int64(0)},
+			{"ns", "eliot1-bla.test"},
+			{"firstBatch", bson.A{
+				bson.D{
+					{"_id", primitive.NewObjectID()},
+					{"a", 1},
+				},
+			}},
+		}},
+		{"$db", "test"},
+		{"ok", 1},
+		{"lsid", bson.D{
+			{"id", primitive.Binary{
+				Subtype: uint8(4),
+				Data:    []byte("blalblalbalblablalabl"),
+			}},
+		}},
+		{"$clusterTime", bson.D{
+			{"clusterTime", primitive.Timestamp{
+				T: uint32(1593340459),
+				I: uint32(1),
+			}},
+			{"signature", bson.D{
+				{"hash", primitive.Binary{
+					Subtype: uint8(4),
+					Data:    []byte("blalblalbalblablalablibibibibibibibi"),
+				}},
+				{"keyId", int64(6843344346754842627)},
+			}},
+		}},
+		{"operationTime", primitive.Timestamp{
+			T: uint32(1593340459),
+			I: uint32(1),
+		}},
+	}
+	simple, err := SimpleBSONConvert(doc)
+	if err != nil {
+		b.Error(err)
+	}
+	for i := 0; i < b.N; i++ {
+		_, err := simple.ToBSOND()
+		if err != nil {
+			b.Error(err)
+		}
 	}
 }
