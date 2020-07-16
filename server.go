@@ -56,6 +56,8 @@ func (s *SyncTlsConfig) setTlsConfig(sslKeys []*SSLPair, cipherSuites []uint16, 
 		tlsConfig.CipherSuites = cipherSuites
 	}
 
+	tlsConfig.ClientAuth = tls.RequestClientCert
+
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	s.tlsConfig = tlsConfig
@@ -188,7 +190,7 @@ func (s *Server) Run() error {
 			}
 
 			remoteAddr := conn.RemoteAddr()
-			c := &Session{s, nil, remoteAddr, s.NewLogger(fmt.Sprintf("Session %s", remoteAddr)), ""}
+			c := &Session{s, nil, remoteAddr, s.NewLogger(fmt.Sprintf("Session %s", remoteAddr)), "", nil}
 			if _, ok := s.contextualWorkerFactory(); ok {
 				s.sessionManager.sessionWG.Add(1)
 			}
