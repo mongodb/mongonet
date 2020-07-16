@@ -20,7 +20,7 @@ type Session struct {
 	logger *slogger.Logger
 
 	SSLServerName string
-	tlsConn *tls.Conn
+	tlsConn       *tls.Conn
 }
 
 var ErrUnknownOpcode = errors.New("unknown opcode")
