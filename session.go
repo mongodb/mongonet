@@ -20,6 +20,7 @@ type Session struct {
 	logger *slogger.Logger
 
 	SSLServerName string
+	tlsConn       *tls.Conn
 }
 
 var ErrUnknownOpcode = errors.New("unknown opcode")
@@ -27,6 +28,10 @@ var ErrUnknownOpcode = errors.New("unknown opcode")
 // ------------------
 func (s *Session) Connection() io.ReadWriteCloser {
 	return s.conn
+}
+
+func (s *Session) GetTLSConnection() *tls.Conn {
+	return s.tlsConn
 }
 
 func (s *Session) Logf(level slogger.Level, messageFmt string, args ...interface{}) (*slogger.Log, []error) {
@@ -67,6 +72,7 @@ func (s *Session) Run(conn net.Conn) {
 			s.logger.Logf(slogger.WARN, "error doing tls handshake %s", err)
 			return
 		}
+		s.tlsConn = c
 		s.SSLServerName = strings.TrimSuffix(c.ConnectionState().ServerName, ".")
 	}
 
