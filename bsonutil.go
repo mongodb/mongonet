@@ -2,10 +2,20 @@ package mongonet
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/bsoncodec"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/x/bsonx"
+)
+
+var (
+	tD           = reflect.TypeOf(primitive.D{})
+	bsonRegistry = bson.NewRegistryBuilder().
+			RegisterEncoder(tD, bsoncodec.ValueEncoderFunc(bsonx.DEncodeValue)).
+			Build()
 )
 
 type SimpleBSON struct {
@@ -13,7 +23,7 @@ type SimpleBSON struct {
 	BSON []byte
 }
 
-func SimpleBSONConvert(d interface{}) (SimpleBSON, error) {
+func OldSimpleBSONConvert(d interface{}) (SimpleBSON, error) {
 	raw, err := bson.Marshal(d)
 	if err != nil {
 		return SimpleBSON{}, err
@@ -21,8 +31,24 @@ func SimpleBSONConvert(d interface{}) (SimpleBSON, error) {
 	return SimpleBSON{int32(len(raw)), raw}, nil
 }
 
-func SimpleBSONConvertOrPanic(d interface{}) SimpleBSON {
+func OldSimpleBSONConvertOrPanic(d interface{}) SimpleBSON {
 	raw, err := bson.Marshal(d)
+	if err != nil {
+		panic(err)
+	}
+	return SimpleBSON{int32(len(raw)), raw}
+}
+
+func SimpleBSONConvert(d interface{}) (SimpleBSON, error) {
+	raw, err := bson.MarshalWithRegistry(bsonRegistry, d)
+	if err != nil {
+		return SimpleBSON{}, err
+	}
+	return SimpleBSON{int32(len(raw)), raw}, nil
+}
+
+func SimpleBSONConvertOrPanic(d interface{}) SimpleBSON {
+	raw, err := bson.MarshalWithRegistry(bsonRegistry, d)
 	if err != nil {
 		panic(err)
 	}
