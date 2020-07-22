@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/bsoncodec"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/x/bsonx"
 )
@@ -14,7 +13,7 @@ import (
 var (
 	tD           = reflect.TypeOf(primitive.D{})
 	bsonRegistry = bson.NewRegistryBuilder().
-			RegisterEncoder(tD, bsoncodec.ValueEncoderFunc(bsonx.DEncodeValue)).
+			RegisterEncoder(tD, bsonx.ReflectionFreeDEncoder).
 			Build()
 )
 
