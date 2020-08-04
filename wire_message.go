@@ -24,7 +24,7 @@ func (m *MessageMessage) IsExhaust() bool {
 }
 
 func (m *MessageMessage) Header() MessageHeader {
-	return m.header
+	return m.MsgHeader
 }
 
 func (m *MessageMessage) Serialize() []byte {
@@ -33,10 +33,10 @@ func (m *MessageMessage) Serialize() []byte {
 	for _, s := range m.Sections {
 		size += s.Size()
 	}
-	m.header.Size = size
+	m.MsgHeader.Size = size
 
 	buf := make([]byte, size)
-	m.header.WriteInto(buf)
+	m.MsgHeader.WriteInto(buf)
 
 	flags := m.FlagBits
 	flags &^= 1 // clear checksumPresent field
@@ -98,7 +98,7 @@ func (dss *DocumentSequenceSection) WriteInto(buf []byte, loc *int) {
 
 func parseMessageMessage(header MessageHeader, buf []byte) (Message, error) {
 	msg := &MessageMessage{}
-	msg.header = header
+	msg.MsgHeader = header
 
 	if len(buf) < 4 {
 		return msg, NewStackErrorf("invalid message message -- message must have a length of at least 4 bytes.")
