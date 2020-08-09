@@ -1,14 +1,16 @@
 package mongonet
 
-import "context"
-import "crypto/tls"
-import "fmt"
-import "io"
-import "net"
-import "sync"
-import "time"
+import (
+	"context"
+	"crypto/tls"
+	"fmt"
+	"io"
+	"net"
+	"sync"
+	"time"
 
-import "github.com/mongodb/slogger/v2/slogger"
+	"github.com/mongodb/slogger/v2/slogger"
+)
 
 type SyncTlsConfig struct {
 	lock      sync.RWMutex
@@ -28,12 +30,13 @@ func (s *SyncTlsConfig) getTlsConfig() *tls.Config {
 	return s.tlsConfig
 }
 
-func (s *SyncTlsConfig) setTlsConfig(sslKeys []*SSLPair, cipherSuites []uint16, minTlsVersion uint16, fallbackKeys []SSLPair) error {
+func (s *SyncTlsConfig) setTlsConfig(sslKeys []*SSLPair, cipherSuites []uint16, minTlsVersion uint16, fallbackKeys []SSLPair) (ok bool, errs []error) {
+	ok = true
 	certs := []tls.Certificate{}
 	for _, pair := range fallbackKeys {
 		cer, err := tls.LoadX509KeyPair(pair.Cert, pair.Key)
 		if err != nil {
-			return fmt.Errorf("cannot load certificate from files %s, %s. Error: %v", pair.Cert, pair.Key, err)
+			return false, append(errs, fmt.Errorf("cannot load fallback certificate from files %s, %s. Error: %v", pair.Cert, pair.Key, err))
 		}
 		certs = append(certs, cer)
 	}
@@ -41,7 +44,9 @@ func (s *SyncTlsConfig) setTlsConfig(sslKeys []*SSLPair, cipherSuites []uint16, 
 	for _, pair := range sslKeys {
 		cer, err := tls.X509KeyPair([]byte(pair.Cert), []byte(pair.Key))
 		if err != nil {
-			return fmt.Errorf("cannot construct certificate %v", err)
+			ok = false
+			errs = append(errs, fmt.Errorf("cannot parse certificate %v. err=%v", pair.Id, err))
+			continue
 		}
 		certs = append(certs, cer)
 	}
@@ -62,7 +67,7 @@ func (s *SyncTlsConfig) setTlsConfig(sslKeys []*SSLPair, cipherSuites []uint16, 
 	defer s.lock.Unlock()
 	s.tlsConfig = tlsConfig
 	s.tlsConfig.BuildNameToCertificate()
-	return nil
+	return ok, errs
 }
 
 type ServerConfig struct {
@@ -120,8 +125,8 @@ type Server struct {
 }
 
 // called by a synched method
-func (s *Server) OnSSLConfig(sslPairs []*SSLPair) {
-	s.config.SyncTlsConfig.setTlsConfig(sslPairs, s.config.CipherSuites, s.config.MinTlsVersion, s.config.SSLKeys)
+func (s *Server) OnSSLConfig(sslPairs []*SSLPair) (ok bool, errs []error) {
+	return s.config.SyncTlsConfig.setTlsConfig(sslPairs, s.config.CipherSuites, s.config.MinTlsVersion, s.config.SSLKeys)
 }
 
 func (s *Server) Run() error {

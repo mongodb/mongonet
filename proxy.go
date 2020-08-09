@@ -329,8 +329,8 @@ func (p *Proxy) Run() error {
 }
 
 // called by a syched method
-func (p *Proxy) OnSSLConfig(sslPairs []*SSLPair) {
-	p.server.OnSSLConfig(sslPairs)
+func (p *Proxy) OnSSLConfig(sslPairs []*SSLPair) (ok bool, errs []error) {
+	return p.server.OnSSLConfig(sslPairs)
 }
 
 func (p *Proxy) NewLogger(prefix string) *slogger.Logger {
