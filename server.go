@@ -36,7 +36,7 @@ func (s *SyncTlsConfig) setTlsConfig(sslKeys []*SSLPair, cipherSuites []uint16, 
 	for _, pair := range fallbackKeys {
 		cer, err := tls.LoadX509KeyPair(pair.Cert, pair.Key)
 		if err != nil {
-			return false, append(errs, fmt.Errorf("cannot load fallback certificate from files %s, %s. Error: %v", pair.Cert, pair.Key, err))
+			return false, []string{}, append(errs, fmt.Errorf("cannot load fallback certificate from files %s, %s. Error: %v", pair.Cert, pair.Key, err))
 		}
 		certs = append(certs, cer)
 	}
