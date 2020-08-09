@@ -67,7 +67,6 @@ func (s *SyncTlsConfig) setTlsConfig(sslKeys []*SSLPair, cipherSuites []uint16, 
 	defer s.lock.Unlock()
 	s.tlsConfig = tlsConfig
 	s.tlsConfig.BuildNameToCertificate()
-	var names []string
 	for key := range s.tlsConfig.NameToCertificate {
 		names = append(names, key)
 	}
