@@ -328,8 +328,8 @@ func (p *Proxy) Run() error {
 	return p.server.Run()
 }
 
-// called by a syched method
-func (p *Proxy) OnSSLConfig(sslPairs []*SSLPair) (ok bool, errs []error) {
+// called by a synched method
+func (p *Proxy) OnSSLConfig(sslPairs []*SSLPair) (ok bool, names []string, errs []error) {
 	return p.server.OnSSLConfig(sslPairs)
 }
 

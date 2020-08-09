@@ -30,7 +30,7 @@ func (s *SyncTlsConfig) getTlsConfig() *tls.Config {
 	return s.tlsConfig
 }
 
-func (s *SyncTlsConfig) setTlsConfig(sslKeys []*SSLPair, cipherSuites []uint16, minTlsVersion uint16, fallbackKeys []SSLPair) (ok bool, errs []error) {
+func (s *SyncTlsConfig) setTlsConfig(sslKeys []*SSLPair, cipherSuites []uint16, minTlsVersion uint16, fallbackKeys []SSLPair) (ok bool, names []string, errs []error) {
 	ok = true
 	certs := []tls.Certificate{}
 	for _, pair := range fallbackKeys {
@@ -67,7 +67,11 @@ func (s *SyncTlsConfig) setTlsConfig(sslKeys []*SSLPair, cipherSuites []uint16, 
 	defer s.lock.Unlock()
 	s.tlsConfig = tlsConfig
 	s.tlsConfig.BuildNameToCertificate()
-	return ok, errs
+	var names []string
+	for key := range s.tlsConfig.NameToCertificate {
+		names = append(names, key)
+	}
+	return ok, names, errs
 }
 
 type ServerConfig struct {
@@ -125,7 +129,7 @@ type Server struct {
 }
 
 // called by a synched method
-func (s *Server) OnSSLConfig(sslPairs []*SSLPair) (ok bool, errs []error) {
+func (s *Server) OnSSLConfig(sslPairs []*SSLPair) (ok bool, names []string, errs []error) {
 	return s.config.SyncTlsConfig.setTlsConfig(sslPairs, s.config.CipherSuites, s.config.MinTlsVersion, s.config.SSLKeys)
 }
 
