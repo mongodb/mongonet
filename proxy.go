@@ -206,6 +206,7 @@ func (ps *ProxySession) Close() {
 }
 
 func (ps *ProxySession) doLoop() error {
+	fmt.Printf("Reading message for Proxy (initial loop)\n")
 	m, err := ReadMessage(ps.conn)
 	if err != nil {
 		if err == io.EOF {
@@ -213,7 +214,7 @@ func (ps *ProxySession) doLoop() error {
 		}
 		return NewStackErrorf("got error reading from client: %v", err)
 	}
-	fmt.Printf("Got message: %#v\n", m)
+	fmt.Printf("Got message for Proxy: %#v\n", m)
 
 	// // TODO MONGOS: pull out $readPreference from message
 	// rp, err := GetReadPreference(m)
@@ -271,10 +272,12 @@ func (ps *ProxySession) doLoop() error {
 	if err != nil {
 		return fmt.Errorf("Error getting connection: %v", err)
 	}
+	fmt.Printf("Writing wire message to %v\n", mongoConn.Address())
 	err = mongoConn.WriteWireMessage(ctx, m.Serialize())
 	if err != nil {
 		return fmt.Errorf("Error writing wire message: %v\n", err)
 	}
+	fmt.Printf("Wrote wire message: %v\n", string(m.Serialize()))
 
 	if !m.HasResponse() {
 		return nil
@@ -283,18 +286,19 @@ func (ps *ProxySession) doLoop() error {
 	inExhaustMode := m.IsExhaust()
 
 	for {
-		var respBytes []byte
-		_, err := mongoConn.ReadWireMessage(ctx, respBytes)
+		// var respBytes []byte
+		respBytes := make([]byte, 1)
+		ret, err := mongoConn.ReadWireMessage(ctx, respBytes) // TODO: try nil here
 		if err != nil {
 			return NewStackErrorf("go error reading wire message: %v", err)
 		}
-		fmt.Printf("Read wire message: %v\n", string(respBytes))
+		fmt.Printf("Read Wire Message\n")
 
 		// TODO: consider performance enhancements here
 		// i.e. now the ReadMessage doesn't have to Read bytes,
 		// since we know that the result of ReadWireMessage is
 		// perfectly formed, so can just slice off bytes
-		respBytesReader := bytes.NewReader(respBytes)
+		respBytesReader := bytes.NewReader(ret)
 		resp, err := ReadMessage(respBytesReader)
 
 		/* OLD IMPL
@@ -317,7 +321,7 @@ func (ps *ProxySession) doLoop() error {
 			return NewStackErrorf("got error reading response from mongo %v", err)
 		}
 
-		fmt.Println("Read Message")
+		fmt.Printf("Read Message. Got: %v\n", resp)
 
 		if respInter != nil {
 			resp, err = respInter.InterceptMongoToClient(resp)
@@ -333,7 +337,7 @@ func (ps *ProxySession) doLoop() error {
 			return NewStackErrorf("got error sending response to client %v", err)
 		}
 
-		fmt.Println("Sent Message")
+		fmt.Printf("Sent Message to User\n")
 
 		if ps.interceptor != nil {
 			ps.interceptor.TrackResponse(resp.Header())
