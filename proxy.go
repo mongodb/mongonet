@@ -202,7 +202,7 @@ func (ps *ProxySession) respondWithError(clientMessage Message, err error) error
 }
 
 func (ps *ProxySession) Close() {
-	ps.interceptor.Close()
+	// ps.interceptor.Close()
 }
 
 func (ps *ProxySession) doLoop() error {
@@ -214,7 +214,7 @@ func (ps *ProxySession) doLoop() error {
 		}
 		return NewStackErrorf("got error reading from client: %v", err)
 	}
-	fmt.Printf("Got message for Proxy: %#v\n", m)
+	fmt.Printf("Got message for Proxy: %v\n", string(m.Serialize()))
 
 	// // TODO MONGOS: pull out $readPreference from message
 	// rp, err := GetReadPreference(m)
@@ -255,11 +255,11 @@ func (ps *ProxySession) doLoop() error {
 	// INSTEAD:
 	// We want to select a server, grab a connection, and write raw bytes to it
 
+	fmt.Printf("Getting topology\n")
+
 	ctx := context.Background()
 	var t *topology.Topology = ps.proxy.mongoClient.GetTopology() // DRIVER TEAM ASK
-	if err := t.Connect(); err != nil {
-		return fmt.Errorf("Error connecting topology: %v\n", err)
-	}
+	fmt.Printf("Running selectServer\n")
 
 	// For now, always do Primary (since single server)
 	// Future -- pass in whatever we grabbed from message.
@@ -273,6 +273,7 @@ func (ps *ProxySession) doLoop() error {
 		return fmt.Errorf("Error getting connection: %v", err)
 	}
 	fmt.Printf("Writing wire message to %v\n", mongoConn.Address())
+
 	err = mongoConn.WriteWireMessage(ctx, m.Serialize())
 	if err != nil {
 		return fmt.Errorf("Error writing wire message: %v\n", err)
@@ -286,9 +287,7 @@ func (ps *ProxySession) doLoop() error {
 	inExhaustMode := m.IsExhaust()
 
 	for {
-		// var respBytes []byte
-		respBytes := make([]byte, 1)
-		ret, err := mongoConn.ReadWireMessage(ctx, respBytes) // TODO: try nil here
+		ret, err := mongoConn.ReadWireMessage(ctx, nil)
 		if err != nil {
 			return NewStackErrorf("go error reading wire message: %v", err)
 		}
@@ -300,28 +299,14 @@ func (ps *ProxySession) doLoop() error {
 		// perfectly formed, so can just slice off bytes
 		respBytesReader := bytes.NewReader(ret)
 		resp, err := ReadMessage(respBytesReader)
-
-		/* OLD IMPL
-		pooledConn, err := ps.proxy.connPool.Get()
-		if err != nil {
-			return NewStackErrorf("cannot get connection to mongo %v", err)
-		}
-
-		if pooledConn.closed {
-			panic("oh no!")
-		}
-		mongoConn := pooledConn.conn
-		resp, err := ReadMessage(mongoConn)
-		*/
 		if err != nil {
 			if err == io.EOF {
-				fmt.Printf("EOF error from ReadMessage\n")
 				return err
 			}
 			return NewStackErrorf("got error reading response from mongo %v", err)
 		}
 
-		fmt.Printf("Read Message. Got: %v\n", resp)
+		fmt.Printf("Read Message. Got: %v\n", string(resp.Serialize()))
 
 		if respInter != nil {
 			resp, err = respInter.InterceptMongoToClient(resp)
@@ -330,14 +315,12 @@ func (ps *ProxySession) doLoop() error {
 			}
 		}
 
-		fmt.Println("Did respInter")
-
 		err = SendMessage(resp, ps.conn)
 		if err != nil {
 			return NewStackErrorf("got error sending response to client %v", err)
 		}
 
-		fmt.Printf("Sent Message to User\n")
+		fmt.Printf("Sent Message to User: %v\n", string(resp.Serialize()))
 
 		if ps.interceptor != nil {
 			ps.interceptor.TrackResponse(resp.Header())
@@ -363,19 +346,20 @@ func (ps *ProxySession) doLoop() error {
 	}
 }
 
-func NewProxy(pc ProxyConfig) Proxy {
-	fmt.Printf("Address: %v\n", pc.MongoAddress())
-	// mongoClient, err := mongo.NewClient(options.Client().ApplyURI(pc.MongoAddress()))
-	mongoClient, err := mongo.NewClient(options.Client().ApplyURI(fmt.Sprintf("mongodb://127.0.0.1:%d", 27017)))
+func NewProxy(pc ProxyConfig) (Proxy, error) {
+	mongoClient, err := mongo.NewClient(options.Client().ApplyURI(fmt.Sprintf("mongodb://%v", pc.MongoAddress())))
 	if err != nil {
-		fmt.Printf("ERror: %v\n", err)
+		return Proxy{}, NewStackErrorf("error getting driver client for %v", pc.MongoAddress())
+	}
+	if err := mongoClient.Connect(context.Background()); err != nil {
+		return Proxy{}, NewStackErrorf("error connecting to driver client: %v\n", err)
 	}
 
 	p := Proxy{pc, NewConnectionPool(pc.MongoAddress(), pc.MongoSSL, pc.MongoRootCAs, pc.MongoSSLSkipVerify, pc.ConnectionPoolHook), nil, nil, mongoClient}
 
 	p.logger = p.NewLogger("proxy")
 
-	return p
+	return p, nil
 }
 
 func (p *Proxy) InitializeServer() {

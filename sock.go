@@ -3,6 +3,7 @@ package mongonet
 import (
 	"fmt"
 	"io"
+	// "go.mongodb.org/mongo-driver/bson"
 )
 
 const MaxInt32 = 2147483647
@@ -70,6 +71,14 @@ func ReadMessage(reader io.Reader) (Message, error) {
 	header.OpCode = readInt32(restBuf[8:])
 
 	body := restBuf[12:]
+
+	// fmt.Printf("Body 30: %v\n", string(body[30:]))
+	// fmt.Printf("Body 40: %v\n", string(body[40:]))
+	// var res map[string]interface{}
+	// if err := bson.Unmarshal(body, &res); err != nil {
+	// 	return nil, err
+	// }
+	// fmt.Printf("res: %#v\n", res)
 
 	switch header.OpCode {
 	case OP_REPLY:
