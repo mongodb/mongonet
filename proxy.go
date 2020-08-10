@@ -1,13 +1,20 @@
 package mongonet
 
 import (
+	"bytes"
+	"context"
 	"fmt"
+	"go.mongodb.org/mongo-driver/mongo/options"
 	"io"
 	"net"
 	"time"
 
 	"github.com/mongodb/slogger/v2/slogger"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/readpref"
+	"go.mongodb.org/mongo-driver/x/mongo/driver/description"
+	"go.mongodb.org/mongo-driver/x/mongo/driver/topology"
 )
 
 type Proxy struct {
@@ -16,6 +23,8 @@ type Proxy struct {
 	server   *Server
 
 	logger *slogger.Logger
+
+	mongoClient *mongo.Client
 }
 
 type ProxySession struct {
@@ -103,11 +112,12 @@ func (ps *ProxySession) Stats() bson.D {
 func (ps *ProxySession) DoLoopTemp() {
 	var err error
 	for {
-		ps.pooledConn, err = ps.doLoop(ps.pooledConn)
+		err = ps.doLoop()
+		// ps.pooledConn, err = ps.doLoop(ps.pooledConn)
 		if err != nil {
-			if ps.pooledConn != nil {
-				ps.pooledConn.Close()
-			}
+			// if ps.pooledConn != nil {
+			// 	ps.pooledConn.Close()
+			// }
 			if err != io.EOF {
 				ps.logger.Logf(slogger.WARN, "error doing loop: %v", err)
 			}
@@ -115,9 +125,9 @@ func (ps *ProxySession) DoLoopTemp() {
 		}
 	}
 
-	if ps.pooledConn != nil {
-		ps.pooledConn.Close()
-	}
+	// if ps.pooledConn != nil {
+	// 	ps.pooledConn.Close()
+	// }
 }
 
 func (ps *ProxySession) respondWithError(clientMessage Message, err error) error {
@@ -195,14 +205,19 @@ func (ps *ProxySession) Close() {
 	ps.interceptor.Close()
 }
 
-func (ps *ProxySession) doLoop(pooledConn *PooledConnection) (*PooledConnection, error) {
+func (ps *ProxySession) doLoop() error {
 	m, err := ReadMessage(ps.conn)
 	if err != nil {
 		if err == io.EOF {
-			return pooledConn, err
+			return err
 		}
-		return pooledConn, NewStackErrorf("got error reading from client: %v", err)
+		return NewStackErrorf("got error reading from client: %v", err)
 	}
+	fmt.Printf("Got message: %#v\n", m)
+
+	// // TODO MONGOS: pull out $readPreference from message
+	// rp, err := GetReadPreference(m)
+	// if err ...
 
 	var respInter ResponseInterceptor
 	if ps.interceptor != nil {
@@ -211,99 +226,148 @@ func (ps *ProxySession) doLoop(pooledConn *PooledConnection) (*PooledConnection,
 		m, respInter, err = ps.interceptor.InterceptClientToMongo(m)
 		if err != nil {
 			if m == nil {
-				if pooledConn != nil {
-					pooledConn.Close()
-				}
-				return nil, err
+				return err
 			}
 			if !m.HasResponse() {
 				// we can't respond, so we just fail
-				return pooledConn, err
+				return err
 			}
 			err = ps.RespondWithError(m, err)
 			if err != nil {
-				return pooledConn, NewStackErrorf("couldn't send error response to client %v", err)
+				return NewStackErrorf("couldn't send error response to client %v", err)
 			}
-			return pooledConn, nil
+			return nil
 		}
 		if m == nil {
 			// already responded
-			return pooledConn, nil
+			return nil
 		}
 	}
 
-	if pooledConn == nil {
-		pooledConn, err = ps.proxy.connPool.Get()
-		if err != nil {
-			return nil, NewStackErrorf("cannot get connection to mongo %v", err)
-		}
+	// COULD DO:
+	// r, err := mongoClient.RunCommand({ insert: 1 }, rp)
+	//
+	// Don't want this because there would be performance costs to unmarshalling/marshalling BSON!
+	// There are special rules for the `RunCommand` helper, it may not support passing in all the
+	// options you want to pass
+
+	// INSTEAD:
+	// We want to select a server, grab a connection, and write raw bytes to it
+
+	ctx := context.Background()
+	var t *topology.Topology = ps.proxy.mongoClient.GetTopology() // DRIVER TEAM ASK
+	if err := t.Connect(); err != nil {
+		return fmt.Errorf("Error connecting topology: %v\n", err)
 	}
 
-	if pooledConn.closed {
-		panic("oh no!")
-	}
-	mongoConn := pooledConn.conn
-
-	err = SendMessage(m, mongoConn)
+	// For now, always do Primary (since single server)
+	// Future -- pass in whatever we grabbed from message.
+	rp := description.ReadPrefSelector(readpref.Primary())
+	s, err := t.SelectServer(ctx, rp)
 	if err != nil {
-		pooledConn.bad = true
-		return pooledConn, NewStackErrorf("error writing to mongo: %v", err)
+		return fmt.Errorf("Error selecting server : %v", err)
+	}
+	mongoConn, err := s.Connection(ctx)
+	if err != nil {
+		return fmt.Errorf("Error getting connection: %v", err)
+	}
+	err = mongoConn.WriteWireMessage(ctx, m.Serialize())
+	if err != nil {
+		return fmt.Errorf("Error writing wire message: %v\n", err)
 	}
 
 	if !m.HasResponse() {
-		return pooledConn, nil
+		return nil
 	}
-
-	defer pooledConn.Close()
 
 	inExhaustMode := m.IsExhaust()
 
 	for {
-		resp, err := ReadMessage(mongoConn)
+		var respBytes []byte
+		_, err := mongoConn.ReadWireMessage(ctx, respBytes)
 		if err != nil {
-			pooledConn.bad = true
-			return nil, NewStackErrorf("got error reading response from mongo %v", err)
+			return NewStackErrorf("go error reading wire message: %v", err)
 		}
+		fmt.Printf("Read wire message: %v\n", string(respBytes))
+
+		// TODO: consider performance enhancements here
+		// i.e. now the ReadMessage doesn't have to Read bytes,
+		// since we know that the result of ReadWireMessage is
+		// perfectly formed, so can just slice off bytes
+		respBytesReader := bytes.NewReader(respBytes)
+		resp, err := ReadMessage(respBytesReader)
+
+		/* OLD IMPL
+		pooledConn, err := ps.proxy.connPool.Get()
+		if err != nil {
+			return NewStackErrorf("cannot get connection to mongo %v", err)
+		}
+
+		if pooledConn.closed {
+			panic("oh no!")
+		}
+		mongoConn := pooledConn.conn
+		resp, err := ReadMessage(mongoConn)
+		*/
+		if err != nil {
+			if err == io.EOF {
+				fmt.Printf("EOF error from ReadMessage\n")
+				return err
+			}
+			return NewStackErrorf("got error reading response from mongo %v", err)
+		}
+
+		fmt.Println("Read Message")
 
 		if respInter != nil {
 			resp, err = respInter.InterceptMongoToClient(resp)
 			if err != nil {
-				return nil, NewStackErrorf("error intercepting message %v", err)
+				return NewStackErrorf("error intercepting message %v", err)
 			}
 		}
 
+		fmt.Println("Did respInter")
+
 		err = SendMessage(resp, ps.conn)
 		if err != nil {
-			pooledConn.bad = true
-			return nil, NewStackErrorf("got error sending response to client %v", err)
+			return NewStackErrorf("got error sending response to client %v", err)
 		}
+
+		fmt.Println("Sent Message")
 
 		if ps.interceptor != nil {
 			ps.interceptor.TrackResponse(resp.Header())
 		}
 
 		if !inExhaustMode {
-			return nil, nil
+			return nil
 		}
 
 		switch r := resp.(type) {
 		case *ReplyMessage:
 			if r.CursorId == 0 {
-				return nil, nil
+				return nil
 			}
 		case *MessageMessage:
 			if !r.HasMoreToCome() {
 				// moreToCome wasn't set - stop the loop
-				return nil, nil
+				return nil
 			}
 		default:
-			return nil, NewStackErrorf("bad response type from server %T", r)
+			return NewStackErrorf("bad response type from server %T", r)
 		}
 	}
 }
 
 func NewProxy(pc ProxyConfig) Proxy {
-	p := Proxy{pc, NewConnectionPool(pc.MongoAddress(), pc.MongoSSL, pc.MongoRootCAs, pc.MongoSSLSkipVerify, pc.ConnectionPoolHook), nil, nil}
+	fmt.Printf("Address: %v\n", pc.MongoAddress())
+	// mongoClient, err := mongo.NewClient(options.Client().ApplyURI(pc.MongoAddress()))
+	mongoClient, err := mongo.NewClient(options.Client().ApplyURI(fmt.Sprintf("mongodb://127.0.0.1:%d", 27017)))
+	if err != nil {
+		fmt.Printf("ERror: %v\n", err)
+	}
+
+	p := Proxy{pc, NewConnectionPool(pc.MongoAddress(), pc.MongoSSL, pc.MongoRootCAs, pc.MongoSSLSkipVerify, pc.ConnectionPoolHook), nil, nil, mongoClient}
 
 	p.logger = p.NewLogger("proxy")
 

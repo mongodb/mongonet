@@ -1,6 +1,9 @@
 package mongonet
 
-import "io"
+import (
+	"fmt"
+	"io"
+)
 
 const MaxInt32 = 2147483647
 
@@ -21,15 +24,18 @@ func sendBytes(writer io.Writer, buf []byte) error {
 }
 
 func ReadMessage(reader io.Reader) (Message, error) {
+	fmt.Printf("Starting readMessage:: %#v\n", reader)
 	// read header
 	sizeBuf := make([]byte, 4)
 	n, err := reader.Read(sizeBuf)
 	if err != nil {
+		fmt.Printf("Got error from ReadMessage: %v\n", err)
 		return nil, err
 	}
 	if n != 4 {
 		return nil, NewStackErrorf("didn't read message size from socket, got %d", n)
 	}
+	fmt.Println("0")
 
 	header := MessageHeader{}
 
@@ -42,10 +48,14 @@ func ReadMessage(reader io.Reader) (Message, error) {
 		return nil, NewStackErrorf("message too big %d", header.Size)
 	}
 
+	fmt.Println("1")
+
 	if header.Size-4 < 0 || header.Size-4 > MaxInt32 {
 		return nil, NewStackErrorf("message header has invalid size (%v).", header.Size)
 	}
 	restBuf := make([]byte, header.Size-4)
+
+	fmt.Println("2")
 
 	for read := 0; int32(read) < header.Size-4; {
 		n, err := reader.Read(restBuf[read:])

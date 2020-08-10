@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 
 	"github.com/mongodb/mongonet"
 )
@@ -25,6 +26,6 @@ func main() {
 
 	err := proxy.Run()
 	if err != nil {
-		panic(err)
+		fmt.Printf("Error running proxy: %v", err)
 	}
 }
