@@ -61,7 +61,7 @@ func (s *SyncTlsConfig) setTlsConfig(sslKeys []*SSLPair, cipherSuites []uint16, 
 		tlsConfig.CipherSuites = cipherSuites
 	}
 
-	tlsConfig.ClientAuth = tls.RequestClientCert
+	tlsConfig.ClientAuth = tls.NoClientCert
 
 	s.lock.Lock()
 	defer s.lock.Unlock()
