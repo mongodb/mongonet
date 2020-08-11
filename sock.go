@@ -1,10 +1,6 @@
 package mongonet
 
-import (
-	"fmt"
-	"io"
-	// "go.mongodb.org/mongo-driver/bson"
-)
+import "io"
 
 const MaxInt32 = 2147483647
 
@@ -29,7 +25,6 @@ func ReadMessage(reader io.Reader) (Message, error) {
 	sizeBuf := make([]byte, 4)
 	n, err := reader.Read(sizeBuf)
 	if err != nil {
-		fmt.Printf("Got error from ReadMessage: %v\n", err)
 		return nil, err
 	}
 	if n != 4 {
@@ -71,14 +66,6 @@ func ReadMessage(reader io.Reader) (Message, error) {
 	header.OpCode = readInt32(restBuf[8:])
 
 	body := restBuf[12:]
-
-	// fmt.Printf("Body 30: %v\n", string(body[30:]))
-	// fmt.Printf("Body 40: %v\n", string(body[40:]))
-	// var res map[string]interface{}
-	// if err := bson.Unmarshal(body, &res); err != nil {
-	// 	return nil, err
-	// }
-	// fmt.Printf("res: %#v\n", res)
 
 	switch header.OpCode {
 	case OP_REPLY:

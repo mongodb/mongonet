@@ -209,7 +209,7 @@ func (ps *ProxySession) Close() {
 }
 
 func (ps *ProxySession) doLoop() error {
-	fmt.Printf("Reading message for Proxy (initial loop)\n")
+	// Read message from user
 	m, err := ReadMessage(ps.conn)
 	if err != nil {
 		if err == io.EOF {
@@ -217,9 +217,8 @@ func (ps *ProxySession) doLoop() error {
 		}
 		return NewStackErrorf("got error reading from client: %v", err)
 	}
-	fmt.Printf("Got message for Proxy: %v\n", string(m.Serialize()))
 
-	// // TODO MONGOS: pull out $readPreference from message
+	// TODO FOR MONGOS: pull out $readPreference from message
 	// rp, err := GetReadPreference(m)
 	// if err ...
 
@@ -252,40 +251,33 @@ func (ps *ProxySession) doLoop() error {
 	// r, err := mongoClient.RunCommand({ insert: 1 }, rp)
 	//
 	// Don't want this because there would be performance costs to unmarshalling/marshalling BSON!
-	// There are special rules for the `RunCommand` helper, it may not support passing in all the
-	// options you want to pass
+	// Also, there are special rules for the `RunCommand` helper, it may not support passing in all the
+	// options we want to pass
 
 	// INSTEAD:
 	// We want to select a server, grab a connection, and write raw bytes to it
-
-	fmt.Printf("Getting topology\n")
-
 	ctx := context.Background()
 	var topo *topology.Topology = extractTopology(ps.proxy.mongoClient)
-	fmt.Printf("Running selectServer\n")
 
 	// For now, always do Primary (since single server)
-	// Future -- pass in whatever we grabbed from message.
+	// TODO FOR MONGOS -- pass in whatever we grabbed from message.
 	server, err := topo.SelectServer(ctx, description.ReadPrefSelector(readpref.Primary()))
 	if err != nil {
 		// Use context.Background to ensure client is properly disconnected even if ctx has expired.
 		_ = ps.proxy.mongoClient.Disconnect(context.Background())
 		return err
 	}
-
-	fmt.Printf("Getting connection\n")
 	mongoConn, err := server.Connection(ctx)
 	if err != nil {
 		return fmt.Errorf("Error getting connection: %v", err)
 	}
 	defer mongoConn.Close()
-	fmt.Printf("Writing wire message to %v\n", mongoConn.Address())
 
+	// Send message to mongo
 	err = mongoConn.WriteWireMessage(ctx, m.Serialize())
 	if err != nil {
 		return fmt.Errorf("Error writing wire message: %v\n", err)
 	}
-	fmt.Printf("Wrote wire message: %v\n", string(m.Serialize()))
 
 	if !m.HasResponse() {
 		return nil
@@ -294,13 +286,13 @@ func (ps *ProxySession) doLoop() error {
 	inExhaustMode := m.IsExhaust()
 
 	for {
+		// Read message back from mongo
 		ret, err := mongoConn.ReadWireMessage(ctx, nil)
 		if err != nil {
 			return NewStackErrorf("go error reading wire message: %v", err)
 		}
-		fmt.Printf("Read Wire Message\n")
 
-		// TODO: consider performance enhancements here
+		// TODO: will def need performance enhancements here
 		// i.e. now the ReadMessage doesn't have to Read bytes,
 		// since we know that the result of ReadWireMessage is
 		// perfectly formed, so can just slice off bytes
@@ -313,8 +305,6 @@ func (ps *ProxySession) doLoop() error {
 			return NewStackErrorf("got error reading response from mongo %v", err)
 		}
 
-		fmt.Printf("Read Message. Got: %v\n", string(resp.Serialize()))
-
 		if respInter != nil {
 			resp, err = respInter.InterceptMongoToClient(resp)
 			if err != nil {
@@ -322,12 +312,11 @@ func (ps *ProxySession) doLoop() error {
 			}
 		}
 
+		// Send message back to user
 		err = SendMessage(resp, ps.conn)
 		if err != nil {
 			return NewStackErrorf("got error sending response to client %v", err)
 		}
-
-		fmt.Printf("Sent Message to User: %v\n", string(resp.Serialize()))
 
 		if ps.interceptor != nil {
 			ps.interceptor.TrackResponse(resp.Header())
@@ -361,21 +350,7 @@ func extractTopology(c *mongo.Client) *topology.Topology {
 }
 
 func NewProxy(pc ProxyConfig) (Proxy, error) {
-	ctx := context.Background()
-	// opts := options.Client().ApplyURI(fmt.Sprintf("mongodb://host1.local.10gen.cc:27017,mongodb://host2.local.10gen.cc:27019/?replicaSet=a"))
-	clientOpts := options.Client().ApplyURI("mongodb://host1.local.10gen.cc:27000,host2.local.10gen.cc:27010,host3.local.10gen.cc:27020/admin?replicaSet=proxytest").
-		SetDirect(true)
-
-	tlsConfig := &tls.Config{RootCAs: pc.MongoRootCAs}
-	clientOpts.SetTLSConfig(tlsConfig)
-	auth := options.Credential{
-		Username:    "u",
-		AuthSource:  "admin",
-		Password:    "p",
-		PasswordSet: true,
-	}
-	clientOpts.SetAuth(auth)
-	mongoClient, err := mongo.Connect(ctx, clientOpts)
+	mongoClient, err := getMongoClient(pc)
 	if err != nil {
 		return Proxy{}, NewStackErrorf("error getting driver client for %v: %v", pc.MongoAddress(), err)
 	}
@@ -385,6 +360,21 @@ func NewProxy(pc ProxyConfig) (Proxy, error) {
 	p.logger = p.NewLogger("proxy")
 
 	return p, nil
+}
+
+func getMongoClient(pc ProxyConfig) (*mongo.Client, error) {
+	clientOpts := options.Client().ApplyURI("mongodb://host1.local.10gen.cc:27000,host2.local.10gen.cc:27010,host3.local.10gen.cc:27020/admin?replicaSet=proxytest").
+		SetDirect(true)
+	tlsConfig := &tls.Config{RootCAs: pc.MongoRootCAs}
+	clientOpts.SetTLSConfig(tlsConfig)
+	auth := options.Credential{
+		Username:    "u",
+		AuthSource:  "admin",
+		Password:    "p",
+		PasswordSet: true,
+	}
+	clientOpts.SetAuth(auth)
+	return mongo.Connect(context.TODO(), clientOpts)
 }
 
 func (p *Proxy) InitializeServer() {

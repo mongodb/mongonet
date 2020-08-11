@@ -72,9 +72,9 @@ func parseQueryMessage(header MessageHeader, buf []byte) (Message, error) {
 	qm.NReturn = readInt32(buf[loc:])
 	loc += 4
 
-	// NOTE: this will wreck performance because you are going to unmarshal/marshal BSON
 	// Remove client metadata
-	// TODO: Need to figure out a new client metadata solution
+	// TODO: This would wreck performance (unmarshalling/marshalling BSON).
+	// Should lift the more performant way from Divjot's code
 	var m map[string]interface{}
 	if err := bson.Unmarshal(buf[loc:], &m); err != nil {
 		return nil, err
