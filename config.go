@@ -10,6 +10,7 @@ import (
 type SSLPair struct {
 	Cert string `json:"cert"`
 	Key  string `json:"key"`
+	Id   string
 }
 
 type ProxyConfig struct {

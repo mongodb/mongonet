@@ -3,11 +3,14 @@ package mongonet
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"fmt"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"io"
 	"net"
+	"reflect"
 	"time"
+	"unsafe"
 
 	"github.com/mongodb/slogger/v2/slogger"
 	"go.mongodb.org/mongo-driver/bson"
@@ -258,20 +261,24 @@ func (ps *ProxySession) doLoop() error {
 	fmt.Printf("Getting topology\n")
 
 	ctx := context.Background()
-	var t *topology.Topology = ps.proxy.mongoClient.GetTopology() // DRIVER TEAM ASK
+	var topo *topology.Topology = extractTopology(ps.proxy.mongoClient)
 	fmt.Printf("Running selectServer\n")
 
 	// For now, always do Primary (since single server)
 	// Future -- pass in whatever we grabbed from message.
-	rp := description.ReadPrefSelector(readpref.Primary())
-	s, err := t.SelectServer(ctx, rp)
+	server, err := topo.SelectServer(ctx, description.ReadPrefSelector(readpref.Primary()))
 	if err != nil {
-		return fmt.Errorf("Error selecting server : %v", err)
+		// Use context.Background to ensure client is properly disconnected even if ctx has expired.
+		_ = ps.proxy.mongoClient.Disconnect(context.Background())
+		return err
 	}
-	mongoConn, err := s.Connection(ctx)
+
+	fmt.Printf("Getting connection\n")
+	mongoConn, err := server.Connection(ctx)
 	if err != nil {
 		return fmt.Errorf("Error getting connection: %v", err)
 	}
+	defer mongoConn.Close()
 	fmt.Printf("Writing wire message to %v\n", mongoConn.Address())
 
 	err = mongoConn.WriteWireMessage(ctx, m.Serialize())
@@ -346,13 +353,31 @@ func (ps *ProxySession) doLoop() error {
 	}
 }
 
+func extractTopology(c *mongo.Client) *topology.Topology {
+	e := reflect.ValueOf(c).Elem()
+	d := e.FieldByName("deployment")
+	d = reflect.NewAt(d.Type(), unsafe.Pointer(d.UnsafeAddr())).Elem() // #nosec G103
+	return d.Interface().(*topology.Topology)
+}
+
 func NewProxy(pc ProxyConfig) (Proxy, error) {
-	mongoClient, err := mongo.NewClient(options.Client().ApplyURI(fmt.Sprintf("mongodb://%v", pc.MongoAddress())))
-	if err != nil {
-		return Proxy{}, NewStackErrorf("error getting driver client for %v", pc.MongoAddress())
+	ctx := context.Background()
+	// opts := options.Client().ApplyURI(fmt.Sprintf("mongodb://host1.local.10gen.cc:27017,mongodb://host2.local.10gen.cc:27019/?replicaSet=a"))
+	clientOpts := options.Client().ApplyURI("mongodb://host1.local.10gen.cc:27000,host2.local.10gen.cc:27010,host3.local.10gen.cc:27020/admin?replicaSet=proxytest").
+		SetDirect(true)
+
+	tlsConfig := &tls.Config{RootCAs: pc.MongoRootCAs}
+	clientOpts.SetTLSConfig(tlsConfig)
+	auth := options.Credential{
+		Username:    "u",
+		AuthSource:  "admin",
+		Password:    "p",
+		PasswordSet: true,
 	}
-	if err := mongoClient.Connect(context.Background()); err != nil {
-		return Proxy{}, NewStackErrorf("error connecting to driver client: %v\n", err)
+	clientOpts.SetAuth(auth)
+	mongoClient, err := mongo.Connect(ctx, clientOpts)
+	if err != nil {
+		return Proxy{}, NewStackErrorf("error getting driver client for %v: %v", pc.MongoAddress(), err)
 	}
 
 	p := Proxy{pc, NewConnectionPool(pc.MongoAddress(), pc.MongoSSL, pc.MongoRootCAs, pc.MongoSSLSkipVerify, pc.ConnectionPoolHook), nil, nil, mongoClient}
@@ -380,9 +405,9 @@ func (p *Proxy) Run() error {
 	return p.server.Run()
 }
 
-// called by a syched method
-func (p *Proxy) OnSSLConfig(sslPairs []*SSLPair) {
-	p.server.OnSSLConfig(sslPairs)
+// called by a synched method
+func (p *Proxy) OnSSLConfig(sslPairs []*SSLPair) (ok bool, names []string, errs []error) {
+	return p.server.OnSSLConfig(sslPairs)
 }
 
 func (p *Proxy) NewLogger(prefix string) *slogger.Logger {

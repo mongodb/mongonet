@@ -9,9 +9,9 @@ import (
 
 func main() {
 
-	bindHost := flag.String("host", "127.0.0.1", "what to bind to")
+	bindHost := flag.String("host", "host.local.10gen.cc", "what to bind to")
 	bindPort := flag.Int("port", 9999, "what to bind to")
-	mongoHost := flag.String("mongoHost", "127.0.0.1", "host mongo is on")
+	mongoHost := flag.String("mongoHost", "host1.local.10gen.cc", "host mongo is on")
 	mongoPort := flag.Int("mongoPort", 27017, "port mongo is on")
 
 	flag.Parse()

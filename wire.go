@@ -138,7 +138,7 @@ type CommandReplyMessage struct {
 // OP_MSG
 // Note that checksum is not implemented
 type MessageMessage struct {
-	header MessageHeader
+	MsgHeader MessageHeader
 
 	FlagBits int32
 	Sections []MessageMessageSection

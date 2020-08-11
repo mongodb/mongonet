@@ -97,7 +97,7 @@ func main() {
 	}
 
 	pc.SSLKeys = []mongonet.SSLPair{
-		{flag.Arg(0), flag.Arg(1)},
+		{flag.Arg(0), flag.Arg(1), "fallback"},
 	}
 
 	pc.InterceptorFactory = &MyFactory{}
