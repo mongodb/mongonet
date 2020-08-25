@@ -3,7 +3,7 @@ package mongonet
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
+	// "crypto/tls"
 	"fmt"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"io"
@@ -116,11 +116,10 @@ func (ps *ProxySession) DoLoopTemp() {
 	var err error
 	for {
 		err = ps.doLoop()
-		// ps.pooledConn, err = ps.doLoop(ps.pooledConn)
 		if err != nil {
-			// if ps.pooledConn != nil {
-			// 	ps.pooledConn.Close()
-			// }
+			if ps.pooledConn != nil {
+				ps.pooledConn.Close()
+			}
 			if err != io.EOF {
 				ps.logger.Logf(slogger.WARN, "error doing loop: %v", err)
 			}
@@ -128,9 +127,9 @@ func (ps *ProxySession) DoLoopTemp() {
 		}
 	}
 
-	// if ps.pooledConn != nil {
-	// 	ps.pooledConn.Close()
-	// }
+	if ps.pooledConn != nil {
+		ps.pooledConn.Close()
+	}
 }
 
 func (ps *ProxySession) respondWithError(clientMessage Message, err error) error {
@@ -218,10 +217,6 @@ func (ps *ProxySession) doLoop() error {
 		return NewStackErrorf("got error reading from client: %v", err)
 	}
 
-	// TODO FOR MONGOS: pull out $readPreference from message
-	// rp, err := GetReadPreference(m)
-	// if err ...
-
 	var respInter ResponseInterceptor
 	if ps.interceptor != nil {
 		ps.interceptor.TrackRequest(m.Header())
@@ -259,19 +254,26 @@ func (ps *ProxySession) doLoop() error {
 	ctx := context.Background()
 	var topo *topology.Topology = extractTopology(ps.proxy.mongoClient)
 
+	// TODO FOR MONGOS: pull out $readPreference from message
+	// rp, err := GetReadPreference(m)
+	// if err ...
+
 	// For now, always do Primary (since single server)
-	// TODO FOR MONGOS -- pass in whatever we grabbed from message.
+	fmt.Println("selecting server")
 	server, err := topo.SelectServer(ctx, description.ReadPrefSelector(readpref.Primary()))
 	if err != nil {
+		fmt.Printf("Error selecting server: %v\n", err)
 		// Use context.Background to ensure client is properly disconnected even if ctx has expired.
 		_ = ps.proxy.mongoClient.Disconnect(context.Background())
 		return err
 	}
+	fmt.Printf("About to connect\n")
 	mongoConn, err := server.Connection(ctx)
 	if err != nil {
 		return fmt.Errorf("Error getting connection: %v", err)
 	}
 	defer mongoConn.Close()
+	fmt.Printf("connected\n")
 
 	// Send message to mongo
 	err = mongoConn.WriteWireMessage(ctx, m.Serialize())
@@ -363,17 +365,18 @@ func NewProxy(pc ProxyConfig) (Proxy, error) {
 }
 
 func getMongoClient(pc ProxyConfig) (*mongo.Client, error) {
-	clientOpts := options.Client().ApplyURI("mongodb://host1.local.10gen.cc:27000,host2.local.10gen.cc:27010,host3.local.10gen.cc:27020/admin?replicaSet=proxytest").
-		SetDirect(true)
-	tlsConfig := &tls.Config{RootCAs: pc.MongoRootCAs}
-	clientOpts.SetTLSConfig(tlsConfig)
-	auth := options.Credential{
-		Username:    "u",
-		AuthSource:  "admin",
-		Password:    "p",
-		PasswordSet: true,
-	}
-	clientOpts.SetAuth(auth)
+	// clientOpts := options.Client().ApplyURI("mongodb://host1.local.10gen.cc:27000,host2.local.10gen.cc:27010,host3.local.10gen.cc:27020/admin?replicaSet=proxytest").
+	// 	SetDirect(true)
+	clientOpts := options.Client().ApplyURI("mongodb://127.0.0.1:27017")
+	// tlsConfig := &tls.Config{RootCAs: pc.MongoRootCAs}
+	// clientOpts.SetTLSConfig(tlsConfig)
+	// auth := options.Credential{
+	// 	Username:    "u",
+	// 	AuthSource:  "admin",
+	// 	Password:    "p",
+	// 	PasswordSet: true,
+	// }
+	// clientOpts.SetAuth(auth)
 	return mongo.Connect(context.TODO(), clientOpts)
 }
 

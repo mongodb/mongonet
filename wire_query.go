@@ -1,9 +1,5 @@
 package mongonet
 
-import (
-	"go.mongodb.org/mongo-driver/bson"
-)
-
 func (m *QueryMessage) HasResponse() bool {
 	return true
 }
@@ -44,7 +40,6 @@ func (m *QueryMessage) Serialize() []byte {
 }
 
 func parseQueryMessage(header MessageHeader, buf []byte) (Message, error) {
-
 	qm := &QueryMessage{}
 	qm.header = header
 
@@ -72,28 +67,13 @@ func parseQueryMessage(header MessageHeader, buf []byte) (Message, error) {
 	qm.NReturn = readInt32(buf[loc:])
 	loc += 4
 
-	// Remove client metadata
-	// TODO: This would wreck performance (unmarshalling/marshalling BSON).
-	// Should lift the more performant way from Divjot's code
-	var m map[string]interface{}
-	if err := bson.Unmarshal(buf[loc:], &m); err != nil {
-		return nil, err
-	}
-	delete(m, "client")
-
-	newBuf, err := bson.Marshal(&m)
+	qm.Query, err = parseSimpleBSON(buf[loc:])
 	if err != nil {
 		return nil, err
 	}
-
-	qm.Query, err = parseSimpleBSON(newBuf[0:])
-	if err != nil {
-		return nil, err
-	}
-
-	loc = int(qm.Query.Size)
-	if loc < len(newBuf) {
-		qm.Project, err = parseSimpleBSON(newBuf[loc:])
+	loc += int(qm.Query.Size)
+	if loc < len(buf) {
+		qm.Project, err = parseSimpleBSON(buf[loc:])
 		if err != nil {
 			return nil, err
 		}
