@@ -160,6 +160,7 @@ func GetAsBSONDocs(elem bson.E) ([]bson.D, string, error) {
 // ---
 
 var DELETE_ME = fmt.Errorf("delete_me")
+var REMOVE_FIELD = fmt.Errorf("remove_field")
 
 type BSONWalkVisitor interface {
 	/**
@@ -180,6 +181,9 @@ func BSONWalkAll(doc bson.D, fieldName string, visitor BSONWalkVisitor) (bson.D,
 			if err != nil {
 				if err == DELETE_ME {
 					return nil, nil
+				}
+				if err == REMOVE_FIELD {
+					return append(current[:i], current[i+1:]...), nil
 				}
 				return nil, err
 			}
