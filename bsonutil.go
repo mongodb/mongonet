@@ -284,6 +284,7 @@ func BSONWalkHelp(doc bson.D, path []string, visitor BSONWalkVisitor, inArray bo
 		case bson.D:
 			prev = current
 			current = val
+			continue
 		case []bson.D:
 			numDeleted := 0
 
@@ -318,9 +319,6 @@ func BSONWalkHelp(doc bson.D, path []string, visitor BSONWalkVisitor, inArray bo
 			valToUse = val
 		default:
 			return doc, nil
-		}
-		if len(valToUse) == 0 {
-			continue
 		}
 		numDeleted := 0
 		for arrayOffset, subRaw := range valToUse {

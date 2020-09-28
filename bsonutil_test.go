@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-test/deep"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
@@ -392,6 +393,83 @@ func TestBSONWalkAll6(test *testing.T) {
 	if len(val3) != 0 {
 		test.Errorf("element should've been deleted %s", doc)
 	}
+}
+
+func docToRaw(doc bson.D) bson.Raw {
+	return bson.Raw(SimpleBSONConvertOrPanic(doc).BSON)
+}
+
+func TestTranslatePathsWithArrays(t *testing.T) {
+	doc := bson.D{
+		{"x", 1},
+		{"a", primitive.A{}},
+	}
+	var visitor visitorFunc = func(elem *bson.E) error {
+		elem.Value = 2
+		return nil
+	}
+
+	expected := bson.D{
+		{"x", 1},
+		{"a", primitive.A{}},
+	}
+	actual, err := translatePaths(visitor, doc, []string{"a.x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if deep.Equal(expected, actual) != nil {
+		t.Fatalf("expected %v, got %v", docToRaw(expected), docToRaw(actual))
+	}
+}
+
+// a[].b.c
+func TestTranslatePathsWithNestedBsonInArray(t *testing.T) {
+	doc := bson.D{
+		{"x", 1},
+		{"a", primitive.A{
+			bson.D{{"b", bson.D{{"c", 1}}}},
+		}},
+	}
+	var visitor visitorFunc = func(elem *bson.E) error {
+		elem.Value = 2
+		return nil
+	}
+
+	expected := bson.D{
+		{"x", 1},
+		{"a", primitive.A{
+			bson.D{{"b", bson.D{{"c", 2}}}},
+		}},
+	}
+	actual, err := translatePaths(visitor, doc, []string{"a.b.c"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if deep.Equal(expected, actual) != nil {
+		t.Fatalf("expected %v, got %v", docToRaw(expected), docToRaw(actual))
+	}
+}
+
+func translatePaths(v BSONWalkVisitor, doc bson.D, path []string) (bson.D, error) {
+	var err error
+	for _, p := range path {
+		doc, err = BSONWalk(doc, p, v)
+		if err != nil {
+			return doc, err
+		}
+	}
+	return doc, nil
+}
+
+// visitorFunc is a function implementation of BSONWalkVisitor
+type visitorFunc func(*bson.E) error
+
+var _ BSONWalkVisitor = (visitorFunc)(nil)
+
+func (vf visitorFunc) Visit(elem *bson.E) error {
+	return vf(elem)
 }
 
 func BenchmarkSimpleBSONConvertEmptyDoc(b *testing.B) {
