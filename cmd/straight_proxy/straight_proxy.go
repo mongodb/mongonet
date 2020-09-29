@@ -18,12 +18,15 @@ func main() {
 	pc := mongonet.NewProxyConfig(*bindHost, *bindPort, *mongoHost, *mongoPort)
 	pc.MongoSSLSkipVerify = true
 
-	proxy := mongonet.NewProxy(pc)
+	proxy, err := mongonet.NewProxy(pc)
+	if err != nil {
+		panic(err)
+	}
 
 	proxy.InitializeServer()
 	proxy.OnSSLConfig(nil)
 
-	err := proxy.Run()
+	err = proxy.Run()
 	if err != nil {
 		panic(err)
 	}

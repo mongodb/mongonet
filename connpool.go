@@ -1,12 +1,14 @@
 package mongonet
 
-import "crypto/tls"
-import "crypto/x509"
-import "fmt"
-import "net"
-import "sync"
-import "sync/atomic"
-import "time"
+import (
+	"crypto/tls"
+	"crypto/x509"
+	"fmt"
+	"net"
+	"sync"
+	"sync/atomic"
+	"time"
+)
 
 type PooledConnection struct {
 	conn         net.Conn
