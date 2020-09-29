@@ -6,13 +6,16 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"reflect"
 	"time"
+	"unsafe"
 
 	"github.com/mongodb/slogger/v2/slogger"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.mongodb.org/mongo-driver/x/mongo/driver"
+	"go.mongodb.org/mongo-driver/x/mongo/driver/description"
 	"go.mongodb.org/mongo-driver/x/mongo/driver/topology"
 )
 
@@ -164,9 +167,17 @@ func (ps *ProxySession) Close() {
 	ps.interceptor.Close() // TODO - see why Louisa decided to comment this out
 }
 
+func extractTopology(c *mongo.Client) *topology.Topology {
+	e := reflect.ValueOf(c).Elem()
+	d := e.FieldByName("deployment")
+	d = reflect.NewAt(d.Type(), unsafe.Pointer(d.UnsafeAddr())).Elem() // #nosec G103
+	return d.Interface().(*topology.Topology)
+}
+
 func getMongoConnection(mc *mongo.Client, ctx context.Context) (driver.Connection, error) {
 	// TODO - conn string, server options, context
-	srv, err := topology.NewServer("127.0.0.1:27017")
+	topo := extractTopology(mc)
+	srv, err := topo.FindServer(description.NewDefaultServer("127.0.0.1:27017"))
 	if err != nil {
 		return nil, err
 	}
