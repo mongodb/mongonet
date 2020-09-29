@@ -15,6 +15,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.mongodb.org/mongo-driver/x/mongo/driver"
+	"go.mongodb.org/mongo-driver/x/mongo/driver/address"
 	"go.mongodb.org/mongo-driver/x/mongo/driver/description"
 	"go.mongodb.org/mongo-driver/x/mongo/driver/topology"
 )
@@ -177,7 +178,8 @@ func extractTopology(c *mongo.Client) *topology.Topology {
 func getMongoConnection(mc *mongo.Client, ctx context.Context) (driver.Connection, error) {
 	// TODO - conn string, server options, context
 	topo := extractTopology(mc)
-	srv, err := topo.FindServer(description.NewDefaultServer("127.0.0.1:27017"))
+	s := description.Server{Addr: address.Address("localhost:27017"), Kind: description.Standalone}
+	srv, err := topo.FindServer(s)
 	if err != nil {
 		return nil, err
 	}
