@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-test/deep"
 	"github.com/mongodb/mongonet"
 	"github.com/mongodb/slogger/v2/slogger"
 	"go.mongodb.org/mongo-driver/bson"
@@ -16,12 +17,13 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-type MyServerSession struct {
+type BaseServerSession struct {
 	session *mongonet.Session
 	mydata  map[string][]bson.D
 }
 
-func (mss *MyServerSession) handleIsMaster(mm mongonet.Message) error {
+
+func (mss *BaseServerSession) handleIsMaster(mm mongonet.Message) error {
 	return mss.session.RespondToCommandMakeBSON(mm,
 		"ismaster", true,
 		"maxBsonObjectSize", 16777216,
@@ -35,19 +37,17 @@ func (mss *MyServerSession) handleIsMaster(mm mongonet.Message) error {
 	)
 }
 
-func (mss *MyServerSession) handleInsert(mm mongonet.Message, cmd bson.D, ns string) error {
-	mss.mydata[ns] = []bson.D{}
+
+func (mss *BaseServerSession) handleInsert(mm mongonet.Message, cmd bson.D, ns string) error {
+	mss.mydata[ns] = []bson.D{{{"foo", int32(17)}}}
 	return mss.session.RespondToCommandMakeBSON(mm)
 }
 
-func (mss *MyServerSession) handleEndSessions(mm mongonet.Message) error {
+func (mss *BaseServerSession) handleEndSessions(mm mongonet.Message) error {
 	return mss.session.RespondToCommandMakeBSON(mm)
 }
 
-/*
-* @return (error, <fatal>)
- */
-func (mss *MyServerSession) handleMessage(m mongonet.Message) (error, bool) {
+func (mss *BaseServerSession) handleMessage(m mongonet.Message) (error, bool) {
 
 	switch mm := m.(type) {
 	case *mongonet.QueryMessage:
@@ -164,6 +164,17 @@ func (mss *MyServerSession) handleMessage(m mongonet.Message) (error, bool) {
 		if cmdName == "insert" {
 			return mss.handleInsert(mm, cmd, ns), false
 		}
+		if cmdName == "find" {
+			ns := fmt.Sprintf("%s.%s", db, cmd[0].Value.(string)) // TODO: check type cast?
+
+			data, found := mss.mydata[ns]
+			if !found {
+				data = []bson.D{}
+			}
+			return mss.session.RespondToCommandMakeBSON(mm,
+				"cursor", bson.D{{"firstBatch", data}, {"id", int64(0)}, {"ns", ns}},
+			), false
+		}
 		if cmdName == "endSessions" {
 			return mss.handleEndSessions(mm), false
 		}
@@ -172,6 +183,14 @@ func (mss *MyServerSession) handleMessage(m mongonet.Message) (error, bool) {
 
 	return fmt.Errorf("what are you! %t", m), true
 }
+
+type MyServerSession struct {
+	*BaseServerSession
+}
+
+/*
+* @return (error, <fatal>)
+ */
 
 func (mss *MyServerSession) DoLoopTemp() {
 	for {
@@ -209,7 +228,7 @@ type MyServerTestFactory struct {
 }
 
 func (sf *MyServerTestFactory) CreateWorker(session *mongonet.Session) (mongonet.ServerWorker, error) {
-	return &MyServerSession{session, map[string][]bson.D{}}, nil
+	return &MyServerSession{&BaseServerSession{session, map[string][]bson.D{}}}, nil
 }
 
 func (sf *MyServerTestFactory) GetConnection(conn net.Conn) io.ReadWriteCloser {
@@ -251,20 +270,16 @@ func TestServer(t *testing.T) {
 	}
 	defer client.Disconnect(ctx)
 	coll := client.Database("test").Collection("bar")
-	docIn := bson.D{{"foo", 17}}
-	res, err := coll.InsertOne(ctx, docIn)
-	if err != nil {
+	docIn := bson.D{{"foo", int32(17)}}
+	if _, err = coll.InsertOne(ctx, docIn); err != nil {
 		t.Errorf("can't insert: %v", err)
 		return
 	}
-	fmt.Println(res)
-	return
-
+	
 	docOut := bson.D{}
-	fres := coll.FindOne(ctx, bson.D{})
-	fmt.Println(fres)
-	if fres.Err() != nil {
-		t.Errorf("can't find: %v", fres.Err())
+	err = coll.FindOne(ctx, bson.D{}).Decode(&docOut)
+	if err != nil {
+		t.Errorf("can't find: %v", err)
 		return
 	}
 
@@ -273,11 +288,11 @@ func TestServer(t *testing.T) {
 		return
 	}
 
-	if docIn[0] != docOut[0] {
-		t.Errorf("docs don't match\n %v\n %v\n", docIn, docOut)
+	if diff := deep.Equal(docIn[0], docOut[0]); diff != nil {
+		t.Errorf("docs don't match: %v", diff)
 		return
 	}
-
+	
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -288,7 +303,7 @@ type TestFactoryWithContext struct {
 }
 
 func (sf *TestFactoryWithContext) CreateWorkerWithContext(session *mongonet.Session, ctx *context.Context) (mongonet.ServerWorker, error) {
-	return &TestSessionWithContext{session, ctx, sf.counter}, nil
+	return &TestSessionWithContext{&BaseServerSession{session, map[string][]bson.D{}}, ctx, sf.counter}, nil
 }
 
 func (sf *TestFactoryWithContext) CreateWorker(session *mongonet.Session) (mongonet.ServerWorker, error) {
@@ -300,56 +315,9 @@ func (sf *TestFactoryWithContext) GetConnection(conn net.Conn) io.ReadWriteClose
 }
 
 type TestSessionWithContext struct {
-	session *mongonet.Session
+	*BaseServerSession
 	ctx     *context.Context
 	counter *int32
-}
-
-func (tsc *TestSessionWithContext) handleMessage(m mongonet.Message) (error, bool) {
-	switch mm := m.(type) {
-	case *mongonet.QueryMessage:
-		cmd, err := mm.Query.ToBSOND()
-		if err != nil {
-			return fmt.Errorf("error converting query to bsond: %v", err), true
-		}
-
-		if len(cmd) == 0 {
-			return fmt.Errorf("invalid command length"), true
-		}
-
-		cmdName := cmd[0].Key
-
-		if cmdName == "ismaster" || cmdName == "isMaster" {
-			return tsc.session.RespondToCommandMakeBSON(mm,
-				"ismaster", true,
-				"maxBsonObjectSize", 16777216,
-				"maxMessageSizeBytes", 48000000,
-				"maxWriteBatchSize", 100000,
-				//"localTime", ISODate("2017-12-14T17:40:28.640Z"),
-				"logicalSessionTimeoutMinutes", 30,
-				"minWireVersion", 0,
-				"maxWireVersion", 6,
-				"readOnly", false,
-			), false
-		}
-
-		if cmdName == "getnonce" {
-			return tsc.session.RespondToCommandMakeBSON(mm, "nonce", "6d32d13b13436425"), false
-		}
-
-		if cmdName == "ping" {
-			return tsc.session.RespondToCommandMakeBSON(mm), false
-		}
-
-		if cmdName == "endSessions" {
-			return tsc.session.RespondToCommandMakeBSON(mm), false
-		}
-
-		return fmt.Errorf("command (%s) not done", cmdName), true
-	}
-
-	return fmt.Errorf("error handling message"), true
-
 }
 
 func (tsc *TestSessionWithContext) DoLoopTemp() {
@@ -389,7 +357,7 @@ func (tsc *TestSessionWithContext) DoLoopTemp() {
 	}
 }
 func (tsc *TestSessionWithContext) Close() {
-	time.Sleep(5000 * time.Millisecond)
+	time.Sleep(500 * time.Millisecond)
 	atomic.AddInt32(tsc.counter, -1)
 }
 
@@ -404,12 +372,20 @@ func checkClient(opts *options.ClientOptions) error {
 	if err := client.Connect(ctx); err != nil {
 		return fmt.Errorf("cannot connect to server. err: %v", err)
 	}
-	client.Disconnect(ctx)
+	coll := client.Database("test").Collection("test")
+	docIn := bson.D{{"foo", 17}}
+	if _, err = coll.InsertOne(ctx, docIn); err != nil {
+		return err
+	}
+	err = client.Disconnect(ctx)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
 func TestServerWorkerWithContext(t *testing.T) {
-	port := 27027
+	port := 9921
 
 	var sessCtr int32
 	syncTlsConfig := mongonet.NewSyncTlsConfig()
@@ -441,11 +417,10 @@ func TestServerWorkerWithContext(t *testing.T) {
 			t.Error(err)
 		}
 	}
-
 	sessCtrCurr := atomic.LoadInt32(&sessCtr)
 
-	if sessCtrCurr != int32(10) {
-		t.Errorf("expect session counter to be 10 but got %d", sessCtrCurr)
+	if sessCtrCurr != int32(30) {
+		t.Errorf("expect session counter to be 30 but got %d", sessCtrCurr)
 	}
 
 	server.Close()
