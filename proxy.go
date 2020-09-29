@@ -179,7 +179,7 @@ func getMongoConnection(mc *mongo.Client, ctx context.Context) (driver.Connectio
 	// TODO - conn string, server options, context
 	topo := extractTopology(mc)
 	fmt.Println(topo.String())
-	s := description.Server{Addr: address.Address("localhost:27017"), Kind: description.Standalone}
+	s := description.Server{Addr: address.Address("localhost:27017")}
 	srv, err := topo.FindServer(s)
 	if err != nil {
 		return nil, err
