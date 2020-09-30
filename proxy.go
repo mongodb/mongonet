@@ -1,7 +1,6 @@
 package mongonet
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
 	"fmt"
@@ -245,12 +244,7 @@ func (ps *ProxySession) doLoop() error {
 		if err != nil {
 			return NewStackErrorf("go error reading wire message: %v", err)
 		}
-		// TODO: will def need performance enhancements here
-		// i.e. now the ReadMessage doesn't have to Read bytes,
-		// since we know that the result of ReadWireMessage is
-		// perfectly formed, so can just slice off bytes
-		respBytesReader := bytes.NewReader(ret)
-		resp, err := ReadMessage(respBytesReader)
+		resp, err := ReadMessageFromBytes(ret)
 		if err != nil {
 			if err == io.EOF {
 				return err

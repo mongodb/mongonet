@@ -20,6 +20,59 @@ func sendBytes(writer io.Writer, buf []byte) error {
 
 }
 
+func getMessage(header MessageHeader, body []byte) (Message, error) {
+	switch header.OpCode {
+	case OP_REPLY:
+		return parseReplyMessage(header, body)
+	case OP_UPDATE:
+		return parseUpdateMessage(header, body)
+	case OP_INSERT:
+		return parseInsertMessage(header, body)
+	case OP_QUERY:
+		return parseQueryMessage(header, body)
+	case OP_GET_MORE:
+		return parseGetMoreMessage(header, body)
+	case OP_DELETE:
+		return parseDeleteMessage(header, body)
+	case OP_KILL_CURSORS:
+		return parseKillCursorsMessage(header, body)
+	case OP_COMMAND:
+		return parseCommandMessage(header, body)
+	case OP_COMMAND_REPLY:
+		return parseCommandReplyMessage(header, body)
+	case OP_MSG:
+		return parseMessageMessage(header, body)
+	default:
+		return nil, NewStackErrorf("unknown op code: %v", header.OpCode)
+	}
+}
+
+func ReadMessageFromBytes(src []byte) (Message, error) {
+	// header
+	header := MessageHeader{}
+	header.Size = readInt32(src[0:4])
+
+	if header.Size > int32(200*1024*1024) {
+		if header.Size == 542393671 {
+			return nil, NewStackErrorf("message too big, probably http request %d", header.Size)
+		}
+		return nil, NewStackErrorf("message too big %d", header.Size)
+	}
+	if header.Size-4 < 0 || header.Size-4 > MaxInt32 {
+		return nil, NewStackErrorf("message header has invalid size (%v).", header.Size)
+	}
+	if header.Size-4 < 12 {
+		return nil, NewStackErrorf("invalid message header. either header.Size = %v is shorter than message length, or message is missing RequestId, ResponseTo, or OpCode fields.", header.Size)
+	}
+	header.RequestID = readInt32(src[4:8])
+	header.ResponseTo = readInt32(src[8:12])
+	header.OpCode = readInt32(src[12:16])
+
+	body := src[16:]
+	return getMessage(header, body)
+
+}
+
 func ReadMessage(reader io.Reader) (Message, error) {
 	// read header
 	sizeBuf := make([]byte, 4)
@@ -67,30 +120,7 @@ func ReadMessage(reader io.Reader) (Message, error) {
 
 	body := restBuf[12:]
 
-	switch header.OpCode {
-	case OP_REPLY:
-		return parseReplyMessage(header, body)
-	case OP_UPDATE:
-		return parseUpdateMessage(header, body)
-	case OP_INSERT:
-		return parseInsertMessage(header, body)
-	case OP_QUERY:
-		return parseQueryMessage(header, body)
-	case OP_GET_MORE:
-		return parseGetMoreMessage(header, body)
-	case OP_DELETE:
-		return parseDeleteMessage(header, body)
-	case OP_KILL_CURSORS:
-		return parseKillCursorsMessage(header, body)
-	case OP_COMMAND:
-		return parseCommandMessage(header, body)
-	case OP_COMMAND_REPLY:
-		return parseCommandReplyMessage(header, body)
-	case OP_MSG:
-		return parseMessageMessage(header, body)
-	default:
-		return nil, NewStackErrorf("unknown op code: %v", header.OpCode)
-	}
+	return getMessage(header, body)
 
 }
 
