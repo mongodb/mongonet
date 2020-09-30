@@ -3,6 +3,7 @@ package mongonet
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"net"
@@ -25,7 +26,8 @@ type Proxy struct {
 	server *Server
 
 	logger      *slogger.Logger
-	mongoClient *mongo.Client
+	MongoClient *mongo.Client
+	Context     context.Context
 }
 
 type ProxySession struct {
@@ -168,23 +170,21 @@ func (ps *ProxySession) Close() {
 	ps.interceptor.Close() // TODO - see why Louisa decided to comment this out
 }
 
-func extractTopology(c *mongo.Client) *topology.Topology {
-	e := reflect.ValueOf(c).Elem()
+func extractTopology(mc *mongo.Client) *topology.Topology {
+	e := reflect.ValueOf(mc).Elem()
 	d := e.FieldByName("deployment")
 	d = reflect.NewAt(d.Type(), unsafe.Pointer(d.UnsafeAddr())).Elem() // #nosec G103
 	return d.Interface().(*topology.Topology)
 }
 
-func getMongoConnection(mc *mongo.Client, ctx context.Context) (driver.Connection, error) {
-	// TODO - conn string, server options, context
-	topo := extractTopology(mc)
-	fmt.Println(topo.String())
-	s := description.Server{Addr: address.Address("localhost:27017")}
+func (ps *ProxySession) getMongoConnection() (driver.Connection, error) {
+	topo := extractTopology(ps.proxy.MongoClient)
+	s := description.Server{Addr: address.Address(ps.proxy.config.MongoAddress())}
 	srv, err := topo.FindServer(s)
 	if err != nil {
 		return nil, err
 	}
-	return srv.Connection(ctx)
+	return srv.Connection(ps.proxy.Context)
 }
 
 func (ps *ProxySession) doLoop() error {
@@ -222,15 +222,13 @@ func (ps *ProxySession) doLoop() error {
 		}
 	}
 
-	// implement getting a mongo connection
-	ctx := context.Background()
-	mongoConn, err := getMongoConnection(ps.proxy.mongoClient, ctx)
+	mongoConn, err := ps.getMongoConnection()
 	if err != nil {
 		return fmt.Errorf("Error getting connection: %v", err)
 	}
 	defer mongoConn.Close()
 	// Send message to mongo
-	err = mongoConn.WriteWireMessage(ctx, m.Serialize())
+	err = mongoConn.WriteWireMessage(ps.proxy.Context, m.Serialize())
 	if err != nil {
 		return NewStackErrorf("error writing to mongo: %v", err)
 	}
@@ -243,7 +241,7 @@ func (ps *ProxySession) doLoop() error {
 
 	for {
 		// Read message back from mongo
-		ret, err := mongoConn.ReadWireMessage(ctx, nil)
+		ret, err := mongoConn.ReadWireMessage(ps.proxy.Context, nil)
 		if err != nil {
 			return NewStackErrorf("go error reading wire message: %v", err)
 		}
@@ -297,12 +295,12 @@ func (ps *ProxySession) doLoop() error {
 }
 
 func NewProxy(pc ProxyConfig) (Proxy, error) {
-	// TODO - push the context to Proxy
-	mongoClient, err := getMongoClient(pc, context.Background())
+	ctx := context.Background()
+	mongoClient, err := getMongoClient(pc, ctx)
 	if err != nil {
 		return Proxy{}, NewStackErrorf("error getting driver client for %v: %v", pc.MongoAddress(), err)
 	}
-	p := Proxy{pc, nil, nil, mongoClient}
+	p := Proxy{pc, nil, nil, mongoClient, ctx}
 
 	p.logger = p.NewLogger("proxy")
 
@@ -310,7 +308,24 @@ func NewProxy(pc ProxyConfig) (Proxy, error) {
 }
 
 func getMongoClient(pc ProxyConfig, ctx context.Context) (*mongo.Client, error) {
-	return mongo.Connect(ctx, options.Client().ApplyURI(fmt.Sprintf("mongodb://%s", pc.MongoAddress())))
+	opts := options.Client().ApplyURI(fmt.Sprintf("mongodb://%s", pc.MongoAddress())).
+		SetDirect(true).
+		SetAppName(pc.AppName)
+	if pc.MongoUser != "" {
+		auth := options.Credential{
+			AuthMechanism: "SCRAM-SHA-1",
+			Username:      pc.MongoUser,
+			AuthSource:    "admin",
+			Password:      pc.MongoPassword,
+			PasswordSet:   true,
+		}
+		opts.SetAuth(auth)
+	}
+	if pc.MongoSSL {
+		tlsConfig := &tls.Config{RootCAs: pc.MongoRootCAs}
+		opts.SetTLSConfig(tlsConfig)
+	}
+	return mongo.Connect(ctx, opts)
 }
 
 func (p *Proxy) InitializeServer() {

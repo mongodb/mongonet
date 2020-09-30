@@ -21,13 +21,15 @@ type ProxyConfig struct {
 	MongoSSL           bool
 	MongoRootCAs       *x509.CertPool
 	MongoSSLSkipVerify bool
+	MongoUser          string
+	MongoPassword      string
 
 	InterceptorFactory ProxyInterceptorFactory
 
-	ConnectionPoolHook ConnectionHook
+	AppName string
 }
 
-func NewProxyConfig(bindHost string, bindPort int, mongoHost string, mongoPort int) ProxyConfig {
+func NewProxyConfig(bindHost string, bindPort int, mongoHost string, mongoPort int, mongoUser, mongoPassword, appName string) ProxyConfig {
 
 	syncTlsConfig := NewSyncTlsConfig()
 	return ProxyConfig{
@@ -48,8 +50,10 @@ func NewProxyConfig(bindHost string, bindPort int, mongoHost string, mongoPort i
 		false, // MongoSSL
 		nil,   // MongoRootCAs
 		false, // MongoSSLSkipVerify
-		nil,   // InterceptorFactory
-		nil,   // ConnectionPoolHook
+		mongoUser,
+		mongoPassword,
+		nil, // InterceptorFactory
+		appName,
 	}
 }
 

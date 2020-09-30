@@ -88,7 +88,7 @@ func main() {
 
 	flag.Parse()
 
-	pc := mongonet.NewProxyConfig(*bindHost, *bindPort, *mongoHost, *mongoPort)
+	pc := mongonet.NewProxyConfig(*bindHost, *bindPort, *mongoHost, *mongoPort, "", "", "sni_tester")
 
 	pc.UseSSL = true
 	if len(flag.Args()) < 2 {
