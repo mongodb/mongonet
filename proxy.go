@@ -249,7 +249,10 @@ func (ps *ProxySession) doLoop(mongoConn driver.Connection) (driver.Connection, 
 	if !m.HasResponse() {
 		return mongoConn, nil
 	}
-	defer mongoConn.Close()
+	defer func() {
+		err2 := mongoConn.Close()
+		ps.proxy.logger.Logf(slogger.WARN, "close mongo connection. err2=%v", err2)
+	}
 
 	inExhaustMode := m.IsExhaust()
 
