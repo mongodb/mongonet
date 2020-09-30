@@ -32,12 +32,16 @@ type Proxy struct {
 	connectionsCreated int64
 }
 
+type MongoConnectionWrapper struct {
+	conn driver.Connection
+}
+
 type ProxySession struct {
 	*Session
 
 	proxy       *Proxy
 	interceptor ProxyInterceptor
-	mongoConn   driver.Connection
+	mongoConn   *MongoConnectionWrapper
 }
 
 type ResponseInterceptor interface {
@@ -89,7 +93,7 @@ func (ps *ProxySession) DoLoopTemp() {
 		if err != nil {
 			ps.logger.Logf(slogger.WARN, "** error doing loop: ps.mongoConn=%v", ps.mongoConn)
 			if ps.mongoConn != nil {
-				ps.mongoConn.Close()
+				ps.mongoConn.conn.Close()
 			}
 			if err != io.EOF {
 				ps.logger.Logf(slogger.WARN, "error doing loop: %v", err)
@@ -98,7 +102,7 @@ func (ps *ProxySession) DoLoopTemp() {
 		}
 	}
 	if ps.mongoConn != nil {
-		ps.mongoConn.Close()
+		ps.mongoConn.conn.Close()
 	}
 
 }
@@ -195,7 +199,7 @@ func (ps *ProxySession) getMongoConnection() (driver.Connection, error) {
 	return srv.Connection(ps.proxy.Context)
 }
 
-func (ps *ProxySession) doLoop(mongoConn driver.Connection) (driver.Connection, error) {
+func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnectionWrapper, error) {
 	// reading message from client
 	m, err := ReadMessage(ps.conn)
 	if err != nil {
@@ -213,7 +217,7 @@ func (ps *ProxySession) doLoop(mongoConn driver.Connection) (driver.Connection, 
 		if err != nil {
 			if m == nil {
 				if mongoConn != nil {
-					mongoConn.Close()
+					mongoConn.conn.Close()
 				}
 				return nil, err
 			}
@@ -233,16 +237,17 @@ func (ps *ProxySession) doLoop(mongoConn driver.Connection) (driver.Connection, 
 		}
 	}
 	if mongoConn == nil {
-		mongoConn, err = ps.getMongoConnection()
+		conn, err := ps.getMongoConnection()
 		if err != nil {
 			return nil, NewStackErrorf("cannot get connection to mongo %v", err)
 		}
+		mongoConn = &MongoConnectionWrapper{conn}
 	}
 
 	// Send message to mongo
-	err = mongoConn.WriteWireMessage(ps.proxy.Context, m.Serialize())
+	err = mongoConn.conn.WriteWireMessage(ps.proxy.Context, m.Serialize())
 	if err != nil {
-		mongoConn.Close()
+		mongoConn.conn.Close()
 		return mongoConn, NewStackErrorf("error writing to mongo: %v", err)
 	}
 
@@ -250,7 +255,7 @@ func (ps *ProxySession) doLoop(mongoConn driver.Connection) (driver.Connection, 
 		return mongoConn, nil
 	}
 	defer func() {
-		err2 := mongoConn.Close()
+		err2 := mongoConn.conn.Close()
 		ps.proxy.logger.Logf(slogger.WARN, "close mongo connection. err2=%v", err2)
 	}()
 
@@ -258,7 +263,7 @@ func (ps *ProxySession) doLoop(mongoConn driver.Connection) (driver.Connection, 
 
 	for {
 		// Read message back from mongo
-		ret, err := mongoConn.ReadWireMessage(ps.proxy.Context, nil)
+		ret, err := mongoConn.conn.ReadWireMessage(ps.proxy.Context, nil)
 		if err != nil {
 			return nil, NewStackErrorf("error reading wire message: %v", err)
 		}
