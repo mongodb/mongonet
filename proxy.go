@@ -34,6 +34,7 @@ type ProxySession struct {
 
 	proxy       *Proxy
 	interceptor ProxyInterceptor
+	mongoConn   driver.Connection
 }
 
 type ResponseInterceptor interface {
@@ -81,7 +82,7 @@ func (ps *ProxySession) Stats() bson.D {
 func (ps *ProxySession) DoLoopTemp() {
 	var err error
 	for {
-		err = ps.doLoop()
+		ps.mongoConn, err = ps.doLoop(ps.mongoConn)
 		if err != nil {
 			// TODO - may need to close the mongo connection here
 			if err != io.EOF {
@@ -186,14 +187,14 @@ func (ps *ProxySession) getMongoConnection() (driver.Connection, error) {
 	return srv.Connection(ps.proxy.Context)
 }
 
-func (ps *ProxySession) doLoop() error {
+func (ps *ProxySession) doLoop(mongoConn driver.Connection) (driver.Connection, error) {
 	// reading message from client
 	m, err := ReadMessage(ps.conn)
 	if err != nil {
 		if err == io.EOF {
-			return err
+			return mongoConn, err
 		}
-		return NewStackErrorf("got error reading from client: %v", err)
+		return mongoConn, NewStackErrorf("got error reading from client: %v", err)
 	}
 
 	var respInter ResponseInterceptor
@@ -203,38 +204,44 @@ func (ps *ProxySession) doLoop() error {
 		m, respInter, err = ps.interceptor.InterceptClientToMongo(m)
 		if err != nil {
 			if m == nil {
-				return err
+				if mongoConn != nil {
+					mongoConn.Close()
+				}
+				return nil, err
 			}
 			if !m.HasResponse() {
 				// we can't respond, so we just fail
-				return err
+				return mongoConn, err
 			}
 			err = ps.RespondWithError(m, err)
 			if err != nil {
-				return NewStackErrorf("couldn't send error response to client %v", err)
+				return mongoConn, NewStackErrorf("couldn't send error response to client %v", err)
 			}
-			return nil
+			return mongoConn, nil
 		}
 		if m == nil {
 			// already responded
-			return nil
+			return mongoConn, nil
+		}
+	}
+	if mongoConn == nil {
+		mongoConn, err = ps.getMongoConnection()
+		if err != nil {
+			return nil, NewStackErrorf("cannot get connection to mongo %v", err)
 		}
 	}
 
-	mongoConn, err := ps.getMongoConnection()
-	if err != nil {
-		return fmt.Errorf("Error getting connection: %v", err)
-	}
-	defer mongoConn.Close()
 	// Send message to mongo
 	err = mongoConn.WriteWireMessage(ps.proxy.Context, m.Serialize())
 	if err != nil {
-		return NewStackErrorf("error writing to mongo: %v", err)
+		mongoConn.Close()
+		return mongoConn, NewStackErrorf("error writing to mongo: %v", err)
 	}
 
 	if !m.HasResponse() {
-		return nil
+		return mongoConn, nil
 	}
+	defer mongoConn.Close()
 
 	inExhaustMode := m.IsExhaust()
 
@@ -242,26 +249,26 @@ func (ps *ProxySession) doLoop() error {
 		// Read message back from mongo
 		ret, err := mongoConn.ReadWireMessage(ps.proxy.Context, nil)
 		if err != nil {
-			return NewStackErrorf("go error reading wire message: %v", err)
+			return nil, NewStackErrorf("error reading wire message: %v", err)
 		}
 		resp, err := ReadMessageFromBytes(ret)
 		if err != nil {
 			if err == io.EOF {
-				return err
+				return nil, err
 			}
-			return NewStackErrorf("got error reading response from mongo %v", err)
+			return nil, NewStackErrorf("got error reading response from mongo %v", err)
 		}
 		if respInter != nil {
 			resp, err = respInter.InterceptMongoToClient(resp)
 			if err != nil {
-				return NewStackErrorf("error intercepting message %v", err)
+				return nil, NewStackErrorf("error intercepting message %v", err)
 			}
 		}
 
 		// Send message back to user
 		err = SendMessage(resp, ps.conn)
 		if err != nil {
-			return NewStackErrorf("got error sending response to client %v", err)
+			return nil, NewStackErrorf("got error sending response to client %v", err)
 		}
 
 		if ps.interceptor != nil {
@@ -269,21 +276,21 @@ func (ps *ProxySession) doLoop() error {
 		}
 
 		if !inExhaustMode {
-			return nil
+			return nil, nil
 		}
 
 		switch r := resp.(type) {
 		case *ReplyMessage:
 			if r.CursorId == 0 {
-				return nil
+				return nil, nil
 			}
 		case *MessageMessage:
 			if !r.HasMoreToCome() {
 				// moreToCome wasn't set - stop the loop
-				return nil
+				return nil, nil
 			}
 		default:
-			return NewStackErrorf("bad response type from server %T", r)
+			return nil, NewStackErrorf("bad response type from server %T", r)
 		}
 	}
 }
@@ -359,7 +366,7 @@ func (p *Proxy) NewLogger(prefix string) *slogger.Logger {
 func (p *Proxy) CreateWorker(session *Session) (ServerWorker, error) {
 	var err error
 
-	ps := &ProxySession{session, p, nil}
+	ps := &ProxySession{session, p, nil, nil}
 	if p.config.InterceptorFactory != nil {
 		ps.interceptor, err = ps.proxy.config.InterceptorFactory.NewInterceptor(ps)
 		if err != nil {
