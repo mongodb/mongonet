@@ -34,6 +34,14 @@ type Proxy struct {
 
 type MongoConnectionWrapper struct {
 	conn driver.Connection
+	bad  bool
+}
+
+func (m *MongoConnectionWrapper) Close() {
+	if m.bad {
+		m.conn.Close()
+	}
+	return
 }
 
 type ProxySession struct {
@@ -79,7 +87,6 @@ func (ps *ProxySession) ServerPort() int {
 func (ps *ProxySession) Stats() bson.D {
 	return bson.D{
 		{"connectionPool", bson.D{
-			// TODO - implement if needed!
 			{"totalCreated", atomic.LoadInt64(&ps.proxy.connectionsCreated)},
 		},
 		},
@@ -93,7 +100,7 @@ func (ps *ProxySession) DoLoopTemp() {
 		if err != nil {
 			ps.logger.Logf(slogger.WARN, "** error doing loop: ps.mongoConn=%v", ps.mongoConn)
 			if ps.mongoConn != nil {
-				ps.mongoConn.conn.Close()
+				ps.mongoConn.Close()
 			}
 			if err != io.EOF {
 				ps.logger.Logf(slogger.WARN, "error doing loop: %v", err)
@@ -102,7 +109,7 @@ func (ps *ProxySession) DoLoopTemp() {
 		}
 	}
 	if ps.mongoConn != nil {
-		ps.mongoConn.conn.Close()
+		ps.mongoConn.Close()
 	}
 
 }
@@ -217,7 +224,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 		if err != nil {
 			if m == nil {
 				if mongoConn != nil {
-					mongoConn.conn.Close()
+					mongoConn.Close()
 				}
 				return nil, err
 			}
@@ -241,7 +248,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 		if err != nil {
 			return nil, NewStackErrorf("cannot get connection to mongo %v", err)
 		}
-		mongoConn = &MongoConnectionWrapper{conn}
+		mongoConn = &MongoConnectionWrapper{conn, false}
 	}
 
 	// Send message to mongo
@@ -254,10 +261,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 	if !m.HasResponse() {
 		return mongoConn, nil
 	}
-	defer func() {
-		err2 := mongoConn.conn.Close()
-		ps.proxy.logger.Logf(slogger.WARN, "close mongo connection. err2=%v", err2)
-	}()
+	defer mongoConn.Close()
 
 	inExhaustMode := m.IsExhaust()
 
@@ -265,6 +269,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 		// Read message back from mongo
 		ret, err := mongoConn.conn.ReadWireMessage(ps.proxy.Context, nil)
 		if err != nil {
+			mongoConn.bad = true
 			return nil, NewStackErrorf("error reading wire message: %v", err)
 		}
 		resp, err := ReadMessageFromBytes(ret)
@@ -284,6 +289,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 		// Send message back to user
 		err = SendMessage(resp, ps.conn)
 		if err != nil {
+			mongoConn.bad = true
 			return nil, NewStackErrorf("got error sending response to client %v", err)
 		}
 
