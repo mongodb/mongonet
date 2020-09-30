@@ -33,13 +33,19 @@ type Proxy struct {
 }
 
 type MongoConnectionWrapper struct {
-	conn driver.Connection
-	bad  bool
+	conn   driver.Connection
+	bad    bool
+	logger *slogger.Logger
 }
 
 func (m *MongoConnectionWrapper) Close() {
 	if m.bad {
-		m.conn.Close()
+		if m.conn != nil {
+			m.logger.Logf(slogger.WARN, "closing bad mongo connection %v", m.conn.ID())
+			m.conn.Close()
+		} else {
+			m.logger.Logf(slogger.WARN, "bad mongo connection is nil!")
+		}
 	}
 	return
 }
@@ -248,7 +254,8 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 		if err != nil {
 			return nil, NewStackErrorf("cannot get connection to mongo %v", err)
 		}
-		mongoConn = &MongoConnectionWrapper{conn, false}
+		ps.proxy.logger.Logf(slogger.INFO, "got new connection %v", conn.ID())
+		mongoConn = &MongoConnectionWrapper{conn, false, ps.proxy.logger}
 	}
 
 	// Send message to mongo
@@ -267,11 +274,13 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 
 	for {
 		// Read message back from mongo
+		ps.proxy.logger.Logf(slogger.INFO, "reading data from conn %v", mongoConn.conn.ID())
 		ret, err := mongoConn.conn.ReadWireMessage(ps.proxy.Context, nil)
 		if err != nil {
 			mongoConn.bad = true
-			return nil, NewStackErrorf("error reading wire message: %v", err)
+			return nil, NewStackErrorf("error reading wire message from conn %v: %v", mongoConn.conn.ID(), err)
 		}
+		ps.proxy.logger.Logf(slogger.INFO, "read data from conn %v", mongoConn.conn.ID())
 		resp, err := ReadMessageFromBytes(ret)
 		if err != nil {
 			if err == io.EOF {
@@ -287,12 +296,13 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 		}
 
 		// Send message back to user
+		ps.proxy.logger.Logf(slogger.INFO, "send back data to user from conn %v", mongoConn.conn.ID())
 		err = SendMessage(resp, ps.conn)
 		if err != nil {
 			mongoConn.bad = true
-			return nil, NewStackErrorf("got error sending response to client %v", err)
+			return nil, NewStackErrorf("got error sending response to client from conn %v: %v", mongoConn.conn.ID(), err)
 		}
-
+		ps.proxy.logger.Logf(slogger.INFO, "sent back data to user from conn %v", mongoConn.conn.ID())
 		if ps.interceptor != nil {
 			ps.interceptor.TrackResponse(resp.Header())
 		}
