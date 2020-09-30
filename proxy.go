@@ -114,10 +114,6 @@ func (ps *ProxySession) DoLoopTemp() {
 			return
 		}
 	}
-	if ps.mongoConn != nil {
-		ps.mongoConn.Close()
-	}
-
 }
 
 func (ps *ProxySession) respondWithError(clientMessage Message, err error) error {
