@@ -254,7 +254,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 	// Send message to mongo
 	err = mongoConn.conn.WriteWireMessage(ps.proxy.Context, m.Serialize())
 	if err != nil {
-		mongoConn.conn.Close()
+		mongoConn.bad = true
 		return mongoConn, NewStackErrorf("error writing to mongo: %v", err)
 	}
 
