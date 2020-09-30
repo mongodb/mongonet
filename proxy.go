@@ -7,11 +7,13 @@ import (
 	"io"
 	"net"
 	"reflect"
+	"sync/atomic"
 	"time"
 	"unsafe"
 
 	"github.com/mongodb/slogger/v2/slogger"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/event"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.mongodb.org/mongo-driver/x/mongo/driver"
@@ -24,9 +26,10 @@ type Proxy struct {
 	config ProxyConfig
 	server *Server
 
-	logger      *slogger.Logger
-	MongoClient *mongo.Client
-	Context     context.Context
+	logger             *slogger.Logger
+	MongoClient        *mongo.Client
+	Context            context.Context
+	connectionsCreated int64
 }
 
 type ProxySession struct {
@@ -73,7 +76,7 @@ func (ps *ProxySession) Stats() bson.D {
 	return bson.D{
 		{"connectionPool", bson.D{
 			// TODO - implement if needed!
-			{"totalCreated", 0},
+			{"totalCreated", atomic.LoadInt64(&ps.proxy.connectionsCreated)},
 		},
 		},
 	}
@@ -301,21 +304,30 @@ func (ps *ProxySession) doLoop(mongoConn driver.Connection) (driver.Connection, 
 
 func NewProxy(pc ProxyConfig) (Proxy, error) {
 	ctx := context.Background()
-	mongoClient, err := getMongoClient(pc, ctx)
+	p := Proxy{pc, nil, nil, nil, ctx, 0}
+	mongoClient, err := getMongoClient(&p, pc, ctx)
 	if err != nil {
 		return Proxy{}, NewStackErrorf("error getting driver client for %v: %v", pc.MongoAddress(), err)
 	}
-	p := Proxy{pc, nil, nil, mongoClient, ctx}
-
+	p.MongoClient = mongoClient
 	p.logger = p.NewLogger("proxy")
 
 	return p, nil
 }
 
-func getMongoClient(pc ProxyConfig, ctx context.Context) (*mongo.Client, error) {
+func getMongoClient(p *Proxy, pc ProxyConfig, ctx context.Context) (*mongo.Client, error) {
 	opts := options.Client().ApplyURI(fmt.Sprintf("mongodb://%s", pc.MongoAddress())).
 		SetDirect(true).
-		SetAppName(pc.AppName)
+		SetAppName(pc.AppName).
+		SetPoolMonitor(&event.PoolMonitor{
+			Event: func(evt *event.PoolEvent) {
+				switch evt.Type {
+				case event.ConnectionCreated:
+					fmt.Println("connection created!")
+					atomic.AddInt64(&p.connectionsCreated, 1)
+				}
+			},
+		})
 	if pc.MongoUser != "" {
 		auth := options.Credential{
 			AuthMechanism: "SCRAM-SHA-1",
