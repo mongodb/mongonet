@@ -323,7 +323,6 @@ func getMongoClient(p *Proxy, pc ProxyConfig, ctx context.Context) (*mongo.Clien
 			Event: func(evt *event.PoolEvent) {
 				switch evt.Type {
 				case event.ConnectionCreated:
-					fmt.Println("connection created!")
 					atomic.AddInt64(&p.connectionsCreated, 1)
 				}
 			},
