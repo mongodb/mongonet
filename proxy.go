@@ -84,14 +84,18 @@ func (ps *ProxySession) DoLoopTemp() {
 	for {
 		ps.mongoConn, err = ps.doLoop(ps.mongoConn)
 		if err != nil {
-			// TODO - may need to close the mongo connection here
+			if ps.mongoConn != nil {
+				ps.mongoConn.Close()
+			}
 			if err != io.EOF {
 				ps.logger.Logf(slogger.WARN, "error doing loop: %v", err)
 			}
 			return
 		}
 	}
-	// TODO - may need to close the mongo connection here
+	if ps.mongoConn != nil {
+		ps.mongoConn.Close()
+	}
 
 }
 
@@ -167,7 +171,7 @@ func (ps *ProxySession) respondWithError(clientMessage Message, err error) error
 }
 
 func (ps *ProxySession) Close() {
-	ps.interceptor.Close() // TODO - see why Louisa decided to comment this out
+	ps.interceptor.Close()
 }
 
 func extractTopology(mc *mongo.Client) *topology.Topology {
