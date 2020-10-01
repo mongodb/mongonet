@@ -39,15 +39,23 @@ type MongoConnectionWrapper struct {
 }
 
 func (m *MongoConnectionWrapper) Close() {
+	if m.conn == nil {
+		m.logger.Logf(slogger.WARN, "mongo connection is nil!")
+		return
+	}
+	id := m.conn.ID()
 	if m.bad {
 		if m.conn != nil {
-			m.logger.Logf(slogger.WARN, "closing bad mongo connection %v", m.conn.ID())
-			m.conn.Close()
+			m.logger.Logf(slogger.WARN, "closing bad mongo connection %v", id)
 		} else {
 			m.logger.Logf(slogger.WARN, "bad mongo connection is nil!")
 		}
 	}
-	return
+	m.logger.Logf(slogger.WARN, "closing mongo connection %v", id)
+	err := m.conn.Close()
+	if err != nil {
+		m.logger.Logf(slogger.WARN, "failed to close mongo connection %v: %v", id, err)
+	}
 }
 
 type ProxySession struct {
@@ -106,10 +114,11 @@ func (ps *ProxySession) DoLoopTemp() {
 		if err != nil {
 			if ps.mongoConn != nil {
 				ps.mongoConn.Close()
+			} else {
+				ps.logger.Logf(slogger.WARN, "** error doing loop - connection wrapper is nil!")
 			}
 			if err != io.EOF {
 				ps.logger.Logf(slogger.WARN, "error doing loop: %v", err)
-				ps.mongoConn = nil
 			}
 			return
 		}
@@ -274,20 +283,20 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 		ret, err := mongoConn.conn.ReadWireMessage(ps.proxy.Context, nil)
 		if err != nil {
 			mongoConn.bad = true
-			return nil, NewStackErrorf("error reading wire message from conn %v: %v", mongoConn.conn.ID(), err)
+			return mongoConn, NewStackErrorf("error reading wire message from conn %v: %v", mongoConn.conn.ID(), err)
 		}
 		ps.proxy.logger.Logf(slogger.INFO, "read data from conn %v", mongoConn.conn.ID())
 		resp, err := ReadMessageFromBytes(ret)
 		if err != nil {
 			if err == io.EOF {
-				return nil, err
+				return mongoConn, err
 			}
-			return nil, NewStackErrorf("got error reading response from mongo %v", err)
+			return mongoConn, NewStackErrorf("got error reading response from mongo %v", err)
 		}
 		if respInter != nil {
 			resp, err = respInter.InterceptMongoToClient(resp)
 			if err != nil {
-				return nil, NewStackErrorf("error intercepting message %v", err)
+				return mongoConn, NewStackErrorf("error intercepting message %v", err)
 			}
 		}
 
@@ -296,7 +305,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 		err = SendMessage(resp, ps.conn)
 		if err != nil {
 			mongoConn.bad = true
-			return nil, NewStackErrorf("got error sending response to client from conn %v: %v", mongoConn.conn.ID(), err)
+			return mongoConn, NewStackErrorf("got error sending response to client from conn %v: %v", mongoConn.conn.ID(), err)
 		}
 		ps.proxy.logger.Logf(slogger.INFO, "sent back data to user from conn %v", mongoConn.conn.ID())
 		if ps.interceptor != nil {
@@ -304,21 +313,21 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 		}
 
 		if !inExhaustMode {
-			return nil, nil
+			return mongoConn, nil
 		}
 
 		switch r := resp.(type) {
 		case *ReplyMessage:
 			if r.CursorId == 0 {
-				return nil, nil
+				return mongoConn, nil
 			}
 		case *MessageMessage:
 			if !r.HasMoreToCome() {
 				// moreToCome wasn't set - stop the loop
-				return nil, nil
+				return mongoConn, nil
 			}
 		default:
-			return nil, NewStackErrorf("bad response type from server %T", r)
+			return mongoConn, NewStackErrorf("bad response type from server %T", r)
 		}
 	}
 }
