@@ -209,7 +209,7 @@ func extractNetworkConnection(dc driver.Connection) net.Conn {
 	e := reflect.ValueOf(dc).Elem()
 	c := e.FieldByName("connection")
 	c = reflect.NewAt(c.Type(), unsafe.Pointer(c.UnsafeAddr())).Elem() // #nosec G103
-	nc := c.FieldByName("nc")
+	nc := c.Elem().FieldByName("nc")
 	nc = reflect.NewAt(nc.Type(), unsafe.Pointer(nc.UnsafeAddr())).Elem() // #nosec G103
 	return nc.Interface().(net.Conn)
 }
