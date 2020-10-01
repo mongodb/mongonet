@@ -57,8 +57,9 @@ func (m *MongoConnectionWrapper) Close() {
 			err2 := nc.Close()
 			if err2 != nil {
 				m.logger.Logf(slogger.WARN, "failed to close underlying bad mongo connection %v: %v", id, err2)
+			} else {
+				m.conn.ReadWireMessage(context.Background(), []byte{}) // synching the driver conn pool state
 			}
-			m.conn.ReadWireMessage(context.Background(), []byte{}) // synching the driver conn pool state
 		} else {
 			m.logger.Logf(slogger.WARN, "bad mongo connection is nil!")
 		}
