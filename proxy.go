@@ -49,16 +49,12 @@ func (m *MongoConnectionWrapper) Close() {
 	if m.bad {
 		if m.conn != nil {
 			m.logger.Logf(slogger.WARN, "closing underlying bad mongo connection %v", id)
-			nc := extractNetworkConnection(m.conn, m.logger)
-			if nc == nil {
-				m.logger.Logf(slogger.WARN, "underlying connection is nil")
-				return
+			ec, ok := m.conn.(*topology.Connection)
+			if !ok {
+				m.logger.Logf(slogger.WARN, "bad connection type %T", m.conn)
 			}
-			err2 := nc.Close()
-			if err2 != nil {
-				m.logger.Logf(slogger.WARN, "failed to close underlying bad mongo connection %v: %v", id, err2)
-			} else {
-				m.conn.ReadWireMessage(context.Background(), []byte{}) // synching the driver conn pool state
+			if err := ec.Expire(); err != nil {
+				m.logger.Logf(slogger.WARN, "failed to expire connection. %v", err)
 			}
 		} else {
 			m.logger.Logf(slogger.WARN, "bad mongo connection is nil!")
@@ -218,24 +214,9 @@ func printPanic(logger *slogger.Logger) {
 	if r := recover(); r != nil {
 		var stacktraces bytes.Buffer
 		pprof.Lookup("goroutine").WriteTo(&stacktraces, 2)
-		logger.Logf(slogger.ERROR, "Recovering from panic in extractNetworkConnection. error is: %v \n stack traces: %v", r, stacktraces.String())
+		logger.Logf(slogger.ERROR, "Recovering from panic. error is: %v \n stack traces: %v", r, stacktraces.String())
 		panic(r)
 	}
-}
-
-func extractNetworkConnection(dc driver.Connection, logger *slogger.Logger) net.Conn {
-	defer printPanic(logger)
-	e := reflect.ValueOf(dc).Elem()
-	c := e.FieldByName("connection")
-	c = reflect.NewAt(c.Type(), unsafe.Pointer(c.UnsafeAddr())).Elem() // #nosec G103
-	logger.Logf(slogger.WARN, "c type is %v", c.Type())
-	if c.IsNil() {
-		return nil
-	}
-	nc := c.Elem().FieldByName("nc")
-	nc = reflect.NewAt(nc.Type(), unsafe.Pointer(nc.UnsafeAddr())).Elem() // #nosec G103
-	logger.Logf(slogger.WARN, "nc type is %v", nc.Type())
-	return nc.Interface().(net.Conn)
 }
 
 func extractTopology(mc *mongo.Client) *topology.Topology {
