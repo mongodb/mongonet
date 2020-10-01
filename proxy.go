@@ -44,17 +44,22 @@ func (m *MongoConnectionWrapper) Close() {
 		return
 	}
 	id := m.conn.ID()
-	if m.bad {
-		if m.conn != nil {
-			m.logger.Logf(slogger.WARN, "closing bad mongo connection %v", id)
-		} else {
-			m.logger.Logf(slogger.WARN, "bad mongo connection is nil!")
-		}
-	}
 	m.logger.Logf(slogger.WARN, "closing mongo connection %v", id)
 	err := m.conn.Close()
 	if err != nil {
 		m.logger.Logf(slogger.WARN, "failed to close mongo connection %v: %v", id, err)
+	}
+	if m.bad {
+		if m.conn != nil {
+			m.logger.Logf(slogger.WARN, "closing bad mongo connection %v", id)
+			nc := extractNetworkConnection(m.conn)
+			err2 := nc.Close()
+			if err2 != nil {
+				m.logger.Logf(slogger.WARN, "failed to close bad mongo connection %v: %v", id, err2)
+			}
+		} else {
+			m.logger.Logf(slogger.WARN, "bad mongo connection is nil!")
+		}
 	}
 }
 
@@ -200,6 +205,15 @@ func (ps *ProxySession) Close() {
 	ps.interceptor.Close()
 }
 
+func extractNetworkConnection(dc driver.Connection) net.Conn {
+	e := reflect.ValueOf(dc).Elem()
+	c := e.FieldByName("connection")
+	c = reflect.NewAt(c.Type(), unsafe.Pointer(c.UnsafeAddr())).Elem() // #nosec G103
+	nc := c.FieldByName("nc")
+	nc = reflect.NewAt(nc.Type(), unsafe.Pointer(nc.UnsafeAddr())).Elem() // #nosec G103
+	return nc.Interface().(net.Conn)
+}
+
 func extractTopology(mc *mongo.Client) *topology.Topology {
 	e := reflect.ValueOf(mc).Elem()
 	d := e.FieldByName("deployment")
@@ -279,13 +293,13 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 
 	for {
 		// Read message back from mongo
-		ps.proxy.logger.Logf(slogger.INFO, "reading data from conn %v", mongoConn.conn.ID())
+		ps.proxy.logger.Logf(slogger.INFO, "reading data from mongo conn %v", mongoConn.conn.ID())
 		ret, err := mongoConn.conn.ReadWireMessage(ps.proxy.Context, nil)
 		if err != nil {
 			mongoConn.bad = true
-			return mongoConn, NewStackErrorf("error reading wire message from conn %v: %v", mongoConn.conn.ID(), err)
+			return mongoConn, NewStackErrorf("error reading wire message from mongo conn %v: %v", mongoConn.conn.ID(), err)
 		}
-		ps.proxy.logger.Logf(slogger.INFO, "read data from conn %v", mongoConn.conn.ID())
+		ps.proxy.logger.Logf(slogger.INFO, "read data from mongo conn %v", mongoConn.conn.ID())
 		resp, err := ReadMessageFromBytes(ret)
 		if err != nil {
 			if err == io.EOF {
