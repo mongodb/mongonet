@@ -1,12 +1,14 @@
 package mongonet
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"fmt"
 	"io"
 	"net"
 	"reflect"
+	"runtime/pprof"
 	"sync/atomic"
 	"time"
 	"unsafe"
@@ -44,23 +46,27 @@ func (m *MongoConnectionWrapper) Close() {
 		return
 	}
 	id := m.conn.ID()
-	m.logger.Logf(slogger.WARN, "closing mongo connection %v", id)
-	err := m.conn.Close()
-	if err != nil {
-		m.logger.Logf(slogger.WARN, "failed to close mongo connection %v: %v", id, err)
-	}
 	if m.bad {
 		if m.conn != nil {
-			m.logger.Logf(slogger.WARN, "closing bad mongo connection %v", id)
-			nc := extractNetworkConnection(m.conn)
+			m.logger.Logf(slogger.WARN, "closing underlying bad mongo connection %v", id)
+			nc := extractNetworkConnection(m.conn, m.logger)
+			if nc == nil {
+				m.logger.Logf(slogger.WARN, "underlying connection is nil")
+				return
+			}
 			err2 := nc.Close()
 			if err2 != nil {
-				m.logger.Logf(slogger.WARN, "failed to close bad mongo connection %v: %v", id, err2)
+				m.logger.Logf(slogger.WARN, "failed to close underlying bad mongo connection %v: %v", id, err2)
 			}
 			m.conn.ReadWireMessage(context.Background(), []byte{}) // synching the driver conn pool state
 		} else {
 			m.logger.Logf(slogger.WARN, "bad mongo connection is nil!")
 		}
+	}
+	m.logger.Logf(slogger.WARN, "closing mongo connection %v", id)
+	err := m.conn.Close()
+	if err != nil {
+		m.logger.Logf(slogger.WARN, "failed to close mongo connection %v: %v", id, err)
 	}
 }
 
@@ -114,6 +120,7 @@ func (ps *ProxySession) Stats() bson.D {
 }
 
 func (ps *ProxySession) DoLoopTemp() {
+	defer printPanic(ps.logger)
 	var err error
 	for {
 		ps.mongoConn, err = ps.doLoop(ps.mongoConn)
@@ -206,17 +213,27 @@ func (ps *ProxySession) Close() {
 	ps.interceptor.Close()
 }
 
-func extractNetworkConnection(dc driver.Connection) net.Conn {
-	defer func() {
-		if r := recover(); r != nil {
-			fmt.Printf("Recovering from panic in extractNetworkConnection. error is: %v \n", r)
-		}
-	}()
+func printPanic(logger *slogger.Logger) {
+	if r := recover(); r != nil {
+		var stacktraces bytes.Buffer
+		pprof.Lookup("goroutine").WriteTo(&stacktraces, 2)
+		logger.Logf(slogger.ERROR, "Recovering from panic in extractNetworkConnection. error is: %v \n stack traces: %v", r, stacktraces.String())
+		panic(r)
+	}
+}
+
+func extractNetworkConnection(dc driver.Connection, logger *slogger.Logger) net.Conn {
+	defer printPanic(logger)
 	e := reflect.ValueOf(dc).Elem()
 	c := e.FieldByName("connection")
 	c = reflect.NewAt(c.Type(), unsafe.Pointer(c.UnsafeAddr())).Elem() // #nosec G103
+	logger.Logf(slogger.WARN, "c type is %v", c.Type())
+	if c.IsNil() {
+		return nil
+	}
 	nc := c.Elem().FieldByName("nc")
 	nc = reflect.NewAt(nc.Type(), unsafe.Pointer(nc.UnsafeAddr())).Elem() // #nosec G103
+	logger.Logf(slogger.WARN, "nc type is %v", nc.Type())
 	return nc.Interface().(net.Conn)
 }
 
