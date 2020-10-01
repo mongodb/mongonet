@@ -57,6 +57,7 @@ func (m *MongoConnectionWrapper) Close() {
 			if err2 != nil {
 				m.logger.Logf(slogger.WARN, "failed to close bad mongo connection %v: %v", id, err2)
 			}
+			m.conn.ReadWireMessage(context.Background(), []byte{}) // synching the driver conn pool state
 		} else {
 			m.logger.Logf(slogger.WARN, "bad mongo connection is nil!")
 		}
@@ -206,6 +207,11 @@ func (ps *ProxySession) Close() {
 }
 
 func extractNetworkConnection(dc driver.Connection) net.Conn {
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Printf("Recovering from panic in extractNetworkConnection. error is: %v \n", r)
+		}
+	}()
 	e := reflect.ValueOf(dc).Elem()
 	c := e.FieldByName("connection")
 	c = reflect.NewAt(c.Type(), unsafe.Pointer(c.UnsafeAddr())).Elem() // #nosec G103
