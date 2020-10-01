@@ -27,9 +27,11 @@ type ProxyConfig struct {
 	InterceptorFactory ProxyInterceptorFactory
 
 	AppName string
+
+	TraceConnPool bool
 }
 
-func NewProxyConfig(bindHost string, bindPort int, mongoHost string, mongoPort int, mongoUser, mongoPassword, appName string) ProxyConfig {
+func NewProxyConfig(bindHost string, bindPort int, mongoHost string, mongoPort int, mongoUser, mongoPassword, appName string, traceConnPool bool) ProxyConfig {
 
 	syncTlsConfig := NewSyncTlsConfig()
 	return ProxyConfig{
@@ -54,6 +56,7 @@ func NewProxyConfig(bindHost string, bindPort int, mongoHost string, mongoPort i
 		mongoPassword,
 		nil, // InterceptorFactory
 		appName,
+		traceConnPool,
 	}
 }
 
