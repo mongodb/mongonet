@@ -254,7 +254,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 			return mongoConn, nil
 		}
 	}
-	if mongoConn == nil {
+	if mongoConn == nil || mongoConn.conn.ID() == "<closed>" {
 		conn, err := ps.getMongoConnection()
 		if err != nil {
 			return nil, NewStackErrorf("cannot get connection to mongo %v", err)
