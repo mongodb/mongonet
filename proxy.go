@@ -299,6 +299,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 		return mongoConn, nil
 	}
 	defer mongoConn.Close()
+	// TODO - should probably return nil for mongoConn so we don't attempt to close twice
 
 	inExhaustMode := m.IsExhaust()
 
