@@ -391,10 +391,9 @@ func getMongoClient(p *Proxy, pc ProxyConfig, ctx context.Context) (*mongo.Clien
 					atomic.AddInt64(&p.connectionsCreated, 1)
 				}
 			},
-		})
-	if pc.ConnectionMode == Cluster {
-		opts.SetServerSelectionTimeout(5 * time.Second)
-	}
+		}).
+		SetServerSelectionTimeout(time.Duration(pc.ServerSelectionTimeoutSec) * time.Second)
+
 	if pc.MongoUser != "" {
 		auth := options.Credential{
 			AuthMechanism: "SCRAM-SHA-1",

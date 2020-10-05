@@ -42,11 +42,12 @@ type ProxyConfig struct {
 
 	AppName string
 
-	TraceConnPool  bool
-	ConnectionMode MongoConnectionMode
+	TraceConnPool             bool
+	ConnectionMode            MongoConnectionMode
+	ServerSelectionTimeoutSec int
 }
 
-func NewProxyConfig(bindHost string, bindPort int, mongoHost string, mongoPort int, mongoUser, mongoPassword, appName string, traceConnPool bool, connectionMode MongoConnectionMode) ProxyConfig {
+func NewProxyConfig(bindHost string, bindPort int, mongoHost string, mongoPort int, mongoUser, mongoPassword, appName string, traceConnPool bool, connectionMode MongoConnectionMode, serverSelectionTimeoutSec int) ProxyConfig {
 
 	syncTlsConfig := NewSyncTlsConfig()
 	return ProxyConfig{
@@ -73,6 +74,7 @@ func NewProxyConfig(bindHost string, bindPort int, mongoHost string, mongoPort i
 		appName,
 		traceConnPool,
 		connectionMode,
+		serverSelectionTimeoutSec,
 	}
 }
 
