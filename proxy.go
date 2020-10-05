@@ -9,6 +9,7 @@ import (
 	"net"
 	"reflect"
 	"runtime/pprof"
+	"strings"
 	"sync/atomic"
 	"time"
 	"unsafe"
@@ -19,6 +20,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.mongodb.org/mongo-driver/mongo/readpref"
+	"go.mongodb.org/mongo-driver/x/bsonx/bsoncore"
 	"go.mongodb.org/mongo-driver/x/mongo/driver"
 	"go.mongodb.org/mongo-driver/x/mongo/driver/address"
 	"go.mongodb.org/mongo-driver/x/mongo/driver/description"
@@ -234,7 +236,7 @@ func extractTopology(mc *mongo.Client) *topology.Topology {
 	return d.Interface().(*topology.Topology)
 }
 
-func (ps *ProxySession) getMongoConnection() (driver.Connection, error) {
+func (ps *ProxySession) getMongoConnection(rp *readpref.ReadPref) (driver.Connection, error) {
 	topo := extractTopology(ps.proxy.MongoClient)
 	if ps.proxy.config.ConnectionMode == Direct {
 		s := description.Server{Addr: address.Address(ps.proxy.config.MongoAddress())}
@@ -244,12 +246,46 @@ func (ps *ProxySession) getMongoConnection() (driver.Connection, error) {
 		}
 		return srv.Connection(ps.proxy.Context)
 	}
-	// TODO - construct another read pref based on message
-	srv, err := topo.SelectServer(ps.proxy.Context, description.ReadPrefSelector(readpref.Primary()))
+	srv, err := topo.SelectServer(ps.proxy.Context, description.ReadPrefSelector(rp))
 	if err != nil {
 		return nil, err
 	}
 	return srv.Connection(ps.proxy.Context)
+}
+
+func getReadPrefFromOpMsg(mm *MessageMessage) (rp *readpref.ReadPref) {
+	rp = readpref.Primary() // default
+	for _, section := range mm.Sections {
+		if bs, ok2 := section.(*BodySection); ok2 {
+			bsd := bsoncore.Document(bs.Body.BSON)
+			if rpVal, err := bsd.LookupErr("$readPreference"); err == nil {
+				rpDoc, ok := rpVal.DocumentOK()
+				if !ok {
+					return
+				}
+				if modeVal, err := rpDoc.LookupErr("mode"); err == nil {
+					modeStr, ok := modeVal.StringValueOK()
+					if !ok {
+						return
+					}
+					switch strings.ToLower(modeStr) {
+					case "primarypreferred":
+						return readpref.PrimaryPreferred()
+					case "secondary":
+						return readpref.Secondary()
+					case "secondarypreferred":
+						return readpref.SecondaryPreferred()
+					case "nearest":
+						return readpref.Nearest()
+					default: // primary
+						return
+					}
+				}
+			}
+			return
+		}
+	}
+	return
 }
 
 func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnectionWrapper, error) {
@@ -260,6 +296,13 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 			return mongoConn, err
 		}
 		return mongoConn, NewStackErrorf("got error reading from client: %v", err)
+	}
+	var rp *readpref.ReadPref = readpref.Primary()
+	if ps.proxy.config.ConnectionMode == Cluster {
+		mm, ok := m.(*MessageMessage)
+		if ok {
+			rp = getReadPrefFromOpMsg(mm)
+		}
 	}
 
 	var respInter ResponseInterceptor
@@ -289,11 +332,11 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 		}
 	}
 	if mongoConn == nil || mongoConn.conn.ID() == "<closed>" {
-		conn, err := ps.getMongoConnection()
+		conn, err := ps.getMongoConnection(rp)
 		if err != nil {
 			return nil, NewStackErrorf("cannot get connection to mongo %v", err)
 		}
-		logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "got new connection %v using connection mode %v", conn.ID(), ps.proxy.config.ConnectionMode)
+		logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "got new connection %v using connection mode %v and read preference %v", conn.ID(), ps.proxy.config.ConnectionMode, rp)
 		mongoConn = &MongoConnectionWrapper{conn, false, ps.proxy.logger, ps.proxy.config.TraceConnPool}
 	}
 
