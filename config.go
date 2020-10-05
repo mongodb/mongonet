@@ -30,6 +30,7 @@ func (m MongoConnectionMode) String() string {
 type ProxyConfig struct {
 	ServerConfig
 
+	MongoURI           string
 	MongoHost          string
 	MongoPort          int
 	MongoSSL           bool
@@ -47,7 +48,7 @@ type ProxyConfig struct {
 	ServerSelectionTimeoutSec int
 }
 
-func NewProxyConfig(bindHost string, bindPort int, mongoHost string, mongoPort int, mongoUser, mongoPassword, appName string, traceConnPool bool, connectionMode MongoConnectionMode, serverSelectionTimeoutSec int) ProxyConfig {
+func NewProxyConfig(bindHost string, bindPort int, mongoUri, mongoHost string, mongoPort int, mongoUser, mongoPassword, appName string, traceConnPool bool, connectionMode MongoConnectionMode, serverSelectionTimeoutSec int) ProxyConfig {
 
 	syncTlsConfig := NewSyncTlsConfig()
 	return ProxyConfig{
@@ -63,6 +64,7 @@ func NewProxyConfig(bindHost string, bindPort int, mongoHost string, mongoPort i
 			slogger.OFF, // LogLevel
 			nil,         // Appenders
 		},
+		mongoUri,
 		mongoHost,
 		mongoPort,
 		false, // MongoSSL

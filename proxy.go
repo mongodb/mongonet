@@ -381,7 +381,7 @@ func NewProxy(pc ProxyConfig) (Proxy, error) {
 }
 
 func getMongoClient(p *Proxy, pc ProxyConfig, ctx context.Context) (*mongo.Client, error) {
-	opts := options.Client().ApplyURI(fmt.Sprintf("mongodb://%s", pc.MongoAddress())).
+	opts := options.Client().
 		SetDirect(pc.ConnectionMode == Direct).
 		SetAppName(pc.AppName).
 		SetPoolMonitor(&event.PoolMonitor{
@@ -393,6 +393,12 @@ func getMongoClient(p *Proxy, pc ProxyConfig, ctx context.Context) (*mongo.Clien
 			},
 		}).
 		SetServerSelectionTimeout(time.Duration(pc.ServerSelectionTimeoutSec) * time.Second)
+
+	if pc.ConnectionMode == Direct {
+		opts.ApplyURI(fmt.Sprintf("mongodb://%s", pc.MongoAddress()))
+	} else {
+		opts.ApplyURI(pc.MongoURI)
+	}
 
 	if pc.MongoUser != "" {
 		auth := options.Credential{
