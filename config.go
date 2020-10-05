@@ -20,6 +20,13 @@ const (
 	Cluster                            // use server selection and read preference to pick a node
 )
 
+func (m MongoConnectionMode) String() string {
+	if m == Direct {
+		return "direct"
+	}
+	return "cluster"
+}
+
 type ProxyConfig struct {
 	ServerConfig
 

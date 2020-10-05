@@ -18,6 +18,7 @@ import (
 	"go.mongodb.org/mongo-driver/event"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.mongodb.org/mongo-driver/mongo/readpref"
 	"go.mongodb.org/mongo-driver/x/mongo/driver"
 	"go.mongodb.org/mongo-driver/x/mongo/driver/address"
 	"go.mongodb.org/mongo-driver/x/mongo/driver/description"
@@ -235,8 +236,16 @@ func extractTopology(mc *mongo.Client) *topology.Topology {
 
 func (ps *ProxySession) getMongoConnection() (driver.Connection, error) {
 	topo := extractTopology(ps.proxy.MongoClient)
-	s := description.Server{Addr: address.Address(ps.proxy.config.MongoAddress())}
-	srv, err := topo.FindServer(s)
+	if ps.proxy.config.ConnectionMode == Direct {
+		s := description.Server{Addr: address.Address(ps.proxy.config.MongoAddress())}
+		srv, err := topo.FindServer(s)
+		if err != nil {
+			return nil, err
+		}
+		return srv.Connection(ps.proxy.Context)
+	}
+	// TODO - construct another read pref based on message
+	srv, err := topo.SelectServer(ps.proxy.Context, description.ReadPrefSelector(readpref.Primary()))
 	if err != nil {
 		return nil, err
 	}
@@ -284,7 +293,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 		if err != nil {
 			return nil, NewStackErrorf("cannot get connection to mongo %v", err)
 		}
-		logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "got new connection %v", conn.ID())
+		logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "got new connection %v using connection mode %v", conn.ID(), ps.proxy.config.ConnectionMode)
 		mongoConn = &MongoConnectionWrapper{conn, false, ps.proxy.logger, ps.proxy.config.TraceConnPool}
 	}
 
@@ -373,7 +382,7 @@ func NewProxy(pc ProxyConfig) (Proxy, error) {
 
 func getMongoClient(p *Proxy, pc ProxyConfig, ctx context.Context) (*mongo.Client, error) {
 	opts := options.Client().ApplyURI(fmt.Sprintf("mongodb://%s", pc.MongoAddress())).
-		SetDirect(true).
+		SetDirect(pc.ConnectionMode == Direct).
 		SetAppName(pc.AppName).
 		SetPoolMonitor(&event.PoolMonitor{
 			Event: func(evt *event.PoolEvent) {
@@ -383,6 +392,9 @@ func getMongoClient(p *Proxy, pc ProxyConfig, ctx context.Context) (*mongo.Clien
 				}
 			},
 		})
+	if pc.ConnectionMode == Cluster {
+		opts.SetServerSelectionTimeout(5 * time.Second)
+	}
 	if pc.MongoUser != "" {
 		auth := options.Credential{
 			AuthMechanism: "SCRAM-SHA-1",
