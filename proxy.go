@@ -343,7 +343,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 	if mongoConn == nil || mongoConn.conn.ID() == "<closed>" {
 		conn, err := ps.getMongoConnection(rp)
 		if err != nil {
-			return nil, NewStackErrorf("cannot get connection to mongo %v", err)
+			return nil, NewStackErrorf("cannot get connection to mongo %v using connection mode %v", err, ps.proxy.config.ConnectionMode)
 		}
 		logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "got new connection %v using connection mode %v and read preference %v", conn.ID(), ps.proxy.config.ConnectionMode, rp)
 		mongoConn = &MongoConnectionWrapper{conn, false, ps.proxy.logger, ps.proxy.config.TraceConnPool}
