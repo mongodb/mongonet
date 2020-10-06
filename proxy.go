@@ -263,6 +263,15 @@ func getReadPrefFromOpMsg(mm *MessageMessage) (rp *readpref.ReadPref) {
 				if !ok {
 					return
 				}
+				opts := make([]readpref.Option, 0, 1)
+				if maxStalenessVal, err := rpDoc.LookupErr("maxStalenessSeconds"); err == nil {
+					if maxStalenessVal.IsNumber() {
+						maxStalenessSec := maxStalenessVal.AsInt32()
+						if maxStalenessSec > 0 {
+							opts = append(opts, readpref.WithMaxStaleness(time.Duration(maxStalenessSec)*time.Second))
+						}
+					}
+				}
 				if modeVal, err := rpDoc.LookupErr("mode"); err == nil {
 					modeStr, ok := modeVal.StringValueOK()
 					if !ok {
@@ -270,13 +279,13 @@ func getReadPrefFromOpMsg(mm *MessageMessage) (rp *readpref.ReadPref) {
 					}
 					switch strings.ToLower(modeStr) {
 					case "primarypreferred":
-						return readpref.PrimaryPreferred()
+						return readpref.PrimaryPreferred(opts...)
 					case "secondary":
-						return readpref.Secondary()
+						return readpref.Secondary(opts...)
 					case "secondarypreferred":
-						return readpref.SecondaryPreferred()
+						return readpref.SecondaryPreferred(opts...)
 					case "nearest":
-						return readpref.Nearest()
+						return readpref.Nearest(opts...)
 					default: // primary
 						return
 					}
