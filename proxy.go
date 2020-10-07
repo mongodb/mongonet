@@ -241,7 +241,7 @@ func (ps *ProxySession) getMongoConnection() (*MongoConnectionWrapper, error) {
 	if err != nil {
 		return nil, err
 	}
-	ec, ok := conn.(*topology.Connection)
+	ec, ok := conn.(driver.Expirable)
 	if !ok {
 		return nil, fmt.Errorf("bad connection type %T", conn)
 	}
@@ -280,8 +280,8 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 			return mongoConn, nil
 		}
 	}
-	if mongoConn == nil || mongoConn.conn.ID() == "<closed>" {
-		mongoConn, err := ps.getMongoConnection()
+	if mongoConn == nil || !mongoConn.expirableConn.Alive() {
+		mongoConn, err = ps.getMongoConnection()
 		if err != nil {
 			return nil, NewStackErrorf("cannot get connection to mongo %v", err)
 		}
