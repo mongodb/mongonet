@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -22,7 +23,6 @@ type BaseServerSession struct {
 	mydata  map[string][]bson.D
 }
 
-
 func (mss *BaseServerSession) handleIsMaster(mm mongonet.Message) error {
 	return mss.session.RespondToCommandMakeBSON(mm,
 		"ismaster", true,
@@ -36,7 +36,6 @@ func (mss *BaseServerSession) handleIsMaster(mm mongonet.Message) error {
 		"readOnly", false,
 	)
 }
-
 
 func (mss *BaseServerSession) handleInsert(mm mongonet.Message, cmd bson.D, ns string) error {
 	mss.mydata[ns] = []bson.D{{{"foo", int32(17)}}}
@@ -67,21 +66,19 @@ func (mss *BaseServerSession) handleMessage(m mongonet.Message) (error, bool) {
 
 		db := mongonet.NamespaceToDB(mm.Namespace)
 		cmdName := cmd[0].Key
-
-		if cmdName == "getnonce" {
+		switch strings.ToLower(cmdName) {
+		case "getnonce":
 			return mss.session.RespondToCommandMakeBSON(mm, "nonce", "914653afbdbdb833"), false
-		}
-
-		if cmdName == "ismaster" || cmdName == "isMaster" {
+		case "ismaster":
 			return mss.handleIsMaster(mm), false
-		}
-
-		if cmdName == "ping" {
+		case "ping":
 			return mss.session.RespondToCommandMakeBSON(mm), false
-		}
-
-		if cmdName == "insert" {
-			ns := fmt.Sprintf("%s.%s", db, cmd[0].Value.(string)) // TODO: check type cast?
+		case "insert":
+			valStr, ok := cmd[0].Value.(string)
+			if !ok {
+				return fmt.Errorf("command value should be string but is %T", cmd[0].Value), false
+			}
+			ns := fmt.Sprintf("%s.%s", db, valStr)
 			docs := mongonet.BSONIndexOf(cmd, "documents")
 			if docs < 0 {
 				return fmt.Errorf("no documents to insert :("), false
@@ -103,9 +100,7 @@ func (mss *BaseServerSession) handleMessage(m mongonet.Message) (error, bool) {
 
 			mss.mydata[ns] = old
 			return mss.session.RespondToCommandMakeBSON(mm), false
-		}
-
-		if cmdName == "find" {
+		case "find":
 			ns := fmt.Sprintf("%s.%s", db, cmd[0].Value.(string)) // TODO: check type cast?
 
 			data, found := mss.mydata[ns]
@@ -115,10 +110,8 @@ func (mss *BaseServerSession) handleMessage(m mongonet.Message) (error, bool) {
 			return mss.session.RespondToCommandMakeBSON(mm,
 				"cursor", bson.D{{"firstBatch", data}, {"id", 0}, {"ns", ns}},
 			), false
-
 		}
 
-		fmt.Printf("hi1 %s %s %s\n", mm.Namespace, cmdName, cmd)
 		return fmt.Errorf("command (%s) not done", cmdName), true
 
 	case *mongonet.CommandMessage:
@@ -158,13 +151,12 @@ func (mss *BaseServerSession) handleMessage(m mongonet.Message) (error, bool) {
 		}
 		ns := fmt.Sprintf("%s.%s", db, cmd[0].Value)
 		cmdName := cmd[0].Key
-		if cmdName == "ismaster" || cmdName == "isMaster" {
+		switch strings.ToLower(cmdName) {
+		case "ismaster":
 			return mss.handleIsMaster(mm), false
-		}
-		if cmdName == "insert" {
+		case "insert":
 			return mss.handleInsert(mm, cmd, ns), false
-		}
-		if cmdName == "find" {
+		case "find":
 			ns := fmt.Sprintf("%s.%s", db, cmd[0].Value.(string)) // TODO: check type cast?
 
 			data, found := mss.mydata[ns]
@@ -174,8 +166,7 @@ func (mss *BaseServerSession) handleMessage(m mongonet.Message) (error, bool) {
 			return mss.session.RespondToCommandMakeBSON(mm,
 				"cursor", bson.D{{"firstBatch", data}, {"id", int64(0)}, {"ns", ns}},
 			), false
-		}
-		if cmdName == "endSessions" {
+		case "endsessions":
 			return mss.handleEndSessions(mm), false
 		}
 		return nil, false
@@ -275,7 +266,7 @@ func TestServer(t *testing.T) {
 		t.Errorf("can't insert: %v", err)
 		return
 	}
-	
+
 	docOut := bson.D{}
 	err = coll.FindOne(ctx, bson.D{}).Decode(&docOut)
 	if err != nil {
@@ -292,7 +283,7 @@ func TestServer(t *testing.T) {
 		t.Errorf("docs don't match: %v", diff)
 		return
 	}
-	
+
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -377,11 +368,7 @@ func checkClient(opts *options.ClientOptions) error {
 	if _, err = coll.InsertOne(ctx, docIn); err != nil {
 		return err
 	}
-	err = client.Disconnect(ctx)
-	if err != nil {
-		return err
-	}
-	return nil
+	return client.Disconnect(ctx)
 }
 
 func TestServerWorkerWithContext(t *testing.T) {
@@ -419,8 +406,8 @@ func TestServerWorkerWithContext(t *testing.T) {
 	}
 	sessCtrCurr := atomic.LoadInt32(&sessCtr)
 
-	if sessCtrCurr != int32(30) {
-		t.Errorf("expect session counter to be 30 but got %d", sessCtrCurr)
+	if sessCtrCurr != int32(20) {
+		t.Errorf("expect session counter to be 20 but got %d", sessCtrCurr)
 	}
 
 	server.Close()

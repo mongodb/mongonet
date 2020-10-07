@@ -30,6 +30,8 @@ type Proxy struct {
 
 	logger             *slogger.Logger
 	MongoClient        *mongo.Client
+	topology           *topology.Topology
+	descriptionServer  description.Server
 	Context            context.Context
 	connectionsCreated int64
 }
@@ -42,10 +44,11 @@ func logTrace(logger *slogger.Logger, trace bool, format string, args ...interfa
 
 // MongoConnectionWrapper is used to wrap the driver connection so we can explicitly expire (close out) connections on certain occasions that aren't being picked up by the driver
 type MongoConnectionWrapper struct {
-	conn   driver.Connection
-	bad    bool
-	logger *slogger.Logger
-	trace  bool
+	conn          driver.Connection
+	expirableConn driver.Expirable
+	bad           bool
+	logger        *slogger.Logger
+	trace         bool
 }
 
 func (m *MongoConnectionWrapper) Close() {
@@ -55,13 +58,9 @@ func (m *MongoConnectionWrapper) Close() {
 	}
 	id := m.conn.ID()
 	if m.bad {
-		if m.conn != nil && m.conn.ID() != "<closed>" {
+		if m.conn != nil && m.expirableConn.Alive() {
 			logTrace(m.logger, m.trace, "closing underlying bad mongo connection %v", id)
-			ec, ok := m.conn.(*topology.Connection)
-			if !ok {
-				logTrace(m.logger, m.trace, "bad connection type %T", m.conn)
-			}
-			if err := ec.Expire(); err != nil {
+			if err := m.expirableConn.Expire(); err != nil {
 				logTrace(m.logger, m.trace, "failed to expire connection. %v", err)
 			}
 		} else {
@@ -69,7 +68,7 @@ func (m *MongoConnectionWrapper) Close() {
 		}
 	}
 	logTrace(m.logger, m.trace, "closing mongo connection %v", id)
-	if m.conn.ID() != "<closed>" {
+	if m.expirableConn.Alive() {
 		if err := m.conn.Close(); err != nil {
 			logTrace(m.logger, m.trace, "failed to close mongo connection %v: %v", id, err)
 		}
@@ -233,14 +232,20 @@ func extractTopology(mc *mongo.Client) *topology.Topology {
 	return d.Interface().(*topology.Topology)
 }
 
-func (ps *ProxySession) getMongoConnection() (driver.Connection, error) {
-	topo := extractTopology(ps.proxy.MongoClient)
-	s := description.Server{Addr: address.Address(ps.proxy.config.MongoAddress())}
-	srv, err := topo.FindServer(s)
+func (ps *ProxySession) getMongoConnection() (*MongoConnectionWrapper, error) {
+	srv, err := ps.proxy.topology.FindServer(ps.proxy.descriptionServer)
 	if err != nil {
 		return nil, err
 	}
-	return srv.Connection(ps.proxy.Context)
+	conn, err := srv.Connection(ps.proxy.Context)
+	if err != nil {
+		return nil, err
+	}
+	ec, ok := conn.(*topology.Connection)
+	if !ok {
+		return nil, fmt.Errorf("bad connection type %T", conn)
+	}
+	return &MongoConnectionWrapper{conn, ec, false, ps.proxy.logger, ps.proxy.config.TraceConnPool}, nil
 }
 
 func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnectionWrapper, error) {
@@ -259,18 +264,14 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 		m, respInter, err = ps.interceptor.InterceptClientToMongo(m)
 		if err != nil {
 			if m == nil {
-				if mongoConn != nil {
-					mongoConn.Close()
-				}
-				return nil, err
+				return mongoConn, err
 			}
 			if !m.HasResponse() {
 				// we can't respond, so we just fail
 				return mongoConn, err
 			}
-			err = ps.RespondWithError(m, err)
-			if err != nil {
-				return mongoConn, NewStackErrorf("couldn't send error response to client %v", err)
+			if respondErr := ps.RespondWithError(m, err); respondErr != nil {
+				return mongoConn, NewStackErrorf("couldn't send error response to client; original error: %v, error sending response: %v", err, respondErr)
 			}
 			return mongoConn, nil
 		}
@@ -280,18 +281,16 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 		}
 	}
 	if mongoConn == nil || mongoConn.conn.ID() == "<closed>" {
-		conn, err := ps.getMongoConnection()
+		mongoConn, err := ps.getMongoConnection()
 		if err != nil {
 			return nil, NewStackErrorf("cannot get connection to mongo %v", err)
 		}
-		logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "got new connection %v", conn.ID())
-		mongoConn = &MongoConnectionWrapper{conn, false, ps.proxy.logger, ps.proxy.config.TraceConnPool}
+		logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "got new connection %v", mongoConn.conn.ID())
 	}
 
 	// Send message to mongo
 	err = mongoConn.conn.WriteWireMessage(ps.proxy.Context, m.Serialize())
 	if err != nil {
-		mongoConn.bad = true
 		return mongoConn, NewStackErrorf("error writing to mongo: %v", err)
 	}
 
@@ -299,7 +298,6 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 		return mongoConn, nil
 	}
 	defer mongoConn.Close()
-	// TODO - should probably return nil for mongoConn so we don't attempt to close twice
 
 	inExhaustMode := m.IsExhaust()
 
@@ -308,21 +306,20 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 		logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "reading data from mongo conn %v", mongoConn.conn.ID())
 		ret, err := mongoConn.conn.ReadWireMessage(ps.proxy.Context, nil)
 		if err != nil {
-			mongoConn.bad = true
-			return mongoConn, NewStackErrorf("error reading wire message from mongo conn %v: %v", mongoConn.conn.ID(), err)
+			return nil, NewStackErrorf("error reading wire message from mongo conn %v: %v", mongoConn.conn.ID(), err)
 		}
 		logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "read data from mongo conn %v", mongoConn.conn.ID())
 		resp, err := ReadMessageFromBytes(ret)
 		if err != nil {
 			if err == io.EOF {
-				return mongoConn, err
+				return nil, err
 			}
-			return mongoConn, NewStackErrorf("got error reading response from mongo %v", err)
+			return nil, NewStackErrorf("got error reading response from mongo %v", err)
 		}
 		if respInter != nil {
 			resp, err = respInter.InterceptMongoToClient(resp)
 			if err != nil {
-				return mongoConn, NewStackErrorf("error intercepting message %v", err)
+				return nil, NewStackErrorf("error intercepting message %v", err)
 			}
 		}
 
@@ -331,7 +328,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 		err = SendMessage(resp, ps.conn)
 		if err != nil {
 			mongoConn.bad = true
-			return mongoConn, NewStackErrorf("got error sending response to client from conn %v: %v", mongoConn.conn.ID(), err)
+			return nil, NewStackErrorf("got error sending response to client from conn %v: %v", mongoConn.conn.ID(), err)
 		}
 		logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "sent back data to user from mongo conn %v", mongoConn.conn.ID())
 		if ps.interceptor != nil {
@@ -339,33 +336,34 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 		}
 
 		if !inExhaustMode {
-			return mongoConn, nil
+			return nil, nil
 		}
 
 		switch r := resp.(type) {
 		case *ReplyMessage:
 			if r.CursorId == 0 {
-				return mongoConn, nil
+				return nil, nil
 			}
 		case *MessageMessage:
 			if !r.HasMoreToCome() {
 				// moreToCome wasn't set - stop the loop
-				return mongoConn, nil
+				return nil, nil
 			}
 		default:
-			return mongoConn, NewStackErrorf("bad response type from server %T", r)
+			return nil, NewStackErrorf("bad response type from server %T", r)
 		}
 	}
 }
 
 func NewProxy(pc ProxyConfig) (Proxy, error) {
 	ctx := context.Background()
-	p := Proxy{pc, nil, nil, nil, ctx, 0}
+	p := Proxy{pc, nil, nil, nil, nil, description.Server{Addr: address.Address(pc.MongoAddress())}, ctx, 0}
 	mongoClient, err := getMongoClient(&p, pc, ctx)
 	if err != nil {
 		return Proxy{}, NewStackErrorf("error getting driver client for %v: %v", pc.MongoAddress(), err)
 	}
 	p.MongoClient = mongoClient
+	p.topology = extractTopology(mongoClient)
 	p.logger = p.NewLogger("proxy")
 
 	return p, nil

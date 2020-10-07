@@ -47,22 +47,28 @@ func getMessage(header MessageHeader, body []byte) (Message, error) {
 	}
 }
 
+func validateHeaderSize(headerSize int32) error {
+	if headerSize > int32(200*1024*1024) {
+		if headerSize == 542393671 {
+			return NewStackErrorf("message too big, probably http request %d", headerSize)
+		}
+		return NewStackErrorf("message too big %d", headerSize)
+	}
+	if headerSize-4 < 0 || headerSize-4 > MaxInt32 {
+		return NewStackErrorf("message header has invalid size (%v).", headerSize)
+	}
+	if headerSize-4 < 12 {
+		return NewStackErrorf("invalid message header. either header.Size = %v is shorter than message length, or message is missing RequestId, ResponseTo, or OpCode fields.", headerSize)
+	}
+	return nil
+}
+
 func ReadMessageFromBytes(src []byte) (Message, error) {
 	// header
 	header := MessageHeader{}
 	header.Size = readInt32(src[0:4])
-
-	if header.Size > int32(200*1024*1024) {
-		if header.Size == 542393671 {
-			return nil, NewStackErrorf("message too big, probably http request %d", header.Size)
-		}
-		return nil, NewStackErrorf("message too big %d", header.Size)
-	}
-	if header.Size-4 < 0 || header.Size-4 > MaxInt32 {
-		return nil, NewStackErrorf("message header has invalid size (%v).", header.Size)
-	}
-	if header.Size-4 < 12 {
-		return nil, NewStackErrorf("invalid message header. either header.Size = %v is shorter than message length, or message is missing RequestId, ResponseTo, or OpCode fields.", header.Size)
+	if err := validateHeaderSize(header.Size); err != nil {
+		return nil, err
 	}
 	header.RequestID = readInt32(src[4:8])
 	header.ResponseTo = readInt32(src[8:12])
@@ -85,19 +91,11 @@ func ReadMessage(reader io.Reader) (Message, error) {
 	}
 
 	header := MessageHeader{}
-
 	header.Size = readInt32(sizeBuf)
-
-	if header.Size > int32(200*1024*1024) {
-		if header.Size == 542393671 {
-			return nil, NewStackErrorf("message too big, probably http request %d", header.Size)
-		}
-		return nil, NewStackErrorf("message too big %d", header.Size)
+	if err = validateHeaderSize(header.Size); err != nil {
+		return nil, err
 	}
 
-	if header.Size-4 < 0 || header.Size-4 > MaxInt32 {
-		return nil, NewStackErrorf("message header has invalid size (%v).", header.Size)
-	}
 	restBuf := make([]byte, header.Size-4)
 
 	for read := 0; int32(read) < header.Size-4; {
@@ -111,15 +109,11 @@ func ReadMessage(reader io.Reader) (Message, error) {
 		read += n
 	}
 
-	if len(restBuf) < 12 {
-		return nil, NewStackErrorf("invalid message header. either header.Size = %v is shorter than message length, or message is missing RequestId, ResponseTo, or OpCode fields.", header.Size)
-	}
 	header.RequestID = readInt32(restBuf)
 	header.ResponseTo = readInt32(restBuf[4:])
 	header.OpCode = readInt32(restBuf[8:])
 
 	body := restBuf[12:]
-
 	return getMessage(header, body)
 
 }
