@@ -126,7 +126,7 @@ func (ps *ProxySession) Stats() bson.D {
 }
 
 func (ps *ProxySession) DoLoopTemp() {
-	defer printPanic(ps.logger)
+	defer logPanic(ps.logger)
 	var err error
 	for {
 		ps.mongoConn, err = ps.doLoop(ps.mongoConn)
@@ -217,7 +217,7 @@ func (ps *ProxySession) Close() {
 	ps.interceptor.Close()
 }
 
-func printPanic(logger *slogger.Logger) {
+func logPanic(logger *slogger.Logger) {
 	if r := recover(); r != nil {
 		var stacktraces bytes.Buffer
 		pprof.Lookup("goroutine").WriteTo(&stacktraces, 2)
