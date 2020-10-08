@@ -101,7 +101,11 @@ func (mss *BaseServerSession) handleMessage(m mongonet.Message) (error, bool) {
 			mss.mydata[ns] = old
 			return mss.session.RespondToCommandMakeBSON(mm), false
 		case "find":
-			ns := fmt.Sprintf("%s.%s", db, cmd[0].Value.(string)) // TODO: check type cast?
+			collVal, ok := cmd[0].Value.(string)
+			if !ok {
+				return fmt.Errorf("expected to get a string but got %T", cmd[0].Value)
+			}
+			ns := fmt.Sprintf("%s.%s", db, collVal)
 
 			data, found := mss.mydata[ns]
 			if !found {
@@ -157,7 +161,11 @@ func (mss *BaseServerSession) handleMessage(m mongonet.Message) (error, bool) {
 		case "insert":
 			return mss.handleInsert(mm, cmd, ns), false
 		case "find":
-			ns := fmt.Sprintf("%s.%s", db, cmd[0].Value.(string)) // TODO: check type cast?
+			collVal, ok := cmd[0].Value.(string)
+			if !ok {
+				return fmt.Errorf("expected to get a string but got %T", cmd[0].Value)
+			}
+			ns := fmt.Sprintf("%s.%s", db, collVal)
 
 			data, found := mss.mydata[ns]
 			if !found {

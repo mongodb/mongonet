@@ -221,6 +221,7 @@ func logPanic(logger *slogger.Logger) {
 		var stacktraces bytes.Buffer
 		pprof.Lookup("goroutine").WriteTo(&stacktraces, 2)
 		logger.Logf(slogger.ERROR, "Recovering from mongonet panic. error is: %v \n stack traces: %v", r, stacktraces.String())
+		logger.Flush()
 		panic(r)
 	}
 }
