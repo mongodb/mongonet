@@ -53,12 +53,12 @@ type MongoConnectionWrapper struct {
 
 func (m *MongoConnectionWrapper) Close() {
 	if m.conn == nil {
-		logTrace(m.logger, m.trace, "mongo connection is nil!")
+		m.logger.Logf(slogger.WARN, "attempt to close a nil mongo connection. noop")
 		return
 	}
 	id := m.conn.ID()
 	if m.bad {
-		if m.conn != nil && m.expirableConn.Alive() {
+		if m.expirableConn.Alive() {
 			logTrace(m.logger, m.trace, "closing underlying bad mongo connection %v", id)
 			if err := m.expirableConn.Expire(); err != nil {
 				logTrace(m.logger, m.trace, "failed to expire connection. %v", err)
@@ -229,6 +229,9 @@ func logPanic(logger *slogger.Logger) {
 func extractTopology(mc *mongo.Client) *topology.Topology {
 	e := reflect.ValueOf(mc).Elem()
 	d := e.FieldByName("deployment")
+	if d.IsZero() {
+		panic("failed to extract deployment topology")
+	}
 	d = reflect.NewAt(d.Type(), unsafe.Pointer(d.UnsafeAddr())).Elem() // #nosec G103
 	return d.Interface().(*topology.Topology)
 }
