@@ -173,6 +173,23 @@ func disableFailPoint(mongoPort int) error {
 	return nil
 }
 
+func runFinds(proxyPort int, shouldFail bool) int32 {
+	var wg sync.WaitGroup
+	var failing int32
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func() {
+			err := doFind(proxyPort, i, shouldFail)
+			wg.Done()
+			if err != nil {
+				atomic.AddInt32(&failing, 1)
+			}
+		}()
+	}
+	wg.Wait()
+	return failing
+}
+
 // backing mongo must be started with --setParameter enableTestCommands=1
 func TestProxySanity(t *testing.T) {
 	mongoPort := 30000
@@ -199,51 +216,55 @@ func TestProxySanity(t *testing.T) {
 	}
 
 	go proxy.Run()
-	fmt.Println("initial conns created", GetConnCreated(&proxy))
-	var wg sync.WaitGroup
-	var failing int32
-	for i := 0; i < 5; i++ {
-		wg.Add(1)
-		go func() {
-			err := doFind(proxyPort, i, false)
-			wg.Done()
-			if err != nil {
-				atomic.AddInt32(&failing, 1)
-			}
-		}()
+	if conns := GetConnCreated(&proxy); conns != 0 {
+		t.Fatalf("expected connections created to equal 0 but was %v", conns)
 	}
-
-	wg.Wait()
+	failing := runFinds(proxyPort, false)
 	if atomic.LoadInt32(&failing) > 0 {
-		t.Fatalf("initial finds failures")
+		t.Fatalf("finds failures")
 		return
 	}
 
-	fmt.Println("#1 conns created", GetConnCreated(&proxy))
-	// enable test commands - fail connections a bunch of times
+	if conns := GetConnCreated(&proxy); conns != 5 {
+		t.Fatalf("expected connections created to equal 5 but was %v", conns)
+	}
+
+	// run finds again to confirm connections are reused
+	failing = runFinds(proxyPort, false)
+	if atomic.LoadInt32(&failing) > 0 {
+		t.Fatalf("finds failures")
+		return
+	}
+	if conns := GetConnCreated(&proxy); conns != 5 {
+		t.Fatalf("expected connections created to equal 5 but was %v", conns)
+	}
+
+	// enable fail point - fail connections a bunch of times
 	enableFailPoint(mongoPort)
-	for i := 0; i < 5; i++ {
-		wg.Add(1)
-		go func() {
-			err := doFind(proxyPort, i, true)
-			wg.Done()
-			if err != nil {
-				atomic.AddInt32(&failing, 1)
-			}
-		}()
-	}
+	failing = runFinds(proxyPort, true)
 
-	wg.Wait()
 	if atomic.LoadInt32(&failing) > 0 {
-		t.Fatalf("initial finds failures")
+		t.Fatalf("finds failures")
 		return
 	}
 
-	fmt.Println("#2 conns created", GetConnCreated(&proxy))
-	// disable test command - verify connections work again
+	if conns := GetConnCreated(&proxy); conns != 10 {
+		t.Fatalf("expected connections created to equal 10 but was %v", conns)
+	}
+	// disable fail point - verify connections work again
 	if err := disableFailPoint(mongoPort); err != nil {
 		t.Fatalf("failed to disable failpoint. err=%v", err)
 		return
 	}
-	fmt.Println("#3 conns created", GetConnCreated(&proxy))
+
+	failing = runFinds(proxyPort, false)
+	if atomic.LoadInt32(&failing) > 0 {
+		t.Fatalf("finds failures")
+		return
+	}
+
+	if conns := GetConnCreated(&proxy); conns != 15 {
+		t.Fatalf("expected connections created to equal 15 but was %v", conns)
+	}
+
 }

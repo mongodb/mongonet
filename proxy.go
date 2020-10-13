@@ -33,7 +33,7 @@ type Proxy struct {
 	topology           *topology.Topology
 	descriptionServer  description.Server
 	Context            context.Context
-	connectionsCreated int64
+	connectionsCreated *int64
 }
 
 func logTrace(logger *slogger.Logger, trace bool, format string, args ...interface{}) {
@@ -144,7 +144,7 @@ func (ps *ProxySession) ServerPort() int {
 func (ps *ProxySession) Stats() bson.D {
 	return bson.D{
 		{"connectionPool", bson.D{
-			{"totalCreated", atomic.LoadInt64(&ps.proxy.connectionsCreated)},
+			{"totalCreated", ps.proxy.GetConnectionsCreated()},
 		},
 		},
 	}
@@ -391,7 +391,8 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 
 func NewProxy(pc ProxyConfig) (Proxy, error) {
 	ctx := context.Background()
-	p := Proxy{pc, nil, nil, nil, nil, description.Server{Addr: address.Address(pc.MongoAddress())}, ctx, 0}
+	var initCount int64 = 0
+	p := Proxy{pc, nil, nil, nil, nil, description.Server{Addr: address.Address(pc.MongoAddress())}, ctx, &initCount}
 	mongoClient, err := getMongoClient(&p, pc, ctx)
 	if err != nil {
 		return Proxy{}, NewStackErrorf("error getting driver client for %v: %v", pc.MongoAddress(), err)
@@ -411,7 +412,7 @@ func getMongoClient(p *Proxy, pc ProxyConfig, ctx context.Context) (*mongo.Clien
 			Event: func(evt *event.PoolEvent) {
 				switch evt.Type {
 				case event.ConnectionCreated:
-					atomic.AddInt64(&p.connectionsCreated, 1)
+					p.AddConnection()
 				}
 			},
 		})
@@ -466,8 +467,12 @@ func (p *Proxy) NewLogger(prefix string) *slogger.Logger {
 	return &slogger.Logger{prefix, appenders, 0, filters}
 }
 
+func (p *Proxy) AddConnection() {
+	atomic.AddInt64(p.connectionsCreated, 1)
+}
+
 func (p *Proxy) GetConnectionsCreated() int64 {
-	return atomic.LoadInt64(&p.connectionsCreated)
+	return atomic.LoadInt64(p.connectionsCreated)
 }
 
 func (p *Proxy) CreateWorker(session *Session) (ServerWorker, error) {
