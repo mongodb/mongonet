@@ -254,6 +254,7 @@ func logPanic(logger *slogger.Logger) {
 	}
 }
 
+// https://jira.mongodb.org/browse/GODRIVER-1760 will add the ability to create a topology.Topology from ClientOptions
 func extractTopology(mc *mongo.Client) *topology.Topology {
 	e := reflect.ValueOf(mc).Elem()
 	d := e.FieldByName("deployment")
