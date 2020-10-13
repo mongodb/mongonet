@@ -15,15 +15,20 @@ func main() {
 
 	flag.Parse()
 
-	pc := mongonet.NewProxyConfig(*bindHost, *bindPort, *mongoHost, *mongoPort)
+	pc := mongonet.NewProxyConfig(*bindHost, *bindPort, *mongoHost, *mongoPort, "", "", "straight proxy", true)
 	pc.MongoSSLSkipVerify = true
 
-	proxy := mongonet.NewProxy(pc)
+	proxy, err := mongonet.NewProxy(pc)
+	if err != nil {
+		panic(err)
+	}
 
 	proxy.InitializeServer()
-	proxy.OnSSLConfig(nil)
+	if ok, _, _ := proxy.OnSSLConfig(nil); !ok {
+		panic("failed to call OnSSLConfig")
+	}
 
-	err := proxy.Run()
+	err = proxy.Run()
 	if err != nil {
 		panic(err)
 	}
