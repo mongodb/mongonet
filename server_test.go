@@ -103,7 +103,7 @@ func (mss *BaseServerSession) handleMessage(m mongonet.Message) (error, bool) {
 		case "find":
 			collVal, ok := cmd[0].Value.(string)
 			if !ok {
-				return fmt.Errorf("expected to get a string but got %T", cmd[0].Value)
+				return fmt.Errorf("expected to get a string but got %T", cmd[0].Value), false
 			}
 			ns := fmt.Sprintf("%s.%s", db, collVal)
 
@@ -163,7 +163,7 @@ func (mss *BaseServerSession) handleMessage(m mongonet.Message) (error, bool) {
 		case "find":
 			collVal, ok := cmd[0].Value.(string)
 			if !ok {
-				return fmt.Errorf("expected to get a string but got %T", cmd[0].Value)
+				return fmt.Errorf("expected to get a string but got %T", cmd[0].Value), false
 			}
 			ns := fmt.Sprintf("%s.%s", db, collVal)
 

@@ -38,7 +38,33 @@ type Proxy struct {
 
 func logTrace(logger *slogger.Logger, trace bool, format string, args ...interface{}) {
 	if trace {
+		fmt.Printf(fmt.Sprintf("%s\n", format), args...)
 		logger.Logf(slogger.DEBUG, format, args...)
+	}
+}
+
+func logMessageTrace(logger *slogger.Logger, trace bool, m Message) {
+	if trace {
+		var doc bson.D
+		switch mm := m.(type) {
+		case *MessageMessage:
+			for _, section := range mm.Sections {
+				if bs, ok := section.(*BodySection); ok {
+					doc, _ = bs.Body.ToBSOND()
+				}
+			}
+		case *QueryMessage:
+			doc, _ = mm.Query.ToBSOND()
+		case *ReplyMessage:
+			doc, _ = mm.Docs[0].ToBSOND()
+		default:
+			// not bothering about printing other message types
+			return
+		}
+
+		msg := fmt.Sprintf("got message %v", doc)
+		fmt.Println(msg)
+		logger.Logf(slogger.DEBUG, msg)
 	}
 }
 
@@ -213,7 +239,9 @@ func (ps *ProxySession) respondWithError(clientMessage Message, err error) error
 }
 
 func (ps *ProxySession) Close() {
-	ps.interceptor.Close()
+	if ps.interceptor != nil {
+		ps.interceptor.Close()
+	}
 }
 
 func logPanic(logger *slogger.Logger) {
@@ -261,7 +289,8 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 		}
 		return mongoConn, NewStackErrorf("got error reading from client: %v", err)
 	}
-
+	logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "got message from client")
+	logMessageTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, m)
 	var respInter ResponseInterceptor
 	if ps.interceptor != nil {
 		ps.interceptor.TrackRequest(m.Header())
@@ -320,6 +349,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 			}
 			return nil, NewStackErrorf("got error reading response from mongo %v", err)
 		}
+		logMessageTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, resp)
 		if respInter != nil {
 			resp, err = respInter.InterceptMongoToClient(resp)
 			if err != nil {
@@ -434,6 +464,10 @@ func (p *Proxy) NewLogger(prefix string) *slogger.Logger {
 	}
 
 	return &slogger.Logger{prefix, appenders, 0, filters}
+}
+
+func (p *Proxy) GetConnectionsCreated() int64 {
+	return atomic.LoadInt64(&p.connectionsCreated)
 }
 
 func (p *Proxy) CreateWorker(session *Session) (ServerWorker, error) {
