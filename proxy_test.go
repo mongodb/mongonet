@@ -76,7 +76,7 @@ func (myi *MyInterceptor) InterceptClientToMongo(m Message) (Message, ResponseIn
 	return m, nil, nil
 }
 
-func GetConnCreated(p *Proxy, t *testing.T) int64 {
+func GetConnCreated(p *Proxy) int64 {
 	return p.GetConnectionsCreated()
 }
 
@@ -199,7 +199,7 @@ func TestProxySanity(t *testing.T) {
 	}
 
 	go proxy.Run()
-	fmt.Println("initial conns created", GetConnCreated(&proxy, t))
+	fmt.Println("initial conns created", GetConnCreated(&proxy))
 	var wg sync.WaitGroup
 	var failing int32
 	for i := 0; i < 5; i++ {
@@ -219,7 +219,7 @@ func TestProxySanity(t *testing.T) {
 		return
 	}
 
-	fmt.Println("#1 conns created", GetConnCreated(&proxy, t))
+	fmt.Println("#1 conns created", GetConnCreated(&proxy))
 	// enable test commands - fail connections a bunch of times
 	enableFailPoint(mongoPort)
 	for i := 0; i < 5; i++ {
@@ -239,11 +239,11 @@ func TestProxySanity(t *testing.T) {
 		return
 	}
 
-	fmt.Println("#2 conns created", GetConnCreated(&proxy, t))
+	fmt.Println("#2 conns created", GetConnCreated(&proxy))
 	// disable test command - verify connections work again
 	if err := disableFailPoint(mongoPort); err != nil {
 		t.Fatalf("failed to disable failpoint. err=%v", err)
 		return
 	}
-	fmt.Println("#3 conns created", GetConnCreated(&proxy, t))
+	fmt.Println("#3 conns created", GetConnCreated(&proxy))
 }
