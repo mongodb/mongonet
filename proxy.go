@@ -31,10 +31,12 @@ type Proxy struct {
 	config ProxyConfig
 	server *Server
 
-	logger             *slogger.Logger
-	MongoClient        *mongo.Client
-	topology           *topology.Topology
-	descriptionServer  description.Server
+	logger            *slogger.Logger
+	MongoClient       *mongo.Client
+	topology          *topology.Topology
+	descriptionServer description.Server
+	defaultReadPref   *readpref.ReadPref
+
 	Context            context.Context
 	connectionsCreated *int64
 }
@@ -270,7 +272,6 @@ func extractTopology(mc *mongo.Client) *topology.Topology {
 }
 
 func getReadPrefFromOpMsg(mm *MessageMessage) (rp *readpref.ReadPref) {
-	rp = readpref.Primary() // default
 	for _, section := range mm.Sections {
 		bs, ok := section.(*BodySection)
 		if !ok {
@@ -309,7 +310,7 @@ func getReadPrefFromOpMsg(mm *MessageMessage) (rp *readpref.ReadPref) {
 				return readpref.SecondaryPreferred(opts...)
 			case "nearest":
 				return readpref.Nearest(opts...)
-			default: // primary
+			default:
 				return
 			}
 		}
@@ -353,11 +354,13 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 		}
 		return mongoConn, NewStackErrorf("got error reading from client: %v", err)
 	}
-	var rp *readpref.ReadPref = readpref.Primary()
+	var rp *readpref.ReadPref = ps.proxy.defaultReadPref
 	if ps.proxy.config.ConnectionMode == Cluster {
 		mm, ok := m.(*MessageMessage)
 		if ok {
-			rp = getReadPrefFromOpMsg(mm)
+			if rp2 := getReadPrefFromOpMsg(mm); rp2 != nil {
+				rp = rp2
+			}
 		}
 	}
 	logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "got message from client")
@@ -464,7 +467,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 func NewProxy(pc ProxyConfig) (Proxy, error) {
 	ctx := context.Background()
 	var initCount int64 = 0
-	p := Proxy{pc, nil, nil, nil, nil, description.Server{Addr: address.Address(pc.MongoAddress())}, ctx, &initCount}
+	p := Proxy{pc, nil, nil, nil, nil, description.Server{Addr: address.Address(pc.MongoAddress())}, readpref.Primary(), ctx, &initCount}
 	mongoClient, err := getMongoClient(&p, pc, ctx)
 	if err != nil {
 		return Proxy{}, NewStackErrorf("error getting driver client for %v: %v", pc.MongoAddress(), err)
