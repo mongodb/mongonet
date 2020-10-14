@@ -24,7 +24,9 @@ func main() {
 	}
 
 	proxy.InitializeServer()
-	proxy.OnSSLConfig(nil)
+	if ok, _, _ := proxy.OnSSLConfig(nil); !ok {
+		panic("failed to call OnSSLConfig")
+	}
 
 	err = proxy.Run()
 	if err != nil {
