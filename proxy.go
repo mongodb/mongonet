@@ -271,42 +271,46 @@ func extractTopology(mc *mongo.Client) *topology.Topology {
 func getReadPrefFromOpMsg(mm *MessageMessage) (rp *readpref.ReadPref) {
 	rp = readpref.Primary() // default
 	for _, section := range mm.Sections {
-		if bs, ok2 := section.(*BodySection); ok2 {
-			bsd := bsoncore.Document(bs.Body.BSON)
-			if rpVal, err := bsd.LookupErr("$readPreference"); err == nil {
-				rpDoc, ok := rpVal.DocumentOK()
-				if !ok {
-					return
-				}
-				opts := make([]readpref.Option, 0, 1)
-				if maxStalenessVal, err := rpDoc.LookupErr("maxStalenessSeconds"); err == nil {
-					if maxStalenessVal.IsNumber() {
-						maxStalenessSec := maxStalenessVal.AsInt32()
-						if maxStalenessSec > 0 {
-							opts = append(opts, readpref.WithMaxStaleness(time.Duration(maxStalenessSec)*time.Second))
-						}
-					}
-				}
-				if modeVal, err := rpDoc.LookupErr("mode"); err == nil {
-					modeStr, ok := modeVal.StringValueOK()
-					if !ok {
-						return
-					}
-					switch strings.ToLower(modeStr) {
-					case "primarypreferred":
-						return readpref.PrimaryPreferred(opts...)
-					case "secondary":
-						return readpref.Secondary(opts...)
-					case "secondarypreferred":
-						return readpref.SecondaryPreferred(opts...)
-					case "nearest":
-						return readpref.Nearest(opts...)
-					default: // primary
-						return
-					}
+		bs, ok := section.(*BodySection)
+		if !ok {
+			continue
+		}
+		bsd := bsoncore.Document(bs.Body.BSON)
+		rpVal, err := bsd.LookupErr("$readPreference")
+		if err != nil {
+			// not concerned about the error - we'll just fallback to readpref=primary
+			return
+		}
+		rpDoc, ok := rpVal.DocumentOK()
+		if !ok {
+			return
+		}
+		opts := make([]readpref.Option, 0, 1)
+		if maxStalenessVal, err := rpDoc.LookupErr("maxStalenessSeconds"); err == nil {
+			if maxStalenessVal.IsNumber() {
+				maxStalenessSec := maxStalenessVal.AsInt32()
+				if maxStalenessSec > 0 {
+					opts = append(opts, readpref.WithMaxStaleness(time.Duration(maxStalenessSec)*time.Second))
 				}
 			}
-			return
+		}
+		if modeVal, err := rpDoc.LookupErr("mode"); err == nil {
+			modeStr, ok := modeVal.StringValueOK()
+			if !ok {
+				return
+			}
+			switch strings.ToLower(modeStr) {
+			case "primarypreferred":
+				return readpref.PrimaryPreferred(opts...)
+			case "secondary":
+				return readpref.Secondary(opts...)
+			case "secondarypreferred":
+				return readpref.SecondaryPreferred(opts...)
+			case "nearest":
+				return readpref.Nearest(opts...)
+			default: // primary
+				return
+			}
 		}
 	}
 	return
@@ -314,14 +318,14 @@ func getReadPrefFromOpMsg(mm *MessageMessage) (rp *readpref.ReadPref) {
 
 func (ps *ProxySession) getMongoConnection(rp *readpref.ReadPref) (*MongoConnectionWrapper, error) {
 	var err error
-	var srv driver.Connection
+	var srv driver.Server
 	if ps.proxy.config.ConnectionMode == Direct {
 		srv, err = ps.proxy.topology.FindServer(ps.proxy.descriptionServer)
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		srv, err = topo.SelectServer(ps.proxy.Context, description.ReadPrefSelector(rp))
+		srv, err = ps.proxy.topology.SelectServer(ps.proxy.Context, description.ReadPrefSelector(rp))
 		if err != nil {
 			return nil, err
 		}
@@ -382,7 +386,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 		if err != nil {
 			return nil, NewStackErrorf("cannot get connection to mongo %v using connection mode %v", err, ps.proxy.config.ConnectionMode)
 		}
-		logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "got new connection %v", mongoConn.conn.ID())
+		logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "got new connection %v using connection mode=%v readpref=%v", mongoConn.conn.ID(), ps.proxy.config.ConnectionMode, rp)
 	}
 
 	// Send message to mongo

@@ -76,8 +76,9 @@ func (myi *MyInterceptor) InterceptClientToMongo(m Message) (Message, ResponseIn
 	return m, nil, nil
 }
 
-func getTestClient(port int) (*mongo.Client, error) {
-	opts := options.Client().ApplyURI(fmt.Sprintf("mongodb://localhost:%d", port))
+func getTestClient(host string, port int) (*mongo.Client, error) {
+	fmt.Println("*** new client to ", host, port)
+	opts := options.Client().ApplyURI(fmt.Sprintf("mongodb://%s:%d", host, port))
 	client, err := mongo.NewClient(opts)
 	if err != nil {
 		return nil, fmt.Errorf("cannot create a mongo client. err: %v", err)
@@ -85,8 +86,8 @@ func getTestClient(port int) (*mongo.Client, error) {
 	return client, nil
 }
 
-func doFind(proxyPort, iteration int, shouldFail bool) error {
-	client, err := getTestClient(proxyPort)
+func doFind(host string, proxyPort, iteration int, shouldFail bool) error {
+	client, err := getTestClient(host, proxyPort)
 	if err != nil {
 		return err
 	}
@@ -98,10 +99,12 @@ func doFind(proxyPort, iteration int, shouldFail bool) error {
 	defer client.Disconnect(ctx)
 	coll := client.Database("test").Collection(fmt.Sprintf("bar_%v", iteration))
 
+	fmt.Println("dropping collection")
 	if err := coll.Drop(ctx); err != nil {
 		return fmt.Errorf("failed to drop collection: %v", err)
 	}
 
+	fmt.Println("inserting doc")
 	docIn := bson.D{{"foo", int32(17)}}
 	if _, err := coll.InsertOne(ctx, docIn); err != nil {
 		return fmt.Errorf("can't insert: %v", err)
@@ -127,8 +130,8 @@ func doFind(proxyPort, iteration int, shouldFail bool) error {
 	return nil
 }
 
-func enableFailPoint(mongoPort int) error {
-	client, err := getTestClient(mongoPort)
+func enableFailPoint(host string, mongoPort int) error {
+	client, err := getTestClient(host, mongoPort)
 	if err != nil {
 		return err
 	}
@@ -149,8 +152,8 @@ func enableFailPoint(mongoPort int) error {
 	return client.Database("admin").RunCommand(ctx, cmd).Err()
 }
 
-func disableFailPoint(mongoPort int) error {
-	client, err := getTestClient(mongoPort)
+func disableFailPoint(host string, mongoPort int) error {
+	client, err := getTestClient(host, mongoPort)
 	if err != nil {
 		return err
 	}
@@ -167,16 +170,16 @@ func disableFailPoint(mongoPort int) error {
 	return client.Database("admin").RunCommand(ctx, cmd).Err()
 }
 
-func runFinds(proxyPort int, shouldFail bool, t *testing.T) int32 {
+func runFinds(host string, proxyPort, parallelism int, shouldFail bool, t *testing.T) int32 {
 	var wg sync.WaitGroup
 	var failing int32
-	for i := 0; i < 5; i++ {
+	for i := 0; i < parallelism; i++ {
 		wg.Add(1)
 		go func(iteration int) {
 			defer wg.Done()
-			err := doFind(proxyPort, iteration, shouldFail)
+			err := doFind(host, proxyPort, iteration, shouldFail)
 			if err != nil {
-				t.Error(err)
+				t.Log(err)
 				atomic.AddInt32(&failing, 1)
 			}
 		}(i)
@@ -185,21 +188,48 @@ func runFinds(proxyPort int, shouldFail bool, t *testing.T) int32 {
 	return failing
 }
 
-// backing mongo must be started with --setParameter enableTestCommands=1
-func TestProxySanity(t *testing.T) {
+func TestProxySanityMongodMode(t *testing.T) {
 	mongoPort := 30000
 	proxyPort := 9900
 	if os.Getenv("MONGO_PORT") != "" {
 		mongoPort, _ = strconv.Atoi(os.Getenv("MONGO_PORT"))
 	}
-	if err := disableFailPoint(mongoPort); err != nil {
+	if err := disableFailPoint("localhost", mongoPort); err != nil {
 		t.Fatalf("failed to disable failpoint. err=%v", err)
 		return
 	}
-	pc := NewProxyConfig("localhost", proxyPort, "localhost", mongoPort, "", "", "test proxy", true)
+	pc := NewProxyConfig("localhost", proxyPort, "", "localhost", mongoPort, "", "", "test proxy", true, Direct, 5)
 	pc.MongoSSLSkipVerify = true
 	pc.InterceptorFactory = &MyFactory{}
+	connExpected := []int64{5, 5, 10, 15}
+	privateTester(t, pc, "localhost", proxyPort, mongoPort, 5, connExpected)
+}
 
+func TestProxySanityMongosMode(t *testing.T) {
+	mongoPort := 30000
+	proxyPort := 9900
+	if os.Getenv("MONGO_PORT") != "" {
+		mongoPort, _ = strconv.Atoi(os.Getenv("MONGO_PORT"))
+	}
+	hostname, err := os.Hostname()
+	if err != nil {
+		panic(err)
+	}
+	if err := disableFailPoint(hostname, mongoPort); err != nil {
+		t.Fatalf("failed to disable failpoint. err=%v", err)
+		return
+	}
+	uri := fmt.Sprintf("mongodb://%s:%v,%s:%v,%s:%v/?replSet=proxytest", hostname, mongoPort, hostname, mongoPort+1, hostname, mongoPort+2)
+	pc := NewProxyConfig("localhost", proxyPort, uri, hostname, mongoPort, "", "", "test proxy", true, Cluster, 5)
+	pc.MongoSSLSkipVerify = true
+	pc.InterceptorFactory = &MyFactory{}
+	//connExpected := []int64{5, 5, 10, 15}
+	connExpected := []int64{1, 1, 2, 3}
+	privateTester(t, pc, hostname, proxyPort, mongoPort, 1, connExpected)
+}
+
+// backing mongo must be started with --setParameter enableTestCommands=1
+func privateTester(t *testing.T, pc ProxyConfig, host string, proxyPort, mongoPort, parallelism int, connExpected []int64) {
 	proxy, err := NewProxy(pc)
 	if err != nil {
 		panic(err)
@@ -214,52 +244,56 @@ func TestProxySanity(t *testing.T) {
 	if conns := proxy.GetConnectionsCreated(); conns != 0 {
 		t.Fatalf("expected connections created to equal 0 but was %v", conns)
 	}
-	failing := runFinds(proxyPort, false, t)
+	failing := runFinds(host, proxyPort, parallelism, false, t)
 	if atomic.LoadInt32(&failing) > 0 {
 		t.Fatalf("finds failures")
 		return
 	}
 
-	if conns := proxy.GetConnectionsCreated(); conns != 5 {
+	t.Log("*** after 1")
+	if conns := proxy.GetConnectionsCreated(); conns != connExpected[0] {
 		t.Fatalf("expected connections created to equal 5 but was %v", conns)
 	}
 
 	// run finds again to confirm connections are reused
-	failing = runFinds(proxyPort, false, t)
+	failing = runFinds(host, proxyPort, parallelism, false, t)
 	if atomic.LoadInt32(&failing) > 0 {
 		t.Fatalf("finds failures")
 		return
 	}
-	if conns := proxy.GetConnectionsCreated(); conns != 5 {
+	if conns := proxy.GetConnectionsCreated(); conns != connExpected[1] {
 		t.Fatalf("expected connections created to equal 5 but was %v", conns)
 	}
+	t.Log("*** after 2")
 
 	// enable fail point - fail connections a bunch of times
-	enableFailPoint(mongoPort)
-	failing = runFinds(proxyPort, true, t)
+	enableFailPoint(host, mongoPort)
+	failing = runFinds(host, proxyPort, parallelism, true, t)
 
 	if atomic.LoadInt32(&failing) > 0 {
 		t.Fatalf("finds failures")
 		return
 	}
 
-	if conns := proxy.GetConnectionsCreated(); conns != 10 {
+	if conns := proxy.GetConnectionsCreated(); conns != connExpected[2] {
 		t.Fatalf("expected connections created to equal 10 but was %v", conns)
 	}
+	t.Log("*** after 3")
+
 	// disable fail point - verify connections work again
-	if err := disableFailPoint(mongoPort); err != nil {
+	if err := disableFailPoint(host, mongoPort); err != nil {
 		t.Fatalf("failed to disable failpoint. err=%v", err)
 		return
 	}
 
-	failing = runFinds(proxyPort, false, t)
+	failing = runFinds(host, proxyPort, parallelism, false, t)
 	if atomic.LoadInt32(&failing) > 0 {
 		t.Fatalf("finds failures")
 		return
 	}
 
-	if conns := proxy.GetConnectionsCreated(); conns != 15 {
+	if conns := proxy.GetConnectionsCreated(); conns != connExpected[3] {
 		t.Fatalf("expected connections created to equal 15 but was %v", conns)
 	}
-
+	t.Log("*** after 4")
 }
