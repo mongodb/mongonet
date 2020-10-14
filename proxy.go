@@ -52,23 +52,32 @@ func logMessageTrace(logger *slogger.Logger, trace bool, m Message) {
 	if trace {
 		var doc bson.D
 		var msg string
+		var err error
 		switch mm := m.(type) {
 		case *MessageMessage:
+		SECTIONS:
 			for _, section := range mm.Sections {
 				if bs, ok := section.(*BodySection); ok {
-					doc, _ = bs.Body.ToBSOND()
+					doc, err = bs.Body.ToBSOND()
+					if err != nil {
+						logger.Logf(slogger.WARN, "failed to convert body to Bson.D. err=%v", err)
+						return
+					}
+					break SECTIONS
 				}
 			}
+			msg = fmt.Sprintf("got OP_MSG %v", doc)
 		case *QueryMessage:
 			doc, _ = mm.Query.ToBSOND()
+			msg = fmt.Sprintf("got OP_QUERY %v", doc)
 		case *ReplyMessage:
 			doc, _ = mm.Docs[0].ToBSOND()
+			msg = fmt.Sprintf("got OP_REPLY %v", doc)
 		default:
 			// not bothering about printing other message types
 			msg = fmt.Sprintf("got another type %T", mm)
 		}
 
-		msg = fmt.Sprintf("got message %v", doc)
 		fmt.Println(msg)
 		logger.Logf(slogger.DEBUG, msg)
 	}
@@ -271,20 +280,27 @@ func extractTopology(mc *mongo.Client) *topology.Topology {
 	return d.Interface().(*topology.Topology)
 }
 
-func getReadPrefFromOpMsg(mm *MessageMessage) (rp *readpref.ReadPref) {
+func getReadPrefFromOpMsg(mm *MessageMessage, logger *slogger.Logger) (rp *readpref.ReadPref) {
 	for _, section := range mm.Sections {
 		bs, ok := section.(*BodySection)
 		if !ok {
+			continue
+		}
+		if bs == nil {
+			// shouldn't really happen, but let's be protective just in case
+			logger.Logf(slogger.WARN, "got an empty body section for message. continuing to the next section")
 			continue
 		}
 		bsd := bsoncore.Document(bs.Body.BSON)
 		rpVal, err := bsd.LookupErr("$readPreference")
 		if err != nil {
 			// not concerned about the error - we'll just fallback to readpref=primary
+			logger.Logf(slogger.WARN, "got an error looking up $readPreference: %v. falling back to default read preference", err)
 			return
 		}
 		rpDoc, ok := rpVal.DocumentOK()
 		if !ok {
+			logger.Logf(slogger.WARN, "$readPreference isn't a document. falling back to default read preference")
 			return
 		}
 		opts := make([]readpref.Option, 0, 1)
@@ -294,11 +310,14 @@ func getReadPrefFromOpMsg(mm *MessageMessage) (rp *readpref.ReadPref) {
 				if maxStalenessSec > 0 {
 					opts = append(opts, readpref.WithMaxStaleness(time.Duration(maxStalenessSec)*time.Second))
 				}
+			} else {
+				logger.Logf(slogger.WARN, "maxStalenessSeconds %v isn't a number. ignoring it", maxStalenessVal)
 			}
 		}
 		if modeVal, err := rpDoc.LookupErr("mode"); err == nil {
 			modeStr, ok := modeVal.StringValueOK()
 			if !ok {
+				logger.Logf(slogger.WARN, "mode %v isn't a string. falling back to default read preference", modeVal)
 				return
 			}
 			switch strings.ToLower(modeStr) {
@@ -359,7 +378,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 		// only concerned about OP_MSG at this point
 		mm, ok := m.(*MessageMessage)
 		if ok {
-			if rp2 := getReadPrefFromOpMsg(mm); rp2 != nil {
+			if rp2 := getReadPrefFromOpMsg(mm, ps.proxy.logger); rp2 != nil {
 				rp = rp2
 			}
 		}
@@ -391,7 +410,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 	if mongoConn == nil || !mongoConn.expirableConn.Alive() {
 		mongoConn, err = ps.getMongoConnection(rp)
 		if err != nil {
-			return nil, NewStackErrorf("cannot get connection to mongo %v using connection mode %v", err, ps.proxy.config.ConnectionMode)
+			return nil, NewStackErrorf("cannot get connection to mongo %v using connection mode=%v readpref=%v", err, ps.proxy.config.ConnectionMode, rp)
 		}
 		logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "got new connection %v using connection mode=%v readpref=%v", mongoConn.conn.ID(), ps.proxy.config.ConnectionMode, rp)
 	}
@@ -468,7 +487,8 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 func NewProxy(pc ProxyConfig) (Proxy, error) {
 	ctx := context.Background()
 	var initCount int64 = 0
-	p := Proxy{pc, nil, nil, nil, nil, description.Server{Addr: address.Address(pc.MongoAddress())}, readpref.Primary(), ctx, &initCount}
+	defaultReadPref := readpref.Primary()
+	p := Proxy{pc, nil, nil, nil, nil, description.Server{Addr: address.Address(pc.MongoAddress())}, defaultReadPref, ctx, &initCount}
 	mongoClient, err := getMongoClient(&p, pc, ctx)
 	if err != nil {
 		return Proxy{}, NewStackErrorf("error getting driver client for %v: %v", pc.MongoAddress(), err)
