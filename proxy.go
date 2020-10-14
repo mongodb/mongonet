@@ -340,16 +340,25 @@ func getReadPrefFromOpMsg(mm *MessageMessage, logger *slogger.Logger) (rp *readp
 func (ps *ProxySession) getMongoConnection(rp *readpref.ReadPref) (*MongoConnectionWrapper, error) {
 	var err error
 	var srv driver.Server
+	var found bool
 	if ps.proxy.config.ConnectionMode == Direct {
-		srv, err = ps.proxy.topology.FindServer(ps.proxy.descriptionServer)
+		srv2, err := ps.proxy.topology.FindServer(ps.proxy.descriptionServer)
 		if err != nil {
 			return nil, err
 		}
+		// find server returns nil, nil if no server found
+		found = srv2 != nil
+		srv = srv2
 	} else {
 		srv, err = ps.proxy.topology.SelectServer(ps.proxy.Context, description.ReadPrefSelector(rp))
 		if err != nil {
 			return nil, err
 		}
+		// select server returns nil, nil if no server selected
+		found = !(srv == nil || reflect.ValueOf(srv).IsNil()) // reflect is used as return value is an interface
+	}
+	if !found {
+		return nil, fmt.Errorf("couldn't select a server - got nil srv")
 	}
 	conn, err := srv.Connection(ps.proxy.Context)
 	if err != nil {

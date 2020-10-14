@@ -359,13 +359,13 @@ func getHostAndPorts() (mongoPort, proxyPort int, hostname string) {
 }
 
 func privateTestMongodMode(secondaryMode bool, t *testing.T) {
-	mongoPort, proxyPort, hostname := getHostAndPorts()
-	if err := disableFailPoint(hostname, mongoPort, Direct); err != nil {
+	mongoPort, proxyPort, _ := getHostAndPorts()
+	if err := disableFailPoint("localhost", mongoPort, Direct); err != nil {
 		t.Fatalf("failed to disable failpoint. err=%v", err)
 		return
 	}
-	pc := getProxyConfigForMongod(hostname, mongoPort, proxyPort)
-	privateTester(t, pc, hostname, proxyPort, mongoPort, ParallelClients, Direct, secondaryMode)
+	pc := getProxyConfigForMongod("localhost", mongoPort, proxyPort)
+	privateTester(t, pc, "localhost", proxyPort, mongoPort, ParallelClients, Direct, secondaryMode)
 }
 
 func TestProxySanityMongodModePrimary(t *testing.T) {
