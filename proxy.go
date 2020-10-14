@@ -49,6 +49,7 @@ func logTrace(logger *slogger.Logger, trace bool, format string, args ...interfa
 func logMessageTrace(logger *slogger.Logger, trace bool, m Message) {
 	if trace {
 		var doc bson.D
+		var msg string
 		switch mm := m.(type) {
 		case *MessageMessage:
 			for _, section := range mm.Sections {
@@ -62,10 +63,10 @@ func logMessageTrace(logger *slogger.Logger, trace bool, m Message) {
 			doc, _ = mm.Docs[0].ToBSOND()
 		default:
 			// not bothering about printing other message types
-			return
+			msg = fmt.Sprintf("got another type %T", mm)
 		}
 
-		msg := fmt.Sprintf("got message %v", doc)
+		msg = fmt.Sprintf("got message %v", doc)
 		fmt.Println(msg)
 		logger.Logf(slogger.DEBUG, msg)
 	}
@@ -343,8 +344,10 @@ func (ps *ProxySession) getMongoConnection(rp *readpref.ReadPref) (*MongoConnect
 
 func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnectionWrapper, error) {
 	// reading message from client
+	logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "reading message from client")
 	m, err := ReadMessage(ps.conn)
 	if err != nil {
+		logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "reading message from client fail %v", err)
 		if err == io.EOF {
 			return mongoConn, err
 		}
@@ -407,24 +410,25 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 		logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "reading data from mongo conn %v", mongoConn.conn.ID())
 		ret, err := mongoConn.conn.ReadWireMessage(ps.proxy.Context, nil)
 		if err != nil {
+			logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "error reading wire message mongo conn %v %v", mongoConn.conn.ID(), err)
 			return nil, NewStackErrorf("error reading wire message from mongo conn %v: %v", mongoConn.conn.ID(), err)
 		}
 		logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "read data from mongo conn %v", mongoConn.conn.ID())
 		resp, err := ReadMessageFromBytes(ret)
 		if err != nil {
+			logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "error reading message from bytes on mongo conn %v %v", mongoConn.conn.ID(), err)
 			if err == io.EOF {
 				return nil, err
 			}
 			return nil, NewStackErrorf("got error reading response from mongo %v", err)
 		}
-		logMessageTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, resp)
 		if respInter != nil {
 			resp, err = respInter.InterceptMongoToClient(resp)
 			if err != nil {
 				return mongoConn, NewStackErrorf("error intercepting message %v", err)
 			}
 		}
-
+		logMessageTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, resp)
 		// Send message back to user
 		logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "sending back data to user from mongo conn %v", mongoConn.conn.ID())
 		err = SendMessage(resp, ps.conn)
