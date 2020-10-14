@@ -356,6 +356,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 	}
 	var rp *readpref.ReadPref = ps.proxy.defaultReadPref
 	if ps.proxy.config.ConnectionMode == Cluster {
+		// only concerned about OP_MSG at this point
 		mm, ok := m.(*MessageMessage)
 		if ok {
 			if rp2 := getReadPrefFromOpMsg(mm); rp2 != nil {
