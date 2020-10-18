@@ -1,5 +1,7 @@
 package mongonet
 
+import "fmt"
+
 const (
 	BodySectionKind                   = 0
 	DocumentSequenceSectionKind       = 1
@@ -108,12 +110,21 @@ func parseMessageMessage(header MessageHeader, buf []byte) (Message, error) {
 	loc := 4
 
 	sections := make([]MessageMessageSection, 0)
+	var hasBodySection bool
 	for (len(buf) - loc) >= 5 { // need at least 5 bytes left for kind byte and size
-		section, err := parseMessageMessageSection(buf, &loc)
+		section, kind, err := parseMessageMessageSection(buf, &loc)
 		if err != nil {
 			return msg, err
 		}
+		if kind == BodySectionKind {
+			if section.(*BodySection) != nil {
+				hasBodySection = true
+			}
+		}
 		sections = append(sections, section)
+	}
+	if !hasBodySection {
+		return msg, fmt.Errorf("invalid OP_MSG - no body section found or body section is nil")
 	}
 
 	msg.Sections = sections
@@ -121,7 +132,7 @@ func parseMessageMessage(header MessageHeader, buf []byte) (Message, error) {
 	return msg, nil
 }
 
-func parseMessageMessageSection(buf []byte, loc *int) (MessageMessageSection, error) {
+func parseMessageMessageSection(buf []byte, loc *int) (MessageMessageSection, int, error) {
 	kind := buf[*loc]
 	(*loc)++
 	switch kind {
@@ -130,36 +141,36 @@ func parseMessageMessageSection(buf []byte, loc *int) (MessageMessageSection, er
 	case DocumentSequenceSectionKind:
 		return parseDocumentSequenceSection(buf, loc)
 	default:
-		return nil, NewStackErrorf("invalid message message -- unknown section kind: %v", buf[0])
+		return nil, -1, NewStackErrorf("invalid message message -- unknown section kind: %v", buf[0])
 	}
 }
 
-func parseBodySection(buf []byte, loc *int) (MessageMessageSection, error) {
+func parseBodySection(buf []byte, loc *int) (MessageMessageSection, int, error) {
 	bs := &BodySection{}
 
 	var err error
 
 	bs.Body, err = parseSimpleBSON(buf[*loc:])
 	if err != nil {
-		return bs, err
+		return bs, BodySectionKind, err
 	}
 
 	(*loc) += int(bs.Body.Size)
 
-	return bs, nil
+	return bs, BodySectionKind, nil
 }
 
-func parseDocumentSequenceSection(buf []byte, loc *int) (MessageMessageSection, error) {
+func parseDocumentSequenceSection(buf []byte, loc *int) (MessageMessageSection, int, error) {
 	dss := &DocumentSequenceSection{}
 
 	if len(buf[*loc:]) < 4 {
-		return dss, NewStackErrorf("invalid Document Sequence section -- section must have a length of at least 4 bytes.")
+		return dss, DocumentSequenceSectionKind, NewStackErrorf("invalid Document Sequence section -- section must have a length of at least 4 bytes.")
 	}
 
 	expectedSizeRemaining := readInt32(buf[*loc:])
 
 	if int(expectedSizeRemaining) > len(buf[*loc:]) {
-		return dss, NewStackErrorf("invalid Document Sequence section -- section size is larger than message.")
+		return dss, DocumentSequenceSectionKind, NewStackErrorf("invalid Document Sequence section -- section size is larger than message.")
 	}
 
 	(*loc) += 4
@@ -169,7 +180,7 @@ func parseDocumentSequenceSection(buf []byte, loc *int) (MessageMessageSection, 
 
 	dss.SequenceId, err = readCString(buf[*loc:])
 	if err != nil {
-		return dss, err
+		return dss, DocumentSequenceSectionKind, err
 	}
 
 	(*loc) += len(dss.SequenceId) + 1
@@ -180,11 +191,11 @@ func parseDocumentSequenceSection(buf []byte, loc *int) (MessageMessageSection, 
 	for expectedSizeRemaining > 0 {
 		doc, err := parseSimpleBSON(buf[*loc:])
 		if err != nil {
-			return dss, err
+			return dss, DocumentSequenceSectionKind, err
 		}
 
 		if expectedSizeRemaining < doc.Size {
-			return dss, NewStackErrorf("invalid Document Sequence section -- size of document %v (starting from 0) (%v bytes) overruns end of section (%v bytes left)", docNum, doc.Size, expectedSizeRemaining)
+			return dss, DocumentSequenceSectionKind, NewStackErrorf("invalid Document Sequence section -- size of document %v (starting from 0) (%v bytes) overruns end of section (%v bytes left)", docNum, doc.Size, expectedSizeRemaining)
 		}
 
 		expectedSizeRemaining -= doc.Size
@@ -195,5 +206,5 @@ func parseDocumentSequenceSection(buf []byte, loc *int) (MessageMessageSection, 
 
 	dss.Documents = docs
 
-	return dss, nil
+	return dss, DocumentSequenceSectionKind, nil
 }

@@ -68,10 +68,18 @@ func logMessageTrace(logger *slogger.Logger, trace bool, m Message) {
 			}
 			msg = fmt.Sprintf("got OP_MSG %v", doc)
 		case *QueryMessage:
-			doc, _ = mm.Query.ToBSOND()
+			doc, err = mm.Query.ToBSOND()
+			if err != nil {
+				logger.Logf(slogger.WARN, "failed to convert query to Bson.D. err=%v", err)
+				return
+			}
 			msg = fmt.Sprintf("got OP_QUERY %v", doc)
 		case *ReplyMessage:
-			doc, _ = mm.Docs[0].ToBSOND()
+			doc, err = mm.Docs[0].ToBSOND()
+			if err != nil {
+				logger.Logf(slogger.WARN, "failed to convert reply doc to Bson.D. err=%v", err)
+				return
+			}
 			msg = fmt.Sprintf("got OP_REPLY %v", doc)
 		default:
 			// not bothering about printing other message types
@@ -280,61 +288,54 @@ func extractTopology(mc *mongo.Client) *topology.Topology {
 	return d.Interface().(*topology.Topology)
 }
 
-func getReadPrefFromOpMsg(mm *MessageMessage, logger *slogger.Logger) (rp *readpref.ReadPref) {
+func getReadPrefFromOpMsg(mm *MessageMessage, logger *slogger.Logger, defaultRp *readpref.ReadPref) (rp *readpref.ReadPref, err error) {
 	for _, section := range mm.Sections {
 		bs, ok := section.(*BodySection)
 		if !ok {
 			continue
 		}
-		if bs == nil {
-			// shouldn't really happen, but let's be protective just in case
-			logger.Logf(slogger.WARN, "got an empty body section for message. continuing to the next section")
-			continue
-		}
 		bsd := bsoncore.Document(bs.Body.BSON)
-		rpVal, err := bsd.LookupErr("$readPreference")
-		if err != nil {
-			// not concerned about the error - we'll just fallback to readpref=primary
-			logger.Logf(slogger.WARN, "got an error looking up $readPreference: %v. falling back to default read preference", err)
-			return
+		rpVal, err2 := bsd.LookupErr("$readPreference")
+		if err2 != nil {
+			if err2 == bsoncore.ErrElementNotFound {
+				return defaultRp, nil
+			}
+			return nil, fmt.Errorf("got an error looking up $readPreference: %v", err)
 		}
 		rpDoc, ok := rpVal.DocumentOK()
 		if !ok {
-			logger.Logf(slogger.WARN, "$readPreference isn't a document. falling back to default read preference")
-			return
+			return nil, fmt.Errorf("$readPreference isn't a document")
 		}
 		opts := make([]readpref.Option, 0, 1)
 		if maxStalenessVal, err := rpDoc.LookupErr("maxStalenessSeconds"); err == nil {
-			if maxStalenessVal.IsNumber() {
-				maxStalenessSec := maxStalenessVal.AsInt32()
-				if maxStalenessSec > 0 {
-					opts = append(opts, readpref.WithMaxStaleness(time.Duration(maxStalenessSec)*time.Second))
-				}
+			if maxStalenessSec, ok := maxStalenessVal.AsInt32OK(); ok && maxStalenessSec > 0 {
+				opts = append(opts, readpref.WithMaxStaleness(time.Duration(maxStalenessSec)*time.Second))
 			} else {
-				logger.Logf(slogger.WARN, "maxStalenessSeconds %v isn't a number. ignoring it", maxStalenessVal)
+				logger.Logf(slogger.WARN, "maxStalenessSeconds %v is invalid. ignoring it", maxStalenessVal)
 			}
 		}
-		if modeVal, err := rpDoc.LookupErr("mode"); err == nil {
+		if modeVal, err2 := rpDoc.LookupErr("mode"); err2 == nil {
 			modeStr, ok := modeVal.StringValueOK()
 			if !ok {
-				logger.Logf(slogger.WARN, "mode %v isn't a string. falling back to default read preference", modeVal)
-				return
+				return nil, fmt.Errorf("mode %v isn't a string", modeVal)
 			}
 			switch strings.ToLower(modeStr) {
 			case "primarypreferred":
-				return readpref.PrimaryPreferred(opts...)
+				return readpref.PrimaryPreferred(opts...), nil
 			case "secondary":
-				return readpref.Secondary(opts...)
+				return readpref.Secondary(opts...), nil
 			case "secondarypreferred":
-				return readpref.SecondaryPreferred(opts...)
+				return readpref.SecondaryPreferred(opts...), nil
 			case "nearest":
-				return readpref.Nearest(opts...)
+				return readpref.Nearest(opts...), nil
+			case "primary":
+				return defaultRp, nil
 			default:
-				return
+				return nil, fmt.Errorf("got unsupported read preference %v", modeStr)
 			}
 		}
 	}
-	return
+	return defaultRp, nil
 }
 
 func (ps *ProxySession) getMongoConnection(rp *readpref.ReadPref) (*MongoConnectionWrapper, error) {
@@ -354,8 +355,7 @@ func (ps *ProxySession) getMongoConnection(rp *readpref.ReadPref) (*MongoConnect
 		if err != nil {
 			return nil, err
 		}
-		// select server returns nil, nil if no server selected
-		found = !(srv == nil || reflect.ValueOf(srv).IsNil()) // reflect is used as return value is an interface
+		found = true
 	}
 	if !found {
 		return nil, fmt.Errorf("couldn't select a server - got nil srv")
@@ -387,7 +387,11 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 		// only concerned about OP_MSG at this point
 		mm, ok := m.(*MessageMessage)
 		if ok {
-			if rp2 := getReadPrefFromOpMsg(mm, ps.proxy.logger); rp2 != nil {
+			rp2, err := getReadPrefFromOpMsg(mm, ps.proxy.logger, rp)
+			if err != nil {
+				return mongoConn, err
+			}
+			if rp2 != nil {
 				rp = rp2
 			}
 		}
@@ -457,7 +461,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 		if respInter != nil {
 			resp, err = respInter.InterceptMongoToClient(resp)
 			if err != nil {
-				return mongoConn, NewStackErrorf("error intercepting message %v", err)
+				return nil, NewStackErrorf("error intercepting message %v", err)
 			}
 		}
 		logMessageTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, resp)
@@ -474,21 +478,21 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 		}
 
 		if !inExhaustMode {
-			return mongoConn, nil
+			return nil, nil
 		}
 
 		switch r := resp.(type) {
 		case *ReplyMessage:
 			if r.CursorId == 0 {
-				return mongoConn, nil
+				return nil, nil
 			}
 		case *MessageMessage:
 			if !r.HasMoreToCome() {
 				// moreToCome wasn't set - stop the loop
-				return mongoConn, nil
+				return nil, nil
 			}
 		default:
-			return mongoConn, NewStackErrorf("bad response type from server %T", r)
+			return nil, NewStackErrorf("bad response type from server %T", r)
 		}
 	}
 }
@@ -504,13 +508,20 @@ func NewProxy(pc ProxyConfig) (Proxy, error) {
 	}
 	p.MongoClient = mongoClient
 	p.topology = extractTopology(mongoClient)
+
 	p.logger = p.NewLogger("proxy")
 
 	return p, nil
 }
 
 func getMongoClient(p *Proxy, pc ProxyConfig, ctx context.Context) (*mongo.Client, error) {
-	opts := options.Client().
+	opts := options.Client()
+	if pc.ConnectionMode == Direct {
+		opts.ApplyURI(fmt.Sprintf("mongodb://%s", pc.MongoAddress()))
+	} else {
+		opts.ApplyURI(pc.MongoURI)
+	}
+	opts.
 		SetDirect(pc.ConnectionMode == Direct).
 		SetAppName(pc.AppName).
 		SetPoolMonitor(&event.PoolMonitor{
@@ -522,12 +533,6 @@ func getMongoClient(p *Proxy, pc ProxyConfig, ctx context.Context) (*mongo.Clien
 			},
 		}).
 		SetServerSelectionTimeout(time.Duration(pc.ServerSelectionTimeoutSec) * time.Second)
-
-	if pc.ConnectionMode == Direct {
-		opts.ApplyURI(fmt.Sprintf("mongodb://%s", pc.MongoAddress()))
-	} else {
-		opts.ApplyURI(pc.MongoURI)
-	}
 
 	if pc.MongoUser != "" {
 		auth := options.Credential{
