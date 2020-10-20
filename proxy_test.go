@@ -337,10 +337,14 @@ func runOps(host string, proxyPort, parallelism int, shouldFail bool, t *testing
 	return failing
 }
 
-func getProxyConfigForMongod(hostname string, mongoPort, proxyPort int) ProxyConfig {
-	pc := NewProxyConfig("localhost", proxyPort, "", hostname, mongoPort, "", "", "test proxy", true, Direct, ServerSelectionTimeoutSecForTests)
+func getProxyConfig(hostname string, mongoPort, proxyPort int, mode MongoConnectionMode) ProxyConfig {
+	var uri string
+	if mode == Cluster {
+		uri = fmt.Sprintf("mongodb://%s:%v,%s:%v,%s:%v/?replSet=proxytest", hostname, mongoPort, hostname, mongoPort+1, hostname, mongoPort+2)
+	}
+	pc := NewProxyConfig("localhost", proxyPort, uri, hostname, mongoPort, "", "", "test proxy", true, mode, ServerSelectionTimeoutSecForTests)
 	pc.MongoSSLSkipVerify = true
-	pc.InterceptorFactory = &MyFactory{Direct, mongoPort, proxyPort}
+	pc.InterceptorFactory = &MyFactory{mode, mongoPort, proxyPort}
 	return pc
 }
 
@@ -364,7 +368,7 @@ func privateTestMongodMode(secondaryMode bool, t *testing.T) {
 		t.Fatalf("failed to disable failpoint. err=%v", err)
 		return
 	}
-	pc := getProxyConfigForMongod("localhost", mongoPort, proxyPort)
+	pc := getProxyConfig("localhost", mongoPort, proxyPort, Direct)
 	privateTester(t, pc, "localhost", proxyPort, mongoPort, ParallelClients, Direct, secondaryMode)
 }
 
@@ -377,21 +381,13 @@ func TestProxySanityMongodModeSecondary(t *testing.T) {
 	privateTestMongodMode(true, t)
 }
 
-func getProxyConfigForMongos(hostname string, mongoPort, proxyPort int) ProxyConfig {
-	uri := fmt.Sprintf("mongodb://%s:%v,%s:%v,%s:%v/?replSet=proxytest", hostname, mongoPort, hostname, mongoPort+1, hostname, mongoPort+2)
-	pc := NewProxyConfig("localhost", proxyPort, uri, hostname, mongoPort, "", "", "test proxy", true, Cluster, ServerSelectionTimeoutSecForTests)
-	pc.MongoSSLSkipVerify = true
-	pc.InterceptorFactory = &MyFactory{Cluster, mongoPort, proxyPort}
-	return pc
-}
-
 func privateTestMongosMode(secondaryMode bool, t *testing.T) {
 	mongoPort, proxyPort, hostname := getHostAndPorts()
 	if err := disableFailPoint(hostname, mongoPort, Cluster); err != nil {
 		t.Fatalf("failed to disable failpoint. err=%v", err)
 		return
 	}
-	pc := getProxyConfigForMongos(hostname, mongoPort, proxyPort)
+	pc := getProxyConfig(hostname, mongoPort, proxyPort, Cluster)
 	privateTester(t, pc, hostname, proxyPort, mongoPort, 5, Cluster, secondaryMode)
 }
 
