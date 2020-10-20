@@ -31,11 +31,10 @@ type Proxy struct {
 	config ProxyConfig
 	server *Server
 
-	logger            *slogger.Logger
-	MongoClient       *mongo.Client
-	topology          *topology.Topology
-	descriptionServer description.Server
-	defaultReadPref   *readpref.ReadPref
+	logger          *slogger.Logger
+	MongoClient     *mongo.Client
+	topology        *topology.Topology
+	defaultReadPref *readpref.ReadPref
 
 	Context            context.Context
 	connectionsCreated *int64
@@ -338,27 +337,28 @@ func getReadPrefFromOpMsg(mm *MessageMessage, logger *slogger.Logger, defaultRp 
 	return defaultRp, nil
 }
 
+func PinnedServerSelector(addr address.Address) description.ServerSelector {
+	return description.ServerSelectorFunc(func(t description.Topology, candidates []description.Server) ([]description.Server, error) {
+		for _, s := range candidates {
+			if s.Addr == addr {
+				return []description.Server{s}, nil
+			}
+		}
+		return nil, nil
+	})
+}
+
 func (ps *ProxySession) getMongoConnection(rp *readpref.ReadPref) (*MongoConnectionWrapper, error) {
-	var err error
-	var srv driver.Server
-	var found bool
-	if ps.proxy.config.ConnectionMode == Direct {
-		srv2, err := ps.proxy.topology.FindServer(ps.proxy.descriptionServer)
-		if err != nil {
-			return nil, err
-		}
-		// find server returns nil, nil if no server found
-		found = srv2 != nil
-		srv = srv2
+	var srvSelector description.ServerSelector
+	if ps.proxy.config.ConnectionMode == Cluster {
+		srvSelector = description.ReadPrefSelector(rp)
 	} else {
-		srv, err = ps.proxy.topology.SelectServer(ps.proxy.Context, description.ReadPrefSelector(rp))
-		if err != nil {
-			return nil, err
-		}
-		found = true
+		// Direct
+		srvSelector = PinnedServerSelector(address.Address(ps.proxy.config.MongoAddress()))
 	}
-	if !found {
-		return nil, fmt.Errorf("couldn't select a server - got nil srv")
+	srv, err := ps.proxy.topology.SelectServer(ps.proxy.Context, srvSelector)
+	if err != nil {
+		return nil, err
 	}
 	conn, err := srv.Connection(ps.proxy.Context)
 	if err != nil {
@@ -501,7 +501,7 @@ func NewProxy(pc ProxyConfig) (Proxy, error) {
 	ctx := context.Background()
 	var initCount int64 = 0
 	defaultReadPref := readpref.Primary()
-	p := Proxy{pc, nil, nil, nil, nil, description.Server{Addr: address.Address(pc.MongoAddress())}, defaultReadPref, ctx, &initCount}
+	p := Proxy{pc, nil, nil, nil, nil, defaultReadPref, ctx, &initCount}
 	mongoClient, err := getMongoClient(&p, pc, ctx)
 	if err != nil {
 		return Proxy{}, NewStackErrorf("error getting driver client for %v: %v", pc.MongoAddress(), err)
