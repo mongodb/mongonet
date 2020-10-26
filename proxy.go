@@ -294,7 +294,7 @@ Since these checks are infrequent, the staleness estimate is coarse.
 Thus, clients cannot enforce a maxStalenessSeconds value of less than 90 seconds.
 https://docs.mongodb.com/manual/core/read-preference-staleness/
 */
-const MinMaxStalenessVal = 90
+const MinMaxStalenessVal int32 = 90
 
 func getReadPrefFromOpMsg(mm *MessageMessage, logger *slogger.Logger, defaultRp *readpref.ReadPref) (rp *readpref.ReadPref, err error) {
 	for _, section := range mm.Sections {
