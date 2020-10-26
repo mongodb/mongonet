@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -287,6 +288,14 @@ func extractTopology(mc *mongo.Client) *topology.Topology {
 	return d.Interface().(*topology.Topology)
 }
 
+/*
+Clients estimate secondaries’ staleness by periodically checking the latest write date of each replica set member.
+Since these checks are infrequent, the staleness estimate is coarse.
+Thus, clients cannot enforce a maxStalenessSeconds value of less than 90 seconds.
+https://docs.mongodb.com/manual/core/read-preference-staleness/
+*/
+const MinMaxStalenessVal = 90
+
 func getReadPrefFromOpMsg(mm *MessageMessage, logger *slogger.Logger, defaultRp *readpref.ReadPref) (rp *readpref.ReadPref, err error) {
 	for _, section := range mm.Sections {
 		bs, ok := section.(*BodySection)
@@ -307,7 +316,7 @@ func getReadPrefFromOpMsg(mm *MessageMessage, logger *slogger.Logger, defaultRp 
 		}
 		opts := make([]readpref.Option, 0, 1)
 		if maxStalenessVal, err := rpDoc.LookupErr("maxStalenessSeconds"); err == nil {
-			if maxStalenessSec, ok := maxStalenessVal.AsInt32OK(); ok && maxStalenessSec > 0 {
+			if maxStalenessSec, ok := maxStalenessVal.AsInt32OK(); ok && maxStalenessSec >= MinMaxStalenessVal {
 				opts = append(opts, readpref.WithMaxStaleness(time.Duration(maxStalenessSec)*time.Second))
 			} else {
 				return nil, fmt.Errorf("maxStalenessSeconds %v is invalid", maxStalenessVal)
@@ -333,7 +342,7 @@ func getReadPrefFromOpMsg(mm *MessageMessage, logger *slogger.Logger, defaultRp 
 				return nil, fmt.Errorf("got unsupported read preference %v", modeStr)
 			}
 		} else {
-			return nil, fmt.Errorf("error looking up the 'mode' field in read preference: %v", err2)
+			return nil, errors.New("read preference is missing the required \"mode\" field")
 		}
 	}
 	return defaultRp, nil
