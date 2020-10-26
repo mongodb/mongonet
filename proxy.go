@@ -310,7 +310,7 @@ func getReadPrefFromOpMsg(mm *MessageMessage, logger *slogger.Logger, defaultRp 
 			if maxStalenessSec, ok := maxStalenessVal.AsInt32OK(); ok && maxStalenessSec > 0 {
 				opts = append(opts, readpref.WithMaxStaleness(time.Duration(maxStalenessSec)*time.Second))
 			} else {
-				logger.Logf(slogger.WARN, "maxStalenessSeconds %v is invalid. ignoring it", maxStalenessVal)
+				return nil, fmt.Errorf("maxStalenessSeconds %v is invalid", maxStalenessVal)
 			}
 		}
 		if modeVal, err2 := rpDoc.LookupErr("mode"); err2 == nil {
@@ -332,6 +332,8 @@ func getReadPrefFromOpMsg(mm *MessageMessage, logger *slogger.Logger, defaultRp 
 			default:
 				return nil, fmt.Errorf("got unsupported read preference %v", modeStr)
 			}
+		} else {
+			return nil, fmt.Errorf("error looking up the 'mode' field in read preference: %v", err2)
 		}
 	}
 	return defaultRp, nil
