@@ -55,7 +55,6 @@ func logMessageTrace(logger *slogger.Logger, trace bool, m Message) {
 		var err error
 		switch mm := m.(type) {
 		case *MessageMessage:
-		SECTIONS:
 			for _, section := range mm.Sections {
 				if bs, ok := section.(*BodySection); ok {
 					doc, err = bs.Body.ToBSOND()
@@ -63,7 +62,7 @@ func logMessageTrace(logger *slogger.Logger, trace bool, m Message) {
 						logger.Logf(slogger.WARN, "failed to convert body to Bson.D. err=%v", err)
 						return
 					}
-					break SECTIONS
+					break
 				}
 			}
 			msg = fmt.Sprintf("got OP_MSG %v", doc)
