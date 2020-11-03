@@ -13,9 +13,24 @@ type SSLPair struct {
 	Id   string
 }
 
+type MongoConnectionMode int
+
+const (
+	Direct  MongoConnectionMode = iota // directly connect to a specific node
+	Cluster                            // use server selection and read preference to pick a node
+)
+
+func (m MongoConnectionMode) String() string {
+	if m == Direct {
+		return "direct"
+	}
+	return "cluster"
+}
+
 type ProxyConfig struct {
 	ServerConfig
 
+	MongoURI           string
 	MongoHost          string
 	MongoPort          int
 	MongoSSL           bool
@@ -28,10 +43,12 @@ type ProxyConfig struct {
 
 	AppName string
 
-	TraceConnPool bool
+	TraceConnPool             bool
+	ConnectionMode            MongoConnectionMode
+	ServerSelectionTimeoutSec int
 }
 
-func NewProxyConfig(bindHost string, bindPort int, mongoHost string, mongoPort int, mongoUser, mongoPassword, appName string, traceConnPool bool) ProxyConfig {
+func NewProxyConfig(bindHost string, bindPort int, mongoUri, mongoHost string, mongoPort int, mongoUser, mongoPassword, appName string, traceConnPool bool, connectionMode MongoConnectionMode, serverSelectionTimeoutSec int) ProxyConfig {
 
 	syncTlsConfig := NewSyncTlsConfig()
 	return ProxyConfig{
@@ -47,6 +64,7 @@ func NewProxyConfig(bindHost string, bindPort int, mongoHost string, mongoPort i
 			slogger.OFF, // LogLevel
 			nil,         // Appenders
 		},
+		mongoUri,
 		mongoHost,
 		mongoPort,
 		false, // MongoSSL
@@ -57,6 +75,8 @@ func NewProxyConfig(bindHost string, bindPort int, mongoHost string, mongoPort i
 		nil, // InterceptorFactory
 		appName,
 		traceConnPool,
+		connectionMode,
+		serverSelectionTimeoutSec,
 	}
 }
 

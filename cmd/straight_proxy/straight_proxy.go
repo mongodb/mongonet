@@ -15,7 +15,7 @@ func main() {
 
 	flag.Parse()
 
-	pc := mongonet.NewProxyConfig(*bindHost, *bindPort, *mongoHost, *mongoPort, "", "", "straight proxy", true)
+	pc := mongonet.NewProxyConfig(*bindHost, *bindPort, *mongoHost, *mongoPort, "", "", "", "straight proxy", false, mongonet.Direct, 5)
 	pc.MongoSSLSkipVerify = true
 
 	proxy, err := mongonet.NewProxy(pc)

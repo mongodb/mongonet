@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"reflect"
 	"runtime/pprof"
+	"strings"
 	"sync/atomic"
 	"time"
 	"unsafe"
@@ -18,6 +20,8 @@ import (
 	"go.mongodb.org/mongo-driver/event"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.mongodb.org/mongo-driver/mongo/readpref"
+	"go.mongodb.org/mongo-driver/x/bsonx/bsoncore"
 	"go.mongodb.org/mongo-driver/x/mongo/driver"
 	"go.mongodb.org/mongo-driver/x/mongo/driver/address"
 	"go.mongodb.org/mongo-driver/x/mongo/driver/description"
@@ -28,10 +32,11 @@ type Proxy struct {
 	config ProxyConfig
 	server *Server
 
-	logger             *slogger.Logger
-	MongoClient        *mongo.Client
-	topology           *topology.Topology
-	descriptionServer  description.Server
+	logger          *slogger.Logger
+	MongoClient     *mongo.Client
+	topology        *topology.Topology
+	defaultReadPref *readpref.ReadPref
+
 	Context            context.Context
 	connectionsCreated *int64
 }
@@ -46,23 +51,40 @@ func logTrace(logger *slogger.Logger, trace bool, format string, args ...interfa
 func logMessageTrace(logger *slogger.Logger, trace bool, m Message) {
 	if trace {
 		var doc bson.D
+		var msg string
+		var err error
 		switch mm := m.(type) {
 		case *MessageMessage:
 			for _, section := range mm.Sections {
 				if bs, ok := section.(*BodySection); ok {
-					doc, _ = bs.Body.ToBSOND()
+					doc, err = bs.Body.ToBSOND()
+					if err != nil {
+						logger.Logf(slogger.WARN, "failed to convert body to Bson.D. err=%v", err)
+						return
+					}
+					break
 				}
 			}
+			msg = fmt.Sprintf("got OP_MSG %v", doc)
 		case *QueryMessage:
-			doc, _ = mm.Query.ToBSOND()
+			doc, err = mm.Query.ToBSOND()
+			if err != nil {
+				logger.Logf(slogger.WARN, "failed to convert query to Bson.D. err=%v", err)
+				return
+			}
+			msg = fmt.Sprintf("got OP_QUERY %v", doc)
 		case *ReplyMessage:
-			doc, _ = mm.Docs[0].ToBSOND()
+			doc, err = mm.Docs[0].ToBSOND()
+			if err != nil {
+				logger.Logf(slogger.WARN, "failed to convert reply doc to Bson.D. err=%v", err)
+				return
+			}
+			msg = fmt.Sprintf("got OP_REPLY %v", doc)
 		default:
 			// not bothering about printing other message types
-			return
+			msg = fmt.Sprintf("got another type %T", mm)
 		}
 
-		msg := fmt.Sprintf("got message %v", doc)
 		fmt.Println(msg)
 		logger.Logf(slogger.DEBUG, msg)
 	}
@@ -265,8 +287,86 @@ func extractTopology(mc *mongo.Client) *topology.Topology {
 	return d.Interface().(*topology.Topology)
 }
 
-func (ps *ProxySession) getMongoConnection() (*MongoConnectionWrapper, error) {
-	srv, err := ps.proxy.topology.FindServer(ps.proxy.descriptionServer)
+/*
+Clients estimate secondaries’ staleness by periodically checking the latest write date of each replica set member.
+Since these checks are infrequent, the staleness estimate is coarse.
+Thus, clients cannot enforce a maxStalenessSeconds value of less than 90 seconds.
+https://docs.mongodb.com/manual/core/read-preference-staleness/
+*/
+const MinMaxStalenessVal int32 = 90
+
+func getReadPrefFromOpMsg(mm *MessageMessage, logger *slogger.Logger, defaultRp *readpref.ReadPref) (rp *readpref.ReadPref, err error) {
+	for _, section := range mm.Sections {
+		bs, ok := section.(*BodySection)
+		if !ok {
+			continue
+		}
+		bsd := bsoncore.Document(bs.Body.BSON)
+		rpVal, err2 := bsd.LookupErr("$readPreference")
+		if err2 != nil {
+			if err2 == bsoncore.ErrElementNotFound {
+				return defaultRp, nil
+			}
+			return nil, fmt.Errorf("got an error looking up $readPreference: %v", err)
+		}
+		rpDoc, ok := rpVal.DocumentOK()
+		if !ok {
+			return nil, fmt.Errorf("$readPreference isn't a document")
+		}
+		opts := make([]readpref.Option, 0, 1)
+		if maxStalenessVal, err := rpDoc.LookupErr("maxStalenessSeconds"); err == nil {
+			if maxStalenessSec, ok := maxStalenessVal.AsInt32OK(); ok && maxStalenessSec >= MinMaxStalenessVal {
+				opts = append(opts, readpref.WithMaxStaleness(time.Duration(maxStalenessSec)*time.Second))
+			} else {
+				return nil, fmt.Errorf("maxStalenessSeconds %v is invalid", maxStalenessVal)
+			}
+		}
+		if modeVal, err2 := rpDoc.LookupErr("mode"); err2 == nil {
+			modeStr, ok := modeVal.StringValueOK()
+			if !ok {
+				return nil, fmt.Errorf("mode %v isn't a string", modeVal)
+			}
+			switch strings.ToLower(modeStr) {
+			case "primarypreferred":
+				return readpref.PrimaryPreferred(opts...), nil
+			case "secondary":
+				return readpref.Secondary(opts...), nil
+			case "secondarypreferred":
+				return readpref.SecondaryPreferred(opts...), nil
+			case "nearest":
+				return readpref.Nearest(opts...), nil
+			case "primary":
+				return defaultRp, nil
+			default:
+				return nil, fmt.Errorf("got unsupported read preference %v", modeStr)
+			}
+		} else {
+			return nil, errors.New("read preference is missing the required \"mode\" field")
+		}
+	}
+	return defaultRp, nil
+}
+
+func PinnedServerSelector(addr address.Address) description.ServerSelector {
+	return description.ServerSelectorFunc(func(t description.Topology, candidates []description.Server) ([]description.Server, error) {
+		for _, s := range candidates {
+			if s.Addr == addr {
+				return []description.Server{s}, nil
+			}
+		}
+		return nil, nil
+	})
+}
+
+func (ps *ProxySession) getMongoConnection(rp *readpref.ReadPref) (*MongoConnectionWrapper, error) {
+	var srvSelector description.ServerSelector
+	if ps.proxy.config.ConnectionMode == Cluster {
+		srvSelector = description.ReadPrefSelector(rp)
+	} else {
+		// Direct
+		srvSelector = PinnedServerSelector(address.Address(ps.proxy.config.MongoAddress()))
+	}
+	srv, err := ps.proxy.topology.SelectServer(ps.proxy.Context, srvSelector)
 	if err != nil {
 		return nil, err
 	}
@@ -283,12 +383,28 @@ func (ps *ProxySession) getMongoConnection() (*MongoConnectionWrapper, error) {
 
 func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnectionWrapper, error) {
 	// reading message from client
+	logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "reading message from client")
 	m, err := ReadMessage(ps.conn)
 	if err != nil {
+		logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "reading message from client fail %v", err)
 		if err == io.EOF {
 			return mongoConn, err
 		}
 		return mongoConn, NewStackErrorf("got error reading from client: %v", err)
+	}
+	var rp *readpref.ReadPref = ps.proxy.defaultReadPref
+	if ps.proxy.config.ConnectionMode == Cluster {
+		// only concerned about OP_MSG at this point
+		mm, ok := m.(*MessageMessage)
+		if ok {
+			rp2, err := getReadPrefFromOpMsg(mm, ps.proxy.logger, rp)
+			if err != nil {
+				return mongoConn, err
+			}
+			if rp2 != nil {
+				rp = rp2
+			}
+		}
 	}
 	logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "got message from client")
 	logMessageTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, m)
@@ -315,11 +431,11 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 		}
 	}
 	if mongoConn == nil || !mongoConn.expirableConn.Alive() {
-		mongoConn, err = ps.getMongoConnection()
+		mongoConn, err = ps.getMongoConnection(rp)
 		if err != nil {
-			return nil, NewStackErrorf("cannot get connection to mongo %v", err)
+			return nil, NewStackErrorf("cannot get connection to mongo %v using connection mode=%v readpref=%v", err, ps.proxy.config.ConnectionMode, rp)
 		}
-		logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "got new connection %v", mongoConn.conn.ID())
+		logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "got new connection %v using connection mode=%v readpref=%v", mongoConn.conn.ID(), ps.proxy.config.ConnectionMode, rp)
 	}
 
 	// Send message to mongo
@@ -340,24 +456,25 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 		logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "reading data from mongo conn %v", mongoConn.conn.ID())
 		ret, err := mongoConn.conn.ReadWireMessage(ps.proxy.Context, nil)
 		if err != nil {
+			logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "error reading wire message mongo conn %v %v", mongoConn.conn.ID(), err)
 			return nil, NewStackErrorf("error reading wire message from mongo conn %v: %v", mongoConn.conn.ID(), err)
 		}
 		logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "read data from mongo conn %v", mongoConn.conn.ID())
 		resp, err := ReadMessageFromBytes(ret)
 		if err != nil {
+			logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "error reading message from bytes on mongo conn %v %v", mongoConn.conn.ID(), err)
 			if err == io.EOF {
 				return nil, err
 			}
 			return nil, NewStackErrorf("got error reading response from mongo %v", err)
 		}
-		logMessageTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, resp)
 		if respInter != nil {
 			resp, err = respInter.InterceptMongoToClient(resp)
 			if err != nil {
 				return nil, NewStackErrorf("error intercepting message %v", err)
 			}
 		}
-
+		logMessageTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, resp)
 		// Send message back to user
 		logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "sending back data to user from mongo conn %v", mongoConn.conn.ID())
 		err = SendMessage(resp, ps.conn)
@@ -393,21 +510,29 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 func NewProxy(pc ProxyConfig) (Proxy, error) {
 	ctx := context.Background()
 	var initCount int64 = 0
-	p := Proxy{pc, nil, nil, nil, nil, description.Server{Addr: address.Address(pc.MongoAddress())}, ctx, &initCount}
+	defaultReadPref := readpref.Primary()
+	p := Proxy{pc, nil, nil, nil, nil, defaultReadPref, ctx, &initCount}
 	mongoClient, err := getMongoClient(&p, pc, ctx)
 	if err != nil {
 		return Proxy{}, NewStackErrorf("error getting driver client for %v: %v", pc.MongoAddress(), err)
 	}
 	p.MongoClient = mongoClient
 	p.topology = extractTopology(mongoClient)
+
 	p.logger = p.NewLogger("proxy")
 
 	return p, nil
 }
 
 func getMongoClient(p *Proxy, pc ProxyConfig, ctx context.Context) (*mongo.Client, error) {
-	opts := options.Client().ApplyURI(fmt.Sprintf("mongodb://%s", pc.MongoAddress())).
-		SetDirect(true).
+	opts := options.Client()
+	if pc.ConnectionMode == Direct {
+		opts.ApplyURI(fmt.Sprintf("mongodb://%s", pc.MongoAddress()))
+	} else {
+		opts.ApplyURI(pc.MongoURI)
+	}
+	opts.
+		SetDirect(pc.ConnectionMode == Direct).
 		SetAppName(pc.AppName).
 		SetPoolMonitor(&event.PoolMonitor{
 			Event: func(evt *event.PoolEvent) {
@@ -416,7 +541,9 @@ func getMongoClient(p *Proxy, pc ProxyConfig, ctx context.Context) (*mongo.Clien
 					p.AddConnection()
 				}
 			},
-		})
+		}).
+		SetServerSelectionTimeout(time.Duration(pc.ServerSelectionTimeoutSec) * time.Second)
+
 	if pc.MongoUser != "" {
 		auth := options.Credential{
 			AuthMechanism: "SCRAM-SHA-1",
