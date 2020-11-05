@@ -93,6 +93,7 @@ func logMessageTrace(logger *slogger.Logger, trace bool, m Message) {
 // MongoConnectionWrapper is used to wrap the driver connection so we can explicitly expire (close out) connections on certain occasions that aren't being picked up by the driver
 type MongoConnectionWrapper struct {
 	conn          driver.Connection
+	srv           driver.Server
 	expirableConn driver.Expirable
 	bad           bool
 	logger        *slogger.Logger
@@ -378,7 +379,12 @@ func (ps *ProxySession) getMongoConnection(rp *readpref.ReadPref) (*MongoConnect
 	if !ok {
 		return nil, fmt.Errorf("bad connection type %T", conn)
 	}
-	return &MongoConnectionWrapper{conn, ec, false, ps.proxy.logger, ps.proxy.config.TraceConnPool}, nil
+	return &MongoConnectionWrapper{conn, srv, ec, false, ps.proxy.logger, ps.proxy.config.TraceConnPool}, nil
+}
+
+func wrapNetworkError(err error) error {
+	labels := []string{driver.NetworkError}
+	return driver.Error{Message: err.Error(), Labels: labels, Wrapped: err}
 }
 
 func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnectionWrapper, error) {
@@ -438,9 +444,15 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 		logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "got new connection %v using connection mode=%v readpref=%v", mongoConn.conn.ID(), ps.proxy.config.ConnectionMode, rp)
 	}
 
+	ep, ok := mongoConn.srv.(driver.ErrorProcessor)
+	if !ok {
+		return nil, NewStackErrorf("server ErrorProcessor type assertion failed")
+	}
+
 	// Send message to mongo
 	err = mongoConn.conn.WriteWireMessage(ps.proxy.Context, m.Serialize())
 	if err != nil {
+		ep.ProcessError(wrapNetworkError(err), mongoConn.conn)
 		return mongoConn, NewStackErrorf("error writing to mongo: %v", err)
 	}
 
@@ -457,6 +469,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 		ret, err := mongoConn.conn.ReadWireMessage(ps.proxy.Context, nil)
 		if err != nil {
 			logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "error reading wire message mongo conn %v %v", mongoConn.conn.ID(), err)
+			ep.ProcessError(wrapNetworkError(err), mongoConn.conn)
 			return nil, NewStackErrorf("error reading wire message from mongo conn %v: %v", mongoConn.conn.ID(), err)
 		}
 		logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "read data from mongo conn %v", mongoConn.conn.ID())

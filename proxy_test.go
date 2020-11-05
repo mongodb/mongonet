@@ -351,7 +351,10 @@ func getProxyConfig(hostname string, mongoPort, proxyPort int, mode MongoConnect
 func getHostAndPorts() (mongoPort, proxyPort int, hostname string) {
 	var err error
 	mongoPort = 30000
-	proxyPort = 9900
+	proxyPort, err = EphemeralPort()
+	if err != nil {
+		panic(err)
+	}
 	if os.Getenv("MONGO_PORT") != "" {
 		mongoPort, _ = strconv.Atoi(os.Getenv("MONGO_PORT"))
 	}
