@@ -221,6 +221,21 @@ func getTestClient(host string, port int, mode MongoConnectionMode, secondaryRea
 	return client, nil
 }
 
+func runCommandFailOp(host string, proxyPort int, mode MongoConnectionMode, secondaryReads bool) error {
+	client, err := getTestClient(host, proxyPort, mode, secondaryReads)
+	if err != nil {
+		return err
+	}
+	ctx, cancelFunc := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancelFunc()
+	if err := client.Connect(ctx); err != nil {
+		return fmt.Errorf("cannot connect to server. err: %v", err)
+	}
+	defer client.Disconnect(ctx)
+	res := client.Database("test").RunCommand(ctx, bson.D{{"createIndexes", "bla"}})
+	return res.Err()
+}
+
 func runOp(host string, proxyPort, iteration int, shouldFail bool, mode MongoConnectionMode, secondaryReads bool) error {
 	client, err := getTestClient(host, proxyPort, mode, secondaryReads)
 	if err != nil {
@@ -451,6 +466,14 @@ func privateTester(t *testing.T, pc ProxyConfig, host string, proxyPort, mongoPo
 		t.Fatalf("expected connections created to remain the same (%v), but got %v", currConns, conns)
 	}
 	currConns = conns
+	if cleared := proxy.GetPoolCleared(); cleared != 0 {
+		t.Fatalf("expected pool cleared to equal 0 but was %v", cleared)
+	}
+
+	t.Log("*** induce a non-network problem")
+	if err := runCommandFailOp(host, proxyPort, mode, secondaryReads); err == nil {
+		t.Fatalf("expected command to fail but it suceeded")
+	}
 	if cleared := proxy.GetPoolCleared(); cleared != 0 {
 		t.Fatalf("expected pool cleared to equal 0 but was %v", cleared)
 	}
