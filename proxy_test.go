@@ -421,10 +421,17 @@ func privateTester(t *testing.T, pc ProxyConfig, host string, proxyPort, mongoPo
 		t.Fatalf("expected connections created to equal 0 but was %v", conns)
 	}
 
+	if cleared := proxy.GetPoolCleared(); cleared != 0 {
+		t.Fatalf("expected pool cleared to equal 0 but was %v", cleared)
+	}
+
 	failing := runOps(host, proxyPort, parallelism*2, false, t, mode, secondaryReads)
 	if atomic.LoadInt32(&failing) > 0 {
 		t.Fatalf("ops failures")
 		return
+	}
+	if cleared := proxy.GetPoolCleared(); cleared != 0 {
+		t.Fatalf("expected pool cleared to equal 0 but was %v", cleared)
 	}
 
 	conns := proxy.GetConnectionsCreated()
@@ -444,6 +451,9 @@ func privateTester(t *testing.T, pc ProxyConfig, host string, proxyPort, mongoPo
 		t.Fatalf("expected connections created to remain the same (%v), but got %v", currConns, conns)
 	}
 	currConns = conns
+	if cleared := proxy.GetPoolCleared(); cleared != 0 {
+		t.Fatalf("expected pool cleared to equal 0 but was %v", cleared)
+	}
 
 	t.Log("*** enable failpoint and run ops")
 	enableFailPoint(host, mongoPort, mode)
@@ -452,6 +462,9 @@ func privateTester(t *testing.T, pc ProxyConfig, host string, proxyPort, mongoPo
 	if atomic.LoadInt32(&failing) > 0 {
 		t.Fatalf("ops failures")
 		return
+	}
+	if cleared := proxy.GetPoolCleared(); cleared == 0 {
+		t.Fatalf("expected pool cleared to be gt 0 but was 0")
 	}
 
 	conns = proxy.GetConnectionsCreated()

@@ -39,6 +39,7 @@ type Proxy struct {
 
 	Context            context.Context
 	connectionsCreated *int64
+	poolCleared        *int64
 }
 
 func logTrace(logger *slogger.Logger, trace bool, format string, args ...interface{}) {
@@ -522,9 +523,9 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 
 func NewProxy(pc ProxyConfig) (Proxy, error) {
 	ctx := context.Background()
-	var initCount int64 = 0
+	var initCount, initPoolCleared int64 = 0, 0
 	defaultReadPref := readpref.Primary()
-	p := Proxy{pc, nil, nil, nil, nil, defaultReadPref, ctx, &initCount}
+	p := Proxy{pc, nil, nil, nil, nil, defaultReadPref, ctx, &initCount, &initPoolCleared}
 	mongoClient, err := getMongoClient(&p, pc, ctx)
 	if err != nil {
 		return Proxy{}, NewStackErrorf("error getting driver client for %v: %v", pc.MongoAddress(), err)
@@ -552,6 +553,8 @@ func getMongoClient(p *Proxy, pc ProxyConfig, ctx context.Context) (*mongo.Clien
 				switch evt.Type {
 				case event.ConnectionCreated:
 					p.AddConnection()
+				case event.PoolCleared:
+					p.IncrementPoolCleared()
 				}
 			},
 		}).
@@ -612,8 +615,16 @@ func (p *Proxy) AddConnection() {
 	atomic.AddInt64(p.connectionsCreated, 1)
 }
 
+func (p *Proxy) IncrementPoolCleared() {
+	atomic.AddInt64(p.poolCleared, 1)
+}
+
 func (p *Proxy) GetConnectionsCreated() int64 {
 	return atomic.LoadInt64(p.connectionsCreated)
+}
+
+func (p *Proxy) GetPoolCleared() int64 {
+	return atomic.LoadInt64(p.poolCleared)
 }
 
 func (p *Proxy) CreateWorker(session *Session) (ServerWorker, error) {
