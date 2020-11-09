@@ -1,5 +1,7 @@
 package mongonet
 
+import "go.mongodb.org/mongo-driver/x/bsonx/bsoncore"
+
 const (
 	OP_REPLY         = 1
 	OP_MSG_LEGACY    = 1000
@@ -47,7 +49,8 @@ type ReplyMessage struct {
 	StartingFrom   int32
 	NumberReturned int32
 
-	Docs []SimpleBSON
+	Docs       []SimpleBSON
+	CommandDoc bsoncore.Document
 }
 
 // OP_UPDATE
@@ -142,4 +145,5 @@ type MessageMessage struct {
 
 	FlagBits int32
 	Sections []MessageMessageSection
+	BodyDoc  bsoncore.Document
 }

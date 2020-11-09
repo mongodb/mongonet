@@ -22,6 +22,7 @@ import (
 const (
 	ServerSelectionTimeoutSecForTests = 5
 	ParallelClients                   = 5
+	InterruptedAtShutdownErrorCode    = 11660
 )
 
 type MyFactory struct {
@@ -285,7 +286,7 @@ func runOp(host string, proxyPort, iteration int, shouldFail bool, mode MongoCon
 	return nil
 }
 
-func enableFailPoint(host string, mongoPort int, mode MongoConnectionMode) error {
+func enableFailPointCloseConnection(host string, mongoPort int, mode MongoConnectionMode) error {
 	client, err := getTestClient(host, mongoPort, mode, false)
 	if err != nil {
 		return err
@@ -303,6 +304,29 @@ func enableFailPoint(host string, mongoPort int, mode MongoConnectionMode) error
 		{"data", bson.D{
 			{"failCommands", []string{"update"}},
 			{"closeConnection", true},
+		}},
+	}
+	return client.Database("admin").RunCommand(ctx, cmd).Err()
+}
+
+func enableFailPointErrorCode(host string, mongoPort, errorCode int, mode MongoConnectionMode) error {
+	client, err := getTestClient(host, mongoPort, mode, false)
+	if err != nil {
+		return err
+	}
+	ctx, cancelFunc := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelFunc()
+	if err := client.Connect(ctx); err != nil {
+		return fmt.Errorf("cannot connect to server. err: %v", err)
+	}
+	defer client.Disconnect(ctx)
+	// cannot fail "find" because it'll prevent certain driver machinery when operating against replica sets to work properly
+	cmd := bson.D{
+		{"configureFailPoint", "failCommand"},
+		{"mode", "alwaysOn"},
+		{"data", bson.D{
+			{"failCommands", []string{"update"}},
+			{"errorCode", errorCode},
 		}},
 	}
 	return client.Database("admin").RunCommand(ctx, cmd).Err()
@@ -478,16 +502,28 @@ func privateTester(t *testing.T, pc ProxyConfig, host string, proxyPort, mongoPo
 		t.Fatalf("expected pool cleared to equal 0 but was %v", cleared)
 	}
 
-	t.Log("*** enable failpoint and run ops")
-	enableFailPoint(host, mongoPort, mode)
+	t.Log("*** enable error code response failpoint and run ops")
+	enableFailPointErrorCode(host, mongoPort, InterruptedAtShutdownErrorCode, mode)
+	failing = runOps(host, proxyPort, parallelism, true, t, mode, secondaryReads)
+	if atomic.LoadInt32(&failing) > 0 {
+		t.Fatalf("ops failures")
+		return
+	}
+	cleared := proxy.GetPoolCleared()
+	if cleared == 0 {
+		t.Fatalf("expected pool cleared to be gt 0 but was 0")
+	}
+
+	t.Log("*** enable close connection failpoint and run ops")
+	enableFailPointCloseConnection(host, mongoPort, mode)
 	failing = runOps(host, proxyPort, parallelism, true, t, mode, secondaryReads)
 
 	if atomic.LoadInt32(&failing) > 0 {
 		t.Fatalf("ops failures")
 		return
 	}
-	if cleared := proxy.GetPoolCleared(); cleared == 0 {
-		t.Fatalf("expected pool cleared to be gt 0 but was 0")
+	if cleared2 := proxy.GetPoolCleared(); cleared > cleared2 {
+		t.Fatalf("expected pool cleared to be gt previous value but was %v", cleared2)
 	}
 
 	conns = proxy.GetConnectionsCreated()
