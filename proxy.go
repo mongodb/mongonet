@@ -546,6 +546,10 @@ func getMongoClient(p *Proxy, pc ProxyConfig, ctx context.Context) (*mongo.Clien
 					p.AddConnection()
 				case "ConnectionCheckOutStarted":
 					p.logger.Logf(slogger.DEBUG, "**** Connection check out started %v", evt)
+				case "ConnectionCheckedIn":
+					p.logger.Logf(slogger.DEBUG, "**** Connection checked in %v", evt)
+				case "ConnectionCheckedOut":
+					p.logger.Logf(slogger.DEBUG, "**** Connection checked out %v", evt)
 				}
 			},
 		}).

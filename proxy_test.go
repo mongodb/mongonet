@@ -630,15 +630,21 @@ func privateConnectionPerformanceTester(mode MongoConnectionMode, maxPoolSize, w
 }
 
 func TestProxyConnectionPerformanceMongodMode(t *testing.T) {
-	//privateConnectionPerformanceTester(Direct, 10, 5, 100, t) 
-	//privateConnectionPerformanceTester(Direct, 20, 10, 100, t)
-	// privateConnectionPerformanceTester(Direct, 20, 20, 100, t)
-	// privateConnectionPerformanceTester(Direct, 0, 100, 1000, t) // unlimited pool size
 	/*
-
-		privateConnectionPerformanceTester(Direct, 100, 20, 100, t)
-
+		successful:
+		privateConnectionPerformanceTester(Direct, 200, 100, 1000, t)
+		privateConnectionPerformanceTester(Direct, 10, 5, 100, t)
+		privateConnectionPerformanceTester(Direct, 20, 10, 100, t)
+		privateConnectionPerformanceTester(Direct, 0, 100, 1000, t) // unlimited pool size
 	*/
+
+	/*
+		failing:
+		privateConnectionPerformanceTester(Direct, 20, 20, 100, t)
+	*/
+	privateConnectionPerformanceTester(Direct, 5, 5, 100, t)
+	//privateConnectionPerformanceTester(Direct, 20, 20, 100, t)
+
 }
 
 // TODO - add tests for mongos
