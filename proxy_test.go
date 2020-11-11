@@ -348,7 +348,7 @@ func getProxyConfig(hostname string, mongoPort, proxyPort, minPoolSize, maxPoolS
 	if mode == Cluster {
 		uri = fmt.Sprintf("mongodb://%s:%v,%s:%v,%s:%v/?replSet=proxytest", hostname, mongoPort, hostname, mongoPort+1, hostname, mongoPort+2)
 	}
-	pc := NewProxyConfig("localhost", proxyPort, uri, hostname, mongoPort, "", "", "test proxy", true, mode, ServerSelectionTimeoutSecForTests, minPoolSize, maxPoolSize, maxPoolIdleTimeSec)
+	pc := NewProxyConfig("localhost", proxyPort, uri, hostname, mongoPort, "", "", "test proxy", false, mode, ServerSelectionTimeoutSecForTests, minPoolSize, maxPoolSize, maxPoolIdleTimeSec)
 	pc.MongoSSLSkipVerify = true
 	pc.InterceptorFactory = &MyFactory{mode, mongoPort, proxyPort}
 	return pc
@@ -567,7 +567,9 @@ func debugLog(t *testing.T, pattern string, args ...interface{}) {
 }
 
 func privateConnectionPerformanceTester(mode MongoConnectionMode, maxPoolSize, workers, targetDuration int, t *testing.T) {
-	Iterations := 1
+	resLock := sync.RWMutex{}
+	var results []int64
+	Iterations := 10
 	mongoPort, proxyPort, hostname := getHostAndPorts()
 	if err := disableFailPoint(hostname, mongoPort, mode); err != nil {
 		t.Fatalf("failed to disable failpoint. err=%v", err)
@@ -598,9 +600,10 @@ func privateConnectionPerformanceTester(mode MongoConnectionMode, maxPoolSize, w
 	defer cleanup(hostToUse, proxyPort, mode)
 
 	var wg sync.WaitGroup
-	var errCount int32
-	var successCount int32
+	totalAvg := int64(0)
 	for j := 0; j < Iterations; j++ {
+		var errCount int32
+		var successCount int32
 		var sum int64
 		for i := 0; i < workers; i++ {
 			wg.Add(1)
@@ -608,13 +611,16 @@ func privateConnectionPerformanceTester(mode MongoConnectionMode, maxPoolSize, w
 				// runtime.Gosched()
 				defer wg.Done()
 				debugLog(t, "running worker-%v", it)
-				elapsed, err := runFind("localhost", proxyPort, it, Direct, t)
+				elapsed, err := runFind("localhost", proxyPort, it, mode, t)
 				debugLog(t, "worker-%v elapsed %v err=%v", it, elapsed, err)
 				if err != nil {
 					atomic.AddInt32(&errCount, 1)
 				} else {
 					atomic.AddInt32(&successCount, 1)
 					atomic.AddInt64(&sum, elapsed.Milliseconds())
+					resLock.Lock()
+					results = append(results, elapsed.Milliseconds())
+					resLock.Unlock()
 				}
 			}(i, &wg)
 		}
@@ -626,14 +632,25 @@ func privateConnectionPerformanceTester(mode MongoConnectionMode, maxPoolSize, w
 			t.Errorf("workers failed count %v", errVal)
 		}
 		avg := float64(totalSum) / float64(successVal)
+		totalAvg += int64(avg)
 		t.Logf("DONE worker error count=%v, success count=%v, avg=%vms", errVal, successVal, avg)
 		if int(avg) > targetDuration {
 			t.Errorf("duration too high %v", avg)
 		}
 	}
+	resLock.RLock()
+	max := int64(0)
+	for _, val := range results {
+		if val > max {
+			max = val
+		}
+	}
+	resLock.RUnlock()
+	t.Logf("ALL DONE workers=%v, avg=%vms, max=%vms", workers, float64(totalAvg)/float64(Iterations), max)
 }
 
 func TestProxyConnectionPerformanceMongodMode(t *testing.T) {
+	privateConnectionPerformanceTester(Direct, 0, 100, 10000, t) // unlimited pool size
 	/*
 		successful:
 		privateConnectionPerformanceTester(Direct, 200, 100, 1000, t)
