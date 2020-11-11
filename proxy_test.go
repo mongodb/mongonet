@@ -573,7 +573,11 @@ func privateConnectionPerformanceTester(mode MongoConnectionMode, maxPoolSize, w
 		t.Fatalf("failed to disable failpoint. err=%v", err)
 		return
 	}
-	pc := getProxyConfig("localhost", mongoPort, proxyPort, DefaultMinPoolSize, maxPoolSize, DefaultMaxPoolIdleTimeSec, mode)
+	hostToUse := hostname
+	if mode == Direct {
+		hostToUse = "localhost"
+	}
+	pc := getProxyConfig(hostToUse, mongoPort, proxyPort, DefaultMinPoolSize, maxPoolSize, DefaultMaxPoolIdleTimeSec, mode)
 	pc.LogLevel = slogger.DEBUG
 	proxy, err := NewProxy(pc)
 	if err != nil {
@@ -588,10 +592,10 @@ func privateConnectionPerformanceTester(mode MongoConnectionMode, maxPoolSize, w
 	go proxy.Run()
 
 	// insert dummy docs
-	if err := insertDummyDocs("localhost", proxyPort, 1000, Direct); err != nil {
+	if err := insertDummyDocs(hostToUse, proxyPort, 1000, mode); err != nil {
 		t.Fatal(err)
 	}
-	defer cleanup("localhost", proxyPort, Direct)
+	defer cleanup(hostToUse, proxyPort, mode)
 
 	var wg sync.WaitGroup
 	var errCount int32
@@ -647,4 +651,11 @@ func TestProxyConnectionPerformanceMongodMode(t *testing.T) {
 
 }
 
-// TODO - add tests for mongos
+func TestProxyConnectionPerformanceMongosMode(t *testing.T) {
+	/*
+		successful:
+		privateConnectionPerformanceTester(Cluster, 10, 5, 100, t)
+	*/
+
+	privateConnectionPerformanceTester(Cluster, 5, 5, 100, t)
+}
