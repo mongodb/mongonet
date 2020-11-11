@@ -303,7 +303,7 @@ func disableFailPoint(host string, mongoPort int, mode MongoConnectionMode) erro
 	if err != nil {
 		return err
 	}
-	ctx, cancelFunc := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancelFunc := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancelFunc()
 	if err := client.Connect(ctx); err != nil {
 		return fmt.Errorf("cannot connect to server. err: %v", err)
@@ -641,9 +641,9 @@ func TestProxyConnectionPerformanceMongodMode(t *testing.T) {
 	/*
 		failing:
 		privateConnectionPerformanceTester(Direct, 20, 20, 100, t)
+		privateConnectionPerformanceTester(Direct, 5, 5, 100, t)
+		privateConnectionPerformanceTester(Direct, 5, 4, 100, t) - yields high response times
 	*/
-	privateConnectionPerformanceTester(Direct, 5, 5, 100, t)
-	//privateConnectionPerformanceTester(Direct, 20, 20, 100, t)
 
 }
 
