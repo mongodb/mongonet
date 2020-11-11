@@ -531,8 +531,7 @@ func cleanup(host string, proxyPort int, mode MongoConnectionMode) error {
 	return coll.Drop(goctx)
 }
 
-func runFind(host string, proxyPort, workerNum int, mode MongoConnectionMode, wg *sync.WaitGroup, t *testing.T) (time.Duration, error) {
-	defer wg.Done()
+func runFind(host string, proxyPort, workerNum int, mode MongoConnectionMode, t *testing.T) (time.Duration, error) {
 	start := time.Now()
 	dbName, collName := "test2", "foo"
 
@@ -542,16 +541,13 @@ func runFind(host string, proxyPort, workerNum int, mode MongoConnectionMode, wg
 	}
 	goctx, cancelFunc := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancelFunc()
-	debugLog(t, "worker-%v connecting", workerNum)
 	if err := client.Connect(goctx); err != nil {
 		return 0, fmt.Errorf("cannot connect to server. err: %v", err)
 	}
-	debugLog(t, "worker-%v connected", workerNum)
 	defer client.Disconnect(goctx)
 	doc := bson.D{}
 	coll := client.Database(dbName).Collection(collName)
 
-	debugLog(t, "worker-%v running find", workerNum)
 	cur, err := coll.Find(goctx, bson.D{{"x", 1}})
 	if err != nil {
 		return 0, fmt.Errorf("failed to run find. err=%v", err)
@@ -604,18 +600,19 @@ func privateConnectionPerformanceTester(mode MongoConnectionMode, maxPoolSize, w
 		var sum int64
 		for i := 0; i < workers; i++ {
 			wg.Add(1)
-			go func(it int) {
-				runtime.Gosched()
-				debugLog(t, "running worker %v", it)
-				elapsed, err := runFind("localhost", proxyPort, it, Direct, &wg, t)
-				debugLog(t, "worker %v elapsed %v err=%v", it, elapsed, err)
+			go func(it int, wg *sync.WaitGroup) {
+				// runtime.Gosched()
+				defer wg.Done()
+				debugLog(t, "running worker-%v", it)
+				elapsed, err := runFind("localhost", proxyPort, it, Direct, t)
+				debugLog(t, "worker-%v elapsed %v err=%v", it, elapsed, err)
 				if err != nil {
 					atomic.AddInt32(&errCount, 1)
 				} else {
 					atomic.AddInt32(&successCount, 1)
 					atomic.AddInt64(&sum, elapsed.Milliseconds())
 				}
-			}(i)
+			}(i, &wg)
 		}
 		wg.Wait()
 		errVal := atomic.LoadInt32(&errCount)
@@ -633,8 +630,15 @@ func privateConnectionPerformanceTester(mode MongoConnectionMode, maxPoolSize, w
 }
 
 func TestProxyConnectionPerformanceMongodMode(t *testing.T) {
-	maxPoolSize := 20
-	workers := 20
-	targetDurationMs := 100
-	privateConnectionPerformanceTester(Direct, maxPoolSize, workers, targetDurationMs, t)
+	//privateConnectionPerformanceTester(Direct, 10, 5, 100, t) 
+	//privateConnectionPerformanceTester(Direct, 20, 10, 100, t)
+	// privateConnectionPerformanceTester(Direct, 20, 20, 100, t)
+	// privateConnectionPerformanceTester(Direct, 0, 100, 1000, t) // unlimited pool size
+	/*
+
+		privateConnectionPerformanceTester(Direct, 100, 20, 100, t)
+
+	*/
 }
+
+// TODO - add tests for mongos
