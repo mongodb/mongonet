@@ -41,14 +41,14 @@ type Proxy struct {
 	connectionsCreated *int64
 }
 
-func logTrace(logger *slogger.Logger, trace bool, format string, args ...interface{}) {
+func (ps *ProxySession) logTrace(logger *slogger.Logger, trace bool, format string, args ...interface{}) {
 	if trace {
-		fmt.Printf(fmt.Sprintf("%s\n", format), args...)
-		logger.Logf(slogger.DEBUG, format, args...)
+		msg := fmt.Sprintf(fmt.Sprintf("client: %v - %s", ps.RemoteAddr(), format), args...)
+		logger.Logf(slogger.DEBUG, msg)
 	}
 }
 
-func logMessageTrace(logger *slogger.Logger, trace bool, m Message) {
+func (ps *ProxySession) logMessageTrace(logger *slogger.Logger, trace bool, m Message) {
 	if trace {
 		var doc bson.D
 		var msg string
@@ -84,8 +84,7 @@ func logMessageTrace(logger *slogger.Logger, trace bool, m Message) {
 			// not bothering about printing other message types
 			msg = fmt.Sprintf("got another type %T", mm)
 		}
-
-		fmt.Println(msg)
+		msg = fmt.Sprintf("client: %v - %s", ps.RemoteAddr(), msg)
 		logger.Logf(slogger.DEBUG, msg)
 	}
 }
@@ -99,7 +98,7 @@ type MongoConnectionWrapper struct {
 	trace         bool
 }
 
-func (m *MongoConnectionWrapper) Close() {
+func (m *MongoConnectionWrapper) Close(ps *ProxySession) {
 	if m.conn == nil {
 		m.logger.Logf(slogger.WARN, "attempt to close a nil mongo connection. noop")
 		return
@@ -107,18 +106,18 @@ func (m *MongoConnectionWrapper) Close() {
 	id := m.conn.ID()
 	if m.bad {
 		if m.expirableConn.Alive() {
-			logTrace(m.logger, m.trace, "closing underlying bad mongo connection %v", id)
+			ps.logTrace(m.logger, m.trace, "closing underlying bad mongo connection %v", id)
 			if err := m.expirableConn.Expire(); err != nil {
-				logTrace(m.logger, m.trace, "failed to expire connection. %v", err)
+				ps.logTrace(m.logger, m.trace, "failed to expire connection. %v", err)
 			}
 		} else {
-			logTrace(m.logger, m.trace, "bad mongo connection is nil!")
+			ps.logTrace(m.logger, m.trace, "bad mongo connection is nil!")
 		}
 	}
-	logTrace(m.logger, m.trace, "closing mongo connection %v", id)
+	ps.logTrace(m.logger, m.trace, "closing mongo connection %v", id)
 	if m.expirableConn.Alive() {
 		if err := m.conn.Close(); err != nil {
-			logTrace(m.logger, m.trace, "failed to close mongo connection %v: %v", id, err)
+			ps.logTrace(m.logger, m.trace, "failed to close mongo connection %v: %v", id, err)
 		}
 	}
 }
@@ -179,7 +178,7 @@ func (ps *ProxySession) DoLoopTemp() {
 		ps.mongoConn, err = ps.doLoop(ps.mongoConn)
 		if err != nil {
 			if ps.mongoConn != nil {
-				ps.mongoConn.Close()
+				ps.mongoConn.Close(ps)
 			}
 			if err != io.EOF {
 				ps.logger.Logf(slogger.WARN, "error doing loop: %v", err)
@@ -359,6 +358,7 @@ func PinnedServerSelector(addr address.Address) description.ServerSelector {
 }
 
 func (ps *ProxySession) getMongoConnection(rp *readpref.ReadPref) (*MongoConnectionWrapper, error) {
+	ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "finding a server")
 	var srvSelector description.ServerSelector
 	if ps.proxy.config.ConnectionMode == Cluster {
 		srvSelector = description.ReadPrefSelector(rp)
@@ -370,10 +370,12 @@ func (ps *ProxySession) getMongoConnection(rp *readpref.ReadPref) (*MongoConnect
 	if err != nil {
 		return nil, err
 	}
+	ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "found a server. connecting")
 	conn, err := srv.Connection(ps.proxy.Context)
 	if err != nil {
 		return nil, err
 	}
+	ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "connected")
 	ec, ok := conn.(driver.Expirable)
 	if !ok {
 		return nil, fmt.Errorf("bad connection type %T", conn)
@@ -383,10 +385,10 @@ func (ps *ProxySession) getMongoConnection(rp *readpref.ReadPref) (*MongoConnect
 
 func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnectionWrapper, error) {
 	// reading message from client
-	logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "reading message from client")
+	ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "reading message from client")
 	m, err := ReadMessage(ps.conn)
 	if err != nil {
-		logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "reading message from client fail %v", err)
+		ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "reading message from client fail %v", err)
 		if err == io.EOF {
 			return mongoConn, err
 		}
@@ -406,8 +408,8 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 			}
 		}
 	}
-	logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "got message from client")
-	logMessageTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, m)
+	ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "got message from client")
+	ps.logMessageTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, m)
 	var respInter ResponseInterceptor
 	if ps.interceptor != nil {
 		ps.interceptor.TrackRequest(m.Header())
@@ -433,9 +435,10 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 	if mongoConn == nil || !mongoConn.expirableConn.Alive() {
 		mongoConn, err = ps.getMongoConnection(rp)
 		if err != nil {
+			ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "failed to get a new connection. err=%v", err)
 			return nil, NewStackErrorf("cannot get connection to mongo %v using connection mode=%v readpref=%v", err, ps.proxy.config.ConnectionMode, rp)
 		}
-		logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "got new connection %v using connection mode=%v readpref=%v", mongoConn.conn.ID(), ps.proxy.config.ConnectionMode, rp)
+		ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "got new connection %v using connection mode=%v readpref=%v", mongoConn.conn.ID(), ps.proxy.config.ConnectionMode, rp)
 	}
 
 	// Send message to mongo
@@ -447,22 +450,22 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 	if !m.HasResponse() {
 		return mongoConn, nil
 	}
-	defer mongoConn.Close()
+	defer mongoConn.Close(ps)
 
 	inExhaustMode := m.IsExhaust()
 
 	for {
 		// Read message back from mongo
-		logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "reading data from mongo conn %v", mongoConn.conn.ID())
+		ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "reading data from mongo conn %v", mongoConn.conn.ID())
 		ret, err := mongoConn.conn.ReadWireMessage(ps.proxy.Context, nil)
 		if err != nil {
-			logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "error reading wire message mongo conn %v %v", mongoConn.conn.ID(), err)
+			ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "error reading wire message mongo conn %v %v", mongoConn.conn.ID(), err)
 			return nil, NewStackErrorf("error reading wire message from mongo conn %v: %v", mongoConn.conn.ID(), err)
 		}
-		logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "read data from mongo conn %v", mongoConn.conn.ID())
+		ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "read data from mongo conn %v", mongoConn.conn.ID())
 		resp, err := ReadMessageFromBytes(ret)
 		if err != nil {
-			logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "error reading message from bytes on mongo conn %v %v", mongoConn.conn.ID(), err)
+			ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "error reading message from bytes on mongo conn %v %v", mongoConn.conn.ID(), err)
 			if err == io.EOF {
 				return nil, err
 			}
@@ -474,15 +477,16 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 				return nil, NewStackErrorf("error intercepting message %v", err)
 			}
 		}
-		logMessageTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, resp)
+		ps.logMessageTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, resp)
 		// Send message back to user
-		logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "sending back data to user from mongo conn %v", mongoConn.conn.ID())
+		ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "sending back data to user from mongo conn %v", mongoConn.conn.ID())
 		err = SendMessage(resp, ps.conn)
 		if err != nil {
 			mongoConn.bad = true
+			ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "error sending back data to user from mongo conn %v. err=%v", mongoConn.conn.ID(), err)
 			return nil, NewStackErrorf("got error sending response to client from conn %v: %v", mongoConn.conn.ID(), err)
 		}
-		logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "sent back data to user from mongo conn %v", mongoConn.conn.ID())
+		ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "sent back data to user from mongo conn %v", mongoConn.conn.ID())
 		if ps.interceptor != nil {
 			ps.interceptor.TrackResponse(resp.Header())
 		}
@@ -538,11 +542,19 @@ func getMongoClient(p *Proxy, pc ProxyConfig, ctx context.Context) (*mongo.Clien
 			Event: func(evt *event.PoolEvent) {
 				switch evt.Type {
 				case event.ConnectionCreated:
+					p.logger.Logf(slogger.DEBUG, "**** Connection created %v", evt)
 					p.AddConnection()
+				case "ConnectionCheckOutStarted":
+					p.logger.Logf(slogger.DEBUG, "**** Connection check out started %v", evt)
 				}
 			},
 		}).
-		SetServerSelectionTimeout(time.Duration(pc.ServerSelectionTimeoutSec) * time.Second)
+		SetServerSelectionTimeout(time.Duration(pc.ServerSelectionTimeoutSec) * time.Second).
+		SetMinPoolSize(uint64(pc.MinPoolSize)).
+		SetMaxPoolSize(uint64(pc.MaxPoolSize))
+	if pc.MaxPoolIdleTimeSec > 0 {
+		opts.SetMaxConnIdleTime(time.Duration(pc.MaxPoolIdleTimeSec) * time.Second)
+	}
 
 	if pc.MongoUser != "" {
 		auth := options.Credential{

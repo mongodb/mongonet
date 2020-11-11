@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-test/deep"
+	"github.com/mongodb/slogger/v2/slogger"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -208,11 +210,14 @@ func (myi *MyInterceptor) InterceptClientToMongo(m Message) (Message, ResponseIn
 	return m, nil, nil
 }
 
-func getTestClient(host string, port int, mode MongoConnectionMode, secondaryReads bool) (*mongo.Client, error) {
+func getTestClient(host string, port int, mode MongoConnectionMode, secondaryReads bool, appName string) (*mongo.Client, error) {
 	opts := options.Client().ApplyURI(fmt.Sprintf("mongodb://%s:%d", host, port)).
 		SetDirect(mode == Direct)
 	if secondaryReads {
 		opts.SetReadPreference(readpref.Secondary())
+	}
+	if appName != "" {
+		opts.SetAppName(appName)
 	}
 	client, err := mongo.NewClient(opts)
 	if err != nil {
@@ -221,8 +226,8 @@ func getTestClient(host string, port int, mode MongoConnectionMode, secondaryRea
 	return client, nil
 }
 
-func runOp(host string, proxyPort, iteration int, shouldFail bool, mode MongoConnectionMode, secondaryReads bool) error {
-	client, err := getTestClient(host, proxyPort, mode, secondaryReads)
+func runInsertFindUpdate(host string, proxyPort, iteration int, shouldFail bool, mode MongoConnectionMode, secondaryReads bool) error {
+	client, err := getTestClient(host, proxyPort, mode, secondaryReads, fmt.Sprintf("runInsertFindUpdate-iteration%v", iteration))
 	if err != nil {
 		return err
 	}
@@ -271,7 +276,7 @@ func runOp(host string, proxyPort, iteration int, shouldFail bool, mode MongoCon
 }
 
 func enableFailPoint(host string, mongoPort int, mode MongoConnectionMode) error {
-	client, err := getTestClient(host, mongoPort, mode, false)
+	client, err := getTestClient(host, mongoPort, mode, false, "enableFailPoint")
 	if err != nil {
 		return err
 	}
@@ -294,7 +299,7 @@ func enableFailPoint(host string, mongoPort int, mode MongoConnectionMode) error
 }
 
 func disableFailPoint(host string, mongoPort int, mode MongoConnectionMode) error {
-	client, err := getTestClient(host, mongoPort, mode, false)
+	client, err := getTestClient(host, mongoPort, mode, false, "disableFailPoint")
 	if err != nil {
 		return err
 	}
@@ -315,7 +320,7 @@ func runOps(host string, proxyPort, parallelism int, shouldFail bool, t *testing
 	var wg sync.WaitGroup
 	var failing int32
 	if parallelism == 1 {
-		err := runOp(host, proxyPort, 0, shouldFail, mode, secondaryReads)
+		err := runInsertFindUpdate(host, proxyPort, 0, shouldFail, mode, secondaryReads)
 		if err != nil {
 			t.Error(err)
 			return 1
@@ -326,7 +331,8 @@ func runOps(host string, proxyPort, parallelism int, shouldFail bool, t *testing
 		wg.Add(1)
 		go func(iteration int) {
 			defer wg.Done()
-			err := runOp(host, proxyPort, iteration, shouldFail, mode, secondaryReads)
+			runtime.Gosched()
+			err := runInsertFindUpdate(host, proxyPort, iteration, shouldFail, mode, secondaryReads)
 			if err != nil {
 				t.Error(err)
 				atomic.AddInt32(&failing, 1)
@@ -337,12 +343,12 @@ func runOps(host string, proxyPort, parallelism int, shouldFail bool, t *testing
 	return failing
 }
 
-func getProxyConfig(hostname string, mongoPort, proxyPort int, mode MongoConnectionMode) ProxyConfig {
+func getProxyConfig(hostname string, mongoPort, proxyPort, minPoolSize, maxPoolSize, maxPoolIdleTimeSec int, mode MongoConnectionMode) ProxyConfig {
 	var uri string
 	if mode == Cluster {
 		uri = fmt.Sprintf("mongodb://%s:%v,%s:%v,%s:%v/?replSet=proxytest", hostname, mongoPort, hostname, mongoPort+1, hostname, mongoPort+2)
 	}
-	pc := NewProxyConfig("localhost", proxyPort, uri, hostname, mongoPort, "", "", "test proxy", true, mode, ServerSelectionTimeoutSecForTests)
+	pc := NewProxyConfig("localhost", proxyPort, uri, hostname, mongoPort, "", "", "test proxy", true, mode, ServerSelectionTimeoutSecForTests, minPoolSize, maxPoolSize, maxPoolIdleTimeSec)
 	pc.MongoSSLSkipVerify = true
 	pc.InterceptorFactory = &MyFactory{mode, mongoPort, proxyPort}
 	return pc
@@ -362,45 +368,45 @@ func getHostAndPorts() (mongoPort, proxyPort int, hostname string) {
 	return
 }
 
-func privateTestMongodMode(secondaryMode bool, t *testing.T) {
+func privateSanityTestMongodMode(secondaryMode bool, t *testing.T) {
 	mongoPort, proxyPort, _ := getHostAndPorts()
 	if err := disableFailPoint("localhost", mongoPort, Direct); err != nil {
 		t.Fatalf("failed to disable failpoint. err=%v", err)
 		return
 	}
-	pc := getProxyConfig("localhost", mongoPort, proxyPort, Direct)
-	privateTester(t, pc, "localhost", proxyPort, mongoPort, ParallelClients, Direct, secondaryMode)
+	pc := getProxyConfig("localhost", mongoPort, proxyPort, DefaultMinPoolSize, DefaultMaxPoolSize, DefaultMaxPoolIdleTimeSec, Direct)
+	privateSanityTester(t, pc, "localhost", proxyPort, mongoPort, ParallelClients, Direct, secondaryMode)
 }
 
 func TestProxySanityMongodModePrimary(t *testing.T) {
-	privateTestMongodMode(false, t)
+	privateSanityTestMongodMode(false, t)
 }
 
 // this is expected to go through the same code as primary mode since Mongod mode essentially ignores read preference from client
 func TestProxySanityMongodModeSecondary(t *testing.T) {
-	privateTestMongodMode(true, t)
+	privateSanityTestMongodMode(true, t)
 }
 
-func privateTestMongosMode(secondaryMode bool, t *testing.T) {
+func privateSanityTestMongosMode(secondaryMode bool, t *testing.T) {
 	mongoPort, proxyPort, hostname := getHostAndPorts()
 	if err := disableFailPoint(hostname, mongoPort, Cluster); err != nil {
 		t.Fatalf("failed to disable failpoint. err=%v", err)
 		return
 	}
-	pc := getProxyConfig(hostname, mongoPort, proxyPort, Cluster)
-	privateTester(t, pc, hostname, proxyPort, mongoPort, 5, Cluster, secondaryMode)
+	pc := getProxyConfig(hostname, mongoPort, proxyPort, DefaultMinPoolSize, DefaultMaxPoolSize, DefaultMaxPoolIdleTimeSec, Cluster)
+	privateSanityTester(t, pc, hostname, proxyPort, mongoPort, 5, Cluster, secondaryMode)
 }
 
 func TestProxySanityMongosModePrimary(t *testing.T) {
-	privateTestMongosMode(false, t)
+	privateSanityTestMongosMode(false, t)
 }
 
 func TestProxySanityMongosModeSecondary(t *testing.T) {
-	privateTestMongosMode(true, t)
+	privateSanityTestMongosMode(true, t)
 }
 
 // backing mongo must be started with --setParameter enableTestCommands=1
-func privateTester(t *testing.T, pc ProxyConfig, host string, proxyPort, mongoPort, parallelism int, mode MongoConnectionMode, secondaryReads bool) {
+func privateSanityTester(t *testing.T, pc ProxyConfig, host string, proxyPort, mongoPort, parallelism int, mode MongoConnectionMode, secondaryReads bool) {
 	proxy, err := NewProxy(pc)
 	if err != nil {
 		panic(err)
@@ -473,4 +479,162 @@ func privateTester(t *testing.T, pc ProxyConfig, host string, proxyPort, mongoPo
 	if conns == currConns {
 		t.Fatalf("expected connections created to increase from (%v), but got %v", currConns, conns)
 	}
+}
+
+func insertDummyDocs(host string, proxyPort, numOfDocs int, mode MongoConnectionMode) error {
+	client, err := getTestClient(host, proxyPort, mode, false, "insertDummyDocs")
+	if err != nil {
+		return err
+	}
+	ctx, cancelFunc := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancelFunc()
+	if err := client.Connect(ctx); err != nil {
+		return fmt.Errorf("cannot connect to server. err: %v", err)
+	}
+	defer client.Disconnect(ctx)
+
+	dbName, collName := "test2", "foo"
+	goctx := context.Background()
+
+	defer client.Disconnect(goctx)
+
+	coll := client.Database(dbName).Collection(collName)
+	// insert some docs
+	docs := make([]interface{}, numOfDocs)
+	for i := 0; i < numOfDocs; i++ {
+		docs[i] = bson.D{{"x", i}}
+	}
+	if _, err := coll.InsertMany(goctx, docs); err != nil {
+		return fmt.Errorf("initial insert failed. err: %v", err)
+	}
+	return nil
+}
+
+func cleanup(host string, proxyPort int, mode MongoConnectionMode) error {
+	client, err := getTestClient(host, proxyPort, mode, false, "cleanup")
+	if err != nil {
+		return err
+	}
+	ctx, cancelFunc := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancelFunc()
+	if err := client.Connect(ctx); err != nil {
+		return fmt.Errorf("cannot connect to server. err: %v", err)
+	}
+	defer client.Disconnect(ctx)
+
+	dbName, collName := "test2", "foo"
+	goctx := context.Background()
+
+	defer client.Disconnect(goctx)
+
+	coll := client.Database(dbName).Collection(collName)
+	return coll.Drop(goctx)
+}
+
+func runFind(host string, proxyPort, workerNum int, mode MongoConnectionMode, wg *sync.WaitGroup, t *testing.T) (time.Duration, error) {
+	defer wg.Done()
+	start := time.Now()
+	dbName, collName := "test2", "foo"
+
+	client, err := getTestClient(host, proxyPort, mode, false, fmt.Sprintf("worker-%v", workerNum))
+	if err != nil {
+		return 0, fmt.Errorf("failed to get a test client. err=%v", err)
+	}
+	goctx, cancelFunc := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancelFunc()
+	debugLog(t, "worker-%v connecting", workerNum)
+	if err := client.Connect(goctx); err != nil {
+		return 0, fmt.Errorf("cannot connect to server. err: %v", err)
+	}
+	debugLog(t, "worker-%v connected", workerNum)
+	defer client.Disconnect(goctx)
+	doc := bson.D{}
+	coll := client.Database(dbName).Collection(collName)
+
+	debugLog(t, "worker-%v running find", workerNum)
+	cur, err := coll.Find(goctx, bson.D{{"x", 1}})
+	if err != nil {
+		return 0, fmt.Errorf("failed to run find. err=%v", err)
+	}
+	cur.Next(goctx)
+	if err := cur.Decode(&doc); err != nil {
+		return 0, fmt.Errorf("failed to decode find. err=%v", err)
+	}
+	elapsed := time.Since(start)
+	debugLog(t, "worker-%v finished after %v", workerNum, elapsed)
+	return elapsed, nil
+}
+
+func debugLog(t *testing.T, pattern string, args ...interface{}) {
+	prefix := time.Now().Format("2006-01-02 15:04:05.00000")
+	t.Logf(fmt.Sprintf("%s %s", prefix, pattern), args...)
+}
+
+func privateConnectionPerformanceTester(mode MongoConnectionMode, maxPoolSize, workers, targetDuration int, t *testing.T) {
+	Iterations := 1
+	mongoPort, proxyPort, hostname := getHostAndPorts()
+	if err := disableFailPoint(hostname, mongoPort, mode); err != nil {
+		t.Fatalf("failed to disable failpoint. err=%v", err)
+		return
+	}
+	pc := getProxyConfig("localhost", mongoPort, proxyPort, DefaultMinPoolSize, maxPoolSize, DefaultMaxPoolIdleTimeSec, mode)
+	pc.LogLevel = slogger.DEBUG
+	proxy, err := NewProxy(pc)
+	if err != nil {
+		panic(err)
+	}
+
+	proxy.InitializeServer()
+	if ok, _, _ := proxy.OnSSLConfig(nil); !ok {
+		panic("failed to call OnSSLConfig")
+	}
+
+	go proxy.Run()
+
+	// insert dummy docs
+	if err := insertDummyDocs("localhost", proxyPort, 1000, Direct); err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup("localhost", proxyPort, Direct)
+
+	var wg sync.WaitGroup
+	var errCount int32
+	var successCount int32
+	for j := 0; j < Iterations; j++ {
+		var sum int64
+		for i := 0; i < workers; i++ {
+			wg.Add(1)
+			go func(it int) {
+				runtime.Gosched()
+				debugLog(t, "running worker %v", it)
+				elapsed, err := runFind("localhost", proxyPort, it, Direct, &wg, t)
+				debugLog(t, "worker %v elapsed %v err=%v", it, elapsed, err)
+				if err != nil {
+					atomic.AddInt32(&errCount, 1)
+				} else {
+					atomic.AddInt32(&successCount, 1)
+					atomic.AddInt64(&sum, elapsed.Milliseconds())
+				}
+			}(i)
+		}
+		wg.Wait()
+		errVal := atomic.LoadInt32(&errCount)
+		successVal := atomic.LoadInt32(&successCount)
+		totalSum := atomic.LoadInt64(&sum)
+		if errVal > 0 {
+			t.Errorf("workers failed count %v", errVal)
+		}
+		avg := float64(totalSum) / float64(successVal)
+		t.Logf("DONE worker error count=%v, success count=%v, avg=%vms", errVal, successVal, avg)
+		if int(avg) > targetDuration {
+			t.Errorf("duration too high %v", avg)
+		}
+	}
+}
+
+func TestProxyConnectionPerformanceMongodMode(t *testing.T) {
+	maxPoolSize := 20
+	workers := 20
+	targetDurationMs := 100
+	privateConnectionPerformanceTester(Direct, maxPoolSize, workers, targetDurationMs, t)
 }
