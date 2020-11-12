@@ -554,7 +554,6 @@ func getMongoClient(p *Proxy, pc ProxyConfig, ctx context.Context) (*mongo.Clien
 			},
 		}).
 		SetServerSelectionTimeout(time.Duration(pc.ServerSelectionTimeoutSec) * time.Second).
-		SetMinPoolSize(uint64(pc.MinPoolSize)).
 		SetMaxPoolSize(uint64(pc.MaxPoolSize))
 	if pc.MaxPoolIdleTimeSec > 0 {
 		opts.SetMaxConnIdleTime(time.Duration(pc.MaxPoolIdleTimeSec) * time.Second)

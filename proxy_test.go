@@ -343,12 +343,12 @@ func runOps(host string, proxyPort, parallelism int, shouldFail bool, t *testing
 	return failing
 }
 
-func getProxyConfig(hostname string, mongoPort, proxyPort, minPoolSize, maxPoolSize, maxPoolIdleTimeSec int, mode MongoConnectionMode) ProxyConfig {
+func getProxyConfig(hostname string, mongoPort, proxyPort, maxPoolSize, maxPoolIdleTimeSec int, mode MongoConnectionMode) ProxyConfig {
 	var uri string
 	if mode == Cluster {
 		uri = fmt.Sprintf("mongodb://%s:%v,%s:%v,%s:%v/?replSet=proxytest", hostname, mongoPort, hostname, mongoPort+1, hostname, mongoPort+2)
 	}
-	pc := NewProxyConfig("localhost", proxyPort, uri, hostname, mongoPort, "", "", "test proxy", false, mode, ServerSelectionTimeoutSecForTests, minPoolSize, maxPoolSize, maxPoolIdleTimeSec)
+	pc := NewProxyConfig("localhost", proxyPort, uri, hostname, mongoPort, "", "", "test proxy", false, mode, ServerSelectionTimeoutSecForTests, maxPoolSize, maxPoolIdleTimeSec)
 	pc.MongoSSLSkipVerify = true
 	pc.InterceptorFactory = &MyFactory{mode, mongoPort, proxyPort}
 	return pc
@@ -374,7 +374,7 @@ func privateSanityTestMongodMode(secondaryMode bool, t *testing.T) {
 		t.Fatalf("failed to disable failpoint. err=%v", err)
 		return
 	}
-	pc := getProxyConfig("localhost", mongoPort, proxyPort, DefaultMinPoolSize, DefaultMaxPoolSize, DefaultMaxPoolIdleTimeSec, Direct)
+	pc := getProxyConfig("localhost", mongoPort, proxyPort, DefaultMaxPoolSize, DefaultMaxPoolIdleTimeSec, Direct)
 	privateSanityTester(t, pc, "localhost", proxyPort, mongoPort, ParallelClients, Direct, secondaryMode)
 }
 
@@ -393,7 +393,7 @@ func privateSanityTestMongosMode(secondaryMode bool, t *testing.T) {
 		t.Fatalf("failed to disable failpoint. err=%v", err)
 		return
 	}
-	pc := getProxyConfig(hostname, mongoPort, proxyPort, DefaultMinPoolSize, DefaultMaxPoolSize, DefaultMaxPoolIdleTimeSec, Cluster)
+	pc := getProxyConfig(hostname, mongoPort, proxyPort, DefaultMaxPoolSize, DefaultMaxPoolIdleTimeSec, Cluster)
 	privateSanityTester(t, pc, hostname, proxyPort, mongoPort, 5, Cluster, secondaryMode)
 }
 
@@ -579,7 +579,7 @@ func privateConnectionPerformanceTester(mode MongoConnectionMode, maxPoolSize, w
 	if mode == Direct {
 		hostToUse = "localhost"
 	}
-	pc := getProxyConfig(hostToUse, mongoPort, proxyPort, DefaultMinPoolSize, maxPoolSize, DefaultMaxPoolIdleTimeSec, mode)
+	pc := getProxyConfig(hostToUse, mongoPort, proxyPort, maxPoolSize, DefaultMaxPoolIdleTimeSec, mode)
 	pc.LogLevel = slogger.DEBUG
 	proxy, err := NewProxy(pc)
 	if err != nil {

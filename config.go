@@ -28,7 +28,6 @@ func (m MongoConnectionMode) String() string {
 }
 
 const (
-	DefaultMinPoolSize        = 0
 	DefaultMaxPoolSize        = 100
 	DefaultMaxPoolIdleTimeSec = 0
 )
@@ -52,12 +51,11 @@ type ProxyConfig struct {
 	TraceConnPool             bool
 	ConnectionMode            MongoConnectionMode
 	ServerSelectionTimeoutSec int
-	MinPoolSize               int
 	MaxPoolSize               int
 	MaxPoolIdleTimeSec        int
 }
 
-func NewProxyConfig(bindHost string, bindPort int, mongoUri, mongoHost string, mongoPort int, mongoUser, mongoPassword, appName string, traceConnPool bool, connectionMode MongoConnectionMode, serverSelectionTimeoutSec, minPoolSize, maxPoolSize, maxPoolIdleTimeSec int) ProxyConfig {
+func NewProxyConfig(bindHost string, bindPort int, mongoUri, mongoHost string, mongoPort int, mongoUser, mongoPassword, appName string, traceConnPool bool, connectionMode MongoConnectionMode, serverSelectionTimeoutSec, maxPoolSize, maxPoolIdleTimeSec int) ProxyConfig {
 
 	syncTlsConfig := NewSyncTlsConfig()
 	return ProxyConfig{
@@ -86,7 +84,6 @@ func NewProxyConfig(bindHost string, bindPort int, mongoUri, mongoHost string, m
 		traceConnPool,
 		connectionMode,
 		serverSelectionTimeoutSec,
-		minPoolSize,
 		maxPoolSize,
 		maxPoolIdleTimeSec,
 	}
