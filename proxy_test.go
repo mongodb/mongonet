@@ -22,7 +22,7 @@ import (
 const (
 	ServerSelectionTimeoutSecForTests = 10
 	ParallelClients                   = 5
-	ShutdownInProgressErrorCode       = 91
+	InterruptedAtShutdownErrorCode    = 11600
 )
 
 type MyFactory struct {
@@ -503,7 +503,7 @@ func privateTester(t *testing.T, pc ProxyConfig, host string, proxyPort, mongoPo
 	}
 
 	t.Log("*** enable error code response failpoint and run ops")
-	enableFailPointErrorCode(host, mongoPort, ShutdownInProgressErrorCode, mode)
+	enableFailPointErrorCode(host, mongoPort, InterruptedAtShutdownErrorCode, mode)
 	failing = runOps(host, proxyPort, parallelism, true, t, mode, secondaryReads)
 	if atomic.LoadInt32(&failing) > 0 {
 		t.Fatalf("ops failures")
