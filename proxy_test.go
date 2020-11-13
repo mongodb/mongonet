@@ -23,7 +23,7 @@ const (
 	ServerSelectionTimeoutSecForTests = 10
 	ParallelClients                   = 5
 	InterruptedAtShutdownErrorCode    = 11600
-	ClientTimeoutSec                  = time.Minute
+	ClientTimeoutSec                  = 10 * time.Second
 )
 
 type MyFactory struct {
@@ -366,11 +366,14 @@ func runOps(host string, proxyPort, parallelism int, shouldFail bool, t *testing
 		wg.Add(1)
 		go func(iteration int) {
 			defer wg.Done()
+			start := time.Now()
+			t.Logf("*** %v started running worker %v", start, iteration)
 			err := runOp(host, proxyPort, iteration, shouldFail, mode, secondaryReads)
 			if err != nil {
 				t.Error(err)
 				atomic.AddInt32(&failing, 1)
 			}
+			t.Logf("*** %v finished running worker %v in %vms. err=%v", time.Now(), iteration, time.Since(start), err)
 		}(i)
 	}
 	wg.Wait()
