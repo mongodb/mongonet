@@ -486,8 +486,8 @@ func privateTester(t *testing.T, pc ProxyConfig, host string, proxyPort, mongoPo
 		return
 	}
 	conns = proxy.GetConnectionsCreated()
-	if conns != currConns {
-		t.Fatalf("expected connections created to remain the same (%v), but got %v", currConns, conns)
+	if conns-int64(currConns) > int64(parallelism) {
+		t.Fatalf("expected connections created to not significantly increase (%v), but got %v", currConns, conns)
 	}
 	currConns = conns
 	if cleared := proxy.GetPoolCleared(); cleared != 0 {

@@ -564,8 +564,7 @@ func getMongoClient(p *Proxy, pc ProxyConfig, ctx context.Context) (*mongo.Clien
 				}
 			},
 		}).
-		SetServerSelectionTimeout(time.Duration(pc.ServerSelectionTimeoutSec) * time.Second).
-		SetMaxPoolSize(0)
+		SetServerSelectionTimeout(time.Duration(pc.ServerSelectionTimeoutSec) * time.Second)
 
 	if pc.MongoUser != "" {
 		auth := options.Credential{
