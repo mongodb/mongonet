@@ -23,7 +23,7 @@ const (
 	ServerSelectionTimeoutSecForTests = 10
 	ParallelClients                   = 5
 	InterruptedAtShutdownErrorCode    = 11600
-	ClientTimeoutSec                  = 30 * time.Second
+	ClientTimeoutSec                  = time.Minute
 )
 
 type MyFactory struct {
