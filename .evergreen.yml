@@ -31,7 +31,6 @@ functions:
           set -euvx
           ${gorootvars}
           export GOPATH=`pwd`/.gopath
-          export JAVA11_HOME=${java_home}
           go test > test.suite
           exitcode=$?
           cat test.suite
@@ -46,7 +45,6 @@ functions:
           export GOPATH=`pwd`/.gopath
           export MONGO_DIR=`pwd`/mongodb/bin
           export PATH=$PATH:$MONGO_DIR
-          export JAVA11_HOME=${java_home}
           go version
           sh inttests/run_integration_tests_mongod_mode.sh
   "run integration tests mongos mode":
@@ -59,7 +57,6 @@ functions:
           export GOPATH=`pwd`/.gopath
           export MONGO_DIR=`pwd`/mongodb/bin
           export PATH=$PATH:$MONGO_DIR
-          export JAVA11_HOME=${java_home}
           go version
           sh inttests/run_integration_tests_mongos_mode.sh
   "run go vet":
