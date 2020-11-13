@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	ServerSelectionTimeoutSecForTests = 5
+	ServerSelectionTimeoutSecForTests = 10
 	ParallelClients                   = 5
 	ShutdownInProgressErrorCode       = 91
 )
@@ -227,7 +227,7 @@ func runCommandFailOp(host string, proxyPort int, mode MongoConnectionMode, seco
 	if err != nil {
 		return err
 	}
-	ctx, cancelFunc := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancelFunc := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancelFunc()
 	if err := client.Connect(ctx); err != nil {
 		return fmt.Errorf("cannot connect to server. err: %v", err)
@@ -242,7 +242,7 @@ func runOp(host string, proxyPort, iteration int, shouldFail bool, mode MongoCon
 	if err != nil {
 		return err
 	}
-	ctx, cancelFunc := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancelFunc := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancelFunc()
 	if err := client.Connect(ctx); err != nil {
 		return fmt.Errorf("cannot connect to server. err: %v", err)
@@ -291,7 +291,7 @@ func enableFailPointCloseConnection(host string, mongoPort int, mode MongoConnec
 	if err != nil {
 		return err
 	}
-	ctx, cancelFunc := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancelFunc := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancelFunc()
 	if err := client.Connect(ctx); err != nil {
 		return fmt.Errorf("cannot connect to server. err: %v", err)
@@ -314,7 +314,7 @@ func enableFailPointErrorCode(host string, mongoPort, errorCode int, mode MongoC
 	if err != nil {
 		return err
 	}
-	ctx, cancelFunc := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancelFunc := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancelFunc()
 	if err := client.Connect(ctx); err != nil {
 		return fmt.Errorf("cannot connect to server. err: %v", err)
@@ -337,7 +337,7 @@ func disableFailPoint(host string, mongoPort int, mode MongoConnectionMode) erro
 	if err != nil {
 		return err
 	}
-	ctx, cancelFunc := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancelFunc := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancelFunc()
 	if err := client.Connect(ctx); err != nil {
 		return fmt.Errorf("cannot connect to server. err: %v", err)
@@ -514,6 +514,11 @@ func privateTester(t *testing.T, pc ProxyConfig, host string, proxyPort, mongoPo
 		t.Fatalf("expected pool cleared to be gt 0 but was 0")
 	}
 
+	if err := disableFailPoint(host, mongoPort, mode); err != nil {
+		t.Fatalf("failed to disable failpoint. err=%v", err)
+		return
+	}
+
 	t.Log("*** enable close connection failpoint and run ops")
 	enableFailPointCloseConnection(host, mongoPort, mode)
 	failing = runOps(host, proxyPort, parallelism, true, t, mode, secondaryReads)
@@ -522,7 +527,7 @@ func privateTester(t *testing.T, pc ProxyConfig, host string, proxyPort, mongoPo
 		t.Fatalf("ops failures")
 		return
 	}
-	if cleared2 := proxy.GetPoolCleared(); cleared > cleared2 {
+	if cleared2 := proxy.GetPoolCleared(); cleared2 < cleared2 {
 		t.Fatalf("expected pool cleared to be gt previous value but was %v", cleared2)
 	}
 

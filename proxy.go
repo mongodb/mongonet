@@ -367,6 +367,10 @@ func (ps *ProxySession) getMongoConnection(rp *readpref.ReadPref) (*MongoConnect
 	if err != nil {
 		return nil, err
 	}
+	ep, ok := srv.(driver.ErrorProcessor)
+	if !ok {
+		return nil, fmt.Errorf("server ErrorProcessor type assertion failed")
+	}
 	conn, err := srv.Connection(ps.proxy.Context)
 	if err != nil {
 		return nil, err
@@ -374,10 +378,6 @@ func (ps *ProxySession) getMongoConnection(rp *readpref.ReadPref) (*MongoConnect
 	ec, ok := conn.(driver.Expirable)
 	if !ok {
 		return nil, fmt.Errorf("bad connection type %T", conn)
-	}
-	ep, ok := srv.(driver.ErrorProcessor)
-	if !ok {
-		return nil, fmt.Errorf("server ErrorProcessor type assertion failed")
 	}
 	return &MongoConnectionWrapper{conn, ep, ec, false, ps.proxy.logger, ps.proxy.config.TraceConnPool}, nil
 }
@@ -564,7 +564,8 @@ func getMongoClient(p *Proxy, pc ProxyConfig, ctx context.Context) (*mongo.Clien
 				}
 			},
 		}).
-		SetServerSelectionTimeout(time.Duration(pc.ServerSelectionTimeoutSec) * time.Second)
+		SetServerSelectionTimeout(time.Duration(pc.ServerSelectionTimeoutSec) * time.Second).
+		SetMaxPoolSize(0)
 
 	if pc.MongoUser != "" {
 		auth := options.Credential{
