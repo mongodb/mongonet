@@ -379,49 +379,49 @@ func checkClient(opts *options.ClientOptions) error {
 	return client.Disconnect(ctx)
 }
 
-func TestServerWorkerWithContext(t *testing.T) {
-	port := 9921
+// func TestServerWorkerWithContext(t *testing.T) {
+// 	port := 9921
 
-	var sessCtr int32
-	syncTlsConfig := mongonet.NewSyncTlsConfig()
-	server := mongonet.NewServer(
-		mongonet.ServerConfig{
-			"127.0.0.1",
-			port,
-			false,
-			nil,
-			syncTlsConfig,
-			0,
-			0,
-			nil,
-			slogger.DEBUG,
-			nil,
-		},
-		&TestFactoryWithContext{&sessCtr},
-	)
+// 	var sessCtr int32
+// 	syncTlsConfig := mongonet.NewSyncTlsConfig()
+// 	server := mongonet.NewServer(
+// 		mongonet.ServerConfig{
+// 			"127.0.0.1",
+// 			port,
+// 			false,
+// 			nil,
+// 			syncTlsConfig,
+// 			0,
+// 			0,
+// 			nil,
+// 			slogger.DEBUG,
+// 			nil,
+// 		},
+// 		&TestFactoryWithContext{&sessCtr},
+// 	)
 
-	go server.Run()
+// 	go server.Run()
 
-	if err := <-server.InitChannel(); err != nil {
-		t.Error(err)
-	}
+// 	if err := <-server.InitChannel(); err != nil {
+// 		t.Error(err)
+// 	}
 
-	opts := options.Client().ApplyURI(fmt.Sprintf("mongodb://127.0.0.1:%d", port))
-	for i := 0; i < 10; i++ {
-		if err := checkClient(opts); err != nil {
-			t.Error(err)
-		}
-	}
-	sessCtrCurr := atomic.LoadInt32(&sessCtr)
+// 	opts := options.Client().ApplyURI(fmt.Sprintf("mongodb://127.0.0.1:%d", port))
+// 	for i := 0; i < 10; i++ {
+// 		if err := checkClient(opts); err != nil {
+// 			t.Error(err)
+// 		}
+// 	}
+// 	sessCtrCurr := atomic.LoadInt32(&sessCtr)
 
-	if sessCtrCurr != int32(20) {
-		t.Errorf("expect session counter to be 20 but got %d", sessCtrCurr)
-	}
+// 	if sessCtrCurr != int32(20) {
+// 		t.Errorf("expect session counter to be 20 but got %d", sessCtrCurr)
+// 	}
 
-	server.Close()
+// 	server.Close()
 
-	sessCtrFinal := atomic.LoadInt32(&sessCtr)
-	if sessCtrFinal != int32(0) {
-		t.Errorf("expect session counter to be 0 but got %d", sessCtrFinal)
-	}
-}
+// 	sessCtrFinal := atomic.LoadInt32(&sessCtr)
+// 	if sessCtrFinal != int32(0) {
+// 		t.Errorf("expect session counter to be 0 but got %d", sessCtrFinal)
+// 	}
+// }
