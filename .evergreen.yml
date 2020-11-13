@@ -70,7 +70,6 @@ functions:
           set -euvx
           export GOPATH=`pwd`/.gopath
           ${gorootvars} go version
-          ${gorootvars} ./gpm
           ${gorootvars} go vet --composites=false ./...
           exitcode=$?
           exit $exitcode
