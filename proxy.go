@@ -371,9 +371,14 @@ func (ps *ProxySession) getMongoConnection(rp *readpref.ReadPref) (*MongoConnect
 		return nil, err
 	}
 	ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "found a server. connecting")
+	start := time.Now()
 	conn, err := srv.Connection(ps.proxy.Context)
 	if err != nil {
 		return nil, err
+	}
+	duration := time.Since(start)
+	if duration.Milliseconds() > 500 {
+		ps.proxy.logger.Logf(slogger.WARN, fmt.Sprintf("client: %v - connection took %vms which is over 1000ms", ps.RemoteAddr(), duration))
 	}
 	ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "connected")
 	ec, ok := conn.(driver.Expirable)
@@ -535,6 +540,7 @@ func getMongoClient(p *Proxy, pc ProxyConfig, ctx context.Context) (*mongo.Clien
 	} else {
 		opts.ApplyURI(pc.MongoURI)
 	}
+	trace := p.config.TraceConnPool
 	opts.
 		SetDirect(pc.ConnectionMode == Direct).
 		SetAppName(pc.AppName).
@@ -542,14 +548,22 @@ func getMongoClient(p *Proxy, pc ProxyConfig, ctx context.Context) (*mongo.Clien
 			Event: func(evt *event.PoolEvent) {
 				switch evt.Type {
 				case event.ConnectionCreated:
-					p.logger.Logf(slogger.DEBUG, "**** Connection created %v", evt)
+					if trace {
+						p.logger.Logf(slogger.DEBUG, "**** Connection created %v", evt)
+					}
 					p.AddConnection()
 				case "ConnectionCheckOutStarted":
-					p.logger.Logf(slogger.DEBUG, "**** Connection check out started %v", evt)
+					if trace {
+						p.logger.Logf(slogger.DEBUG, "**** Connection check out started %v", evt)
+					}
 				case "ConnectionCheckedIn":
-					p.logger.Logf(slogger.DEBUG, "**** Connection checked in %v", evt)
+					if trace {
+						p.logger.Logf(slogger.DEBUG, "**** Connection checked in %v", evt)
+					}
 				case "ConnectionCheckedOut":
-					p.logger.Logf(slogger.DEBUG, "**** Connection checked out %v", evt)
+					if trace {
+						p.logger.Logf(slogger.DEBUG, "**** Connection checked out %v", evt)
+					}
 				}
 			},
 		}).
