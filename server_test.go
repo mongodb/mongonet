@@ -379,6 +379,8 @@ func checkClient(opts *options.ClientOptions) error {
 	return client.Disconnect(ctx)
 }
 
+// TODO: This is currently failing, so commenting out for Evergreen runs until
+// it's fixed.
 // func TestServerWorkerWithContext(t *testing.T) {
 // 	port := 9921
 
