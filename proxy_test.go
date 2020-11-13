@@ -373,7 +373,7 @@ func runOps(host string, proxyPort, parallelism int, shouldFail bool, t *testing
 				t.Error(err)
 				atomic.AddInt32(&failing, 1)
 			}
-			t.Logf("*** %v finished running worker %v in %vms. err=%v", time.Now(), iteration, time.Since(start), err)
+			t.Logf("*** %v finished running worker %v in %v. err=%v", time.Now(), iteration, time.Since(start), err)
 		}(i)
 	}
 	wg.Wait()
