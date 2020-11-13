@@ -500,6 +500,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 		err = SendMessage(resp, ps.conn)
 		if err != nil {
 			mongoConn.bad = true
+			logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "got error sending response to client from conn %v: %v", mongoConn.conn.ID(), err)
 			return nil, NewStackErrorf("got error sending response to client from conn %v: %v", mongoConn.conn.ID(), err)
 		}
 		logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "sent back data to user from mongo conn %v", mongoConn.conn.ID())
