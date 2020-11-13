@@ -124,7 +124,6 @@ buildvariants:
   expansions:
     mongo_url: https://downloads.mongodb.com/linux/mongodb-linux-x86_64-enterprise-rhel70-4.4.1.tgz
     gorootvars: export PATH="/opt/golang/go1.14/bin:$PATH" GOROOT=/opt/golang/go1.14
-    mongo_repo_tag: r4.4.1
   run_on:
     - rhel70
   tasks:
