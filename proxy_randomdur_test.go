@@ -143,5 +143,5 @@ func TestProxyMongodModeConnectionPerformanceFindUpdateRandomDurTwentyThreads(t 
 }
 
 func TestProxyMongodModeConnectionPerformanceFindUpdateRandomDurSixtyThreads(t *testing.T) {
-	privateConnectionPerformanceTesterFindUpdate(Direct, 0, 60, 900, 2000, t)
+	privateConnectionPerformanceTesterFindUpdateRandomDur(Direct, 0, 60, 900, 2000, t)
 }
