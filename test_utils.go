@@ -19,6 +19,70 @@ import (
 
 const ServerSelectionTimeoutSecForTests = 10
 
+func enableFailPointCloseConnection(host string, mongoPort int, mode MongoConnectionMode) error {
+	client, err := getTestClient(host, mongoPort, mode, false, "enableFailPointCloseConnection")
+	if err != nil {
+		return err
+	}
+	ctx, cancelFunc := context.WithTimeout(context.Background(), ClientTimeoutSec)
+	defer cancelFunc()
+	if err := client.Connect(ctx); err != nil {
+		return fmt.Errorf("cannot connect to server. err: %v", err)
+	}
+	defer client.Disconnect(ctx)
+	// cannot fail "find" because it'll prevent certain driver machinery when operating against replica sets to work properly
+	cmd := bson.D{
+		{"configureFailPoint", "failCommand"},
+		{"mode", "alwaysOn"},
+		{"data", bson.D{
+			{"failCommands", []string{"update"}},
+			{"closeConnection", true},
+		}},
+	}
+	return client.Database("admin").RunCommand(ctx, cmd).Err()
+}
+
+func enableFailPointErrorCode(host string, mongoPort, errorCode int, mode MongoConnectionMode) error {
+	client, err := getTestClient(host, mongoPort, mode, false, "enableFailPointErrorCode")
+	if err != nil {
+		return err
+	}
+	ctx, cancelFunc := context.WithTimeout(context.Background(), ClientTimeoutSec)
+	defer cancelFunc()
+	if err := client.Connect(ctx); err != nil {
+		return fmt.Errorf("cannot connect to server. err: %v", err)
+	}
+	defer client.Disconnect(ctx)
+	// cannot fail "find" because it'll prevent certain driver machinery when operating against replica sets to work properly
+	cmd := bson.D{
+		{"configureFailPoint", "failCommand"},
+		{"mode", "alwaysOn"},
+		{"data", bson.D{
+			{"failCommands", []string{"update"}},
+			{"errorCode", errorCode},
+		}},
+	}
+	return client.Database("admin").RunCommand(ctx, cmd).Err()
+}
+
+func disableFailPoint(host string, mongoPort int, mode MongoConnectionMode) error {
+	client, err := getTestClient(host, mongoPort, mode, false, "disableFailPoint")
+	if err != nil {
+		return err
+	}
+	ctx, cancelFunc := context.WithTimeout(context.Background(), ClientTimeoutSec)
+	defer cancelFunc()
+	if err := client.Connect(ctx); err != nil {
+		return fmt.Errorf("cannot connect to server. err: %v", err)
+	}
+	defer client.Disconnect(ctx)
+	cmd := bson.D{
+		{"configureFailPoint", "failCommand"},
+		{"mode", "off"},
+	}
+	return client.Database("admin").RunCommand(ctx, cmd).Err()
+}
+
 func EphemeralPort() (int, error) {
 	fd, err := syscall.Socket(
 		syscall.AF_INET,
