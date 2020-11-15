@@ -83,20 +83,31 @@ func runFind(logger *slogger.Logger, host string, proxyPort, workerNum int, mode
 	if err := cur.Decode(&doc); err != nil {
 		return 0, false, fmt.Errorf("failed to decode find. err=%v", err)
 	}
+	if len(doc) <= 0 {
+		return 0, false, fmt.Errorf("doc x:%v not found", workerNum)
+	}
+	i := BSONIndexOf(doc, "x")
+	v, _, err := GetAsInt(doc[i])
+	if err != nil {
+		return 0, false, fmt.Errorf("failed to inspect %v. err=%v", doc, err)
+	}
+	if v != workerNum {
+		return 0, false, fmt.Errorf("fetched wrong doc %v for worker=%v", doc, workerNum)
+	}
 	elapsed := time.Since(start)
 	logger.Logf(slogger.DEBUG, "worker-%v finished after %v", workerNum, elapsed)
 	return elapsed, true, nil
 }
 
 func privateConnectionPerformanceTesterFindOne(mode MongoConnectionMode, maxPoolSize, workers int, targetAvgLatencyMs, targetMaxLatencyMs int64, t *testing.T) {
-	Iterations := 50
+	Iterations := 20
 	mongoPort, proxyPort, hostname := getHostAndPorts()
-	t.Logf("using proxy port %v", proxyPort)
+	t.Logf("using proxy port=%v, pool size=%v", proxyPort, maxPoolSize)
 	hostToUse := hostname
 	if mode == Direct {
 		hostToUse = "localhost"
 	}
-	serverPort := mongoPort
+	serverPort := proxyPort
 	preSetupFunc := func(logger *slogger.Logger, hostname string, mongoPort, proxyPort int, mode MongoConnectionMode) error {
 		return disableFailPoint(hostname, mongoPort, mode)
 	}
@@ -105,7 +116,7 @@ func privateConnectionPerformanceTesterFindOne(mode MongoConnectionMode, maxPool
 	}
 
 	testFunc := func(logger *slogger.Logger, hostname string, mongoPort, proxyPort, workerNum, iteration int, mode MongoConnectionMode) (elapsed time.Duration, success bool, err error) {
-		return runFind(logger, hostname, serverPort, iteration, mode)
+		return runFind(logger, hostname, serverPort, workerNum, mode)
 	}
 
 	cleanupFunc := func(logger *slogger.Logger, hostname string, mongoPort, proxyPort int, mode MongoConnectionMode) error {
@@ -158,7 +169,14 @@ func TestProxyConnectionPerformanceFindOneMongodMode(t *testing.T) {
 
 }
 
-func TestProxyConnectionPerformanceFindOneMongosMode(t *testing.T) {
-	//privateConnectionPerformanceTesterFindOne(Cluster, 0, 5, 50, 100, t)
-	privateConnectionPerformanceTesterFindOne(Cluster, 0, 75, 50, 100, t)
+func TestProxyConnectionPerformanceFindOneMongosModeFiveThreads(t *testing.T) {
+	privateConnectionPerformanceTesterFindOne(Cluster, 0, 5, 50, 200, t)
+}
+
+func TestProxyConnectionPerformanceFindOneMongosModeTwentyThreads(t *testing.T) {
+	privateConnectionPerformanceTesterFindOne(Cluster, 0, 20, 100, 500, t)
+}
+
+func TestProxyConnectionPerformanceFindOneMongosModeSixtyThreads(t *testing.T) {
+	privateConnectionPerformanceTesterFindOne(Cluster, 0, 60, 200, 1500, t)
 }

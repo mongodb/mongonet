@@ -379,7 +379,7 @@ func (ps *ProxySession) getMongoConnection(rp *readpref.ReadPref) (*MongoConnect
 	}
 	duration := time.Since(start)
 	if duration.Milliseconds() > 500 { // TODO - debug, remove!
-		ps.proxy.logger.Logf(slogger.WARN, fmt.Sprintf("client: %v - connection took %vms which is over 1000ms", ps.RemoteAddr(), duration))
+		ps.proxy.logger.Logf(slogger.WARN, fmt.Sprintf("client: %v - connection took %v which is over 1000ms", ps.RemoteAddr(), duration))
 	}
 	ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "connected")
 	ec, ok := conn.(driver.Expirable)

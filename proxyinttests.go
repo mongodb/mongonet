@@ -12,7 +12,7 @@ import (
 
 /*
 	DoConcurrencyTestRun - can be used by external applications to test out concurrency and pooling performance
-	see full example on proxy_test.go:TestProxyConnectionPerformanceMongodMode
+	see full example on proxy_findone_test.go:TestProxyConnectionPerformanceMongodMode
 */
 func DoConcurrencyTestRun(logger *slogger.Logger,
 	hostname string, mongoPort, proxyPort int, mode MongoConnectionMode,
@@ -40,6 +40,7 @@ func DoConcurrencyTestRun(logger *slogger.Logger,
 	defer cleanupFunc(logger, hostname, mongoPort, proxyPort, mode)
 
 	var wg sync.WaitGroup
+ITERATIONS:
 	for j := 0; j < iterations; j++ {
 		logger.Logf(slogger.INFO, "*** starting iteration %v", j)
 		for i := 0; i < workers; i++ {
@@ -70,7 +71,14 @@ func DoConcurrencyTestRun(logger *slogger.Logger,
 		}
 		wg.Wait()
 		logger.Logf(slogger.INFO, "*** finished iteration %v", j)
-		// time.Sleep(200 * time.Millisecond)
+		if atomic.LoadInt32(&failedCount) > 0 {
+			logger.Logf(slogger.INFO, "*** iteration %v has failures. breaking", j)
+			break ITERATIONS
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	if len(results) == 0 {
+		return
 	}
 	sum := int64(0)
 	resLock.RLock()
@@ -90,7 +98,6 @@ func DoConcurrencyTestRun(logger *slogger.Logger,
 
 	// this is assuming that we're not dealing with huge datasets
 	sort.Sort(sortedResults)
-	logger.Logf(slogger.INFO, "we have %v results", sortedResults)
 	percentiles = make(map[int]int, 5)
 	percentiles[50] = sortedResults[int(float32(len(sortedResults))*0.5)]
 	percentiles[80] = sortedResults[int(float32(len(sortedResults))*0.8)]
