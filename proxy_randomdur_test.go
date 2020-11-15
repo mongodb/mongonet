@@ -127,11 +127,11 @@ func TestProxyMongosModeConnectionPerformanceFindUpdateRandomDurFiveThreads(t *t
 }
 
 func TestProxyMongosModeConnectionPerformanceFindUpdateRandomDurTwentyThreads(t *testing.T) {
-	privateConnectionPerformanceTesterFindUpdateRandomDur(Cluster, 0, 20, 100, 500, t)
+	privateConnectionPerformanceTesterFindUpdateRandomDur(Cluster, 0, 20, 700, 1500, t)
 }
 
 func TestProxyMongosModeConnectionPerformanceFindUpdateRandomDurSixtyThreads(t *testing.T) {
-	privateConnectionPerformanceTesterFindUpdateRandomDur(Cluster, 0, 60, 200, 1500, t)
+	privateConnectionPerformanceTesterFindUpdateRandomDur(Cluster, 0, 60, 900, 2000, t)
 }
 
 func TestProxyMongodModeConnectionPerformanceFindUpdateRandomDurFiveThreads(t *testing.T) {
@@ -139,9 +139,9 @@ func TestProxyMongodModeConnectionPerformanceFindUpdateRandomDurFiveThreads(t *t
 }
 
 func TestProxyMongodModeConnectionPerformanceFindUpdateRandomDurTwentyThreads(t *testing.T) {
-	privateConnectionPerformanceTesterFindUpdateRandomDur(Direct, 0, 20, 100, 500, t)
+	privateConnectionPerformanceTesterFindUpdateRandomDur(Direct, 0, 20, 700, 1500, t)
 }
 
 func TestProxyMongodModeConnectionPerformanceFindUpdateRandomDurSixtyThreads(t *testing.T) {
-	privateConnectionPerformanceTesterFindUpdate(Direct, 0, 60, 200, 1500, t)
+	privateConnectionPerformanceTesterFindUpdate(Direct, 0, 60, 900, 2000, t)
 }

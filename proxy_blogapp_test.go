@@ -263,7 +263,7 @@ func privateConnectionPerformanceTesterBlogApp(mode MongoConnectionMode, maxPool
 }
 
 func TestProxyMongosModeConnectionPerformanceBlogAppFiveThreads(t *testing.T) {
-	privateConnectionPerformanceTesterBlogApp(Cluster, 0, 5, 650, 1200, t)
+	privateConnectionPerformanceTesterBlogApp(Cluster, 0, 5, 50, 200, t)
 }
 
 func TestProxyMongosModeConnectionPerformanceBlogAppTwentyThreads(t *testing.T) {
@@ -275,7 +275,7 @@ func TestProxyMongosModeConnectionPerformanceBlogAppSixtyThreads(t *testing.T) {
 }
 
 func TestProxyMongodModeConnectionPerformanceBlogAppFiveThreads(t *testing.T) {
-	privateConnectionPerformanceTesterBlogApp(Direct, 0, 5, 650, 1200, t)
+	privateConnectionPerformanceTesterBlogApp(Direct, 0, 5, 50, 200, t)
 }
 
 func TestProxyMongodModeConnectionPerformanceBlogAppTwentyThreads(t *testing.T) {
