@@ -16,7 +16,6 @@ import (
 const (
 	ParallelClients                = 5
 	InterruptedAtShutdownErrorCode = 11600
-	ClientTimeoutSec               = 20 * time.Second
 )
 
 func runCommandFailOp(host string, proxyPort int, mode MongoConnectionMode, secondaryReads bool) error {
@@ -24,7 +23,7 @@ func runCommandFailOp(host string, proxyPort int, mode MongoConnectionMode, seco
 	if err != nil {
 		return err
 	}
-	ctx, cancelFunc := context.WithTimeout(context.Background(), ClientTimeoutSec)
+	ctx, cancelFunc := context.WithTimeout(context.Background(), ClientTimeoutSecForTests)
 	defer cancelFunc()
 	if err := client.Connect(ctx); err != nil {
 		return fmt.Errorf("cannot connect to server. err: %v", err)
@@ -39,7 +38,7 @@ func runInsertFindUpdate(host string, proxyPort, iteration int, shouldFail bool,
 	if err != nil {
 		return err
 	}
-	ctx, cancelFunc := context.WithTimeout(context.Background(), ClientTimeoutSec)
+	ctx, cancelFunc := context.WithTimeout(context.Background(), ClientTimeoutSecForTests)
 	defer cancelFunc()
 	if err := client.Connect(ctx); err != nil {
 		return fmt.Errorf("cannot connect to server. err: %v", err)

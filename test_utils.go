@@ -17,14 +17,17 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/readpref"
 )
 
-const ServerSelectionTimeoutSecForTests = 10
+const (
+	ServerSelectionTimeoutSecForTests = 10
+	ClientTimeoutSecForTests          = 20 * time.Second
+)
 
 func enableFailPointCloseConnection(host string, mongoPort int, mode MongoConnectionMode) error {
 	client, err := getTestClient(host, mongoPort, mode, false, "enableFailPointCloseConnection")
 	if err != nil {
 		return err
 	}
-	ctx, cancelFunc := context.WithTimeout(context.Background(), ClientTimeoutSec)
+	ctx, cancelFunc := context.WithTimeout(context.Background(), ClientTimeoutSecForTests)
 	defer cancelFunc()
 	if err := client.Connect(ctx); err != nil {
 		return fmt.Errorf("cannot connect to server. err: %v", err)
@@ -47,7 +50,7 @@ func enableFailPointErrorCode(host string, mongoPort, errorCode int, mode MongoC
 	if err != nil {
 		return err
 	}
-	ctx, cancelFunc := context.WithTimeout(context.Background(), ClientTimeoutSec)
+	ctx, cancelFunc := context.WithTimeout(context.Background(), ClientTimeoutSecForTests)
 	defer cancelFunc()
 	if err := client.Connect(ctx); err != nil {
 		return fmt.Errorf("cannot connect to server. err: %v", err)
@@ -70,7 +73,7 @@ func disableFailPoint(host string, mongoPort int, mode MongoConnectionMode) erro
 	if err != nil {
 		return err
 	}
-	ctx, cancelFunc := context.WithTimeout(context.Background(), ClientTimeoutSec)
+	ctx, cancelFunc := context.WithTimeout(context.Background(), ClientTimeoutSecForTests)
 	defer cancelFunc()
 	if err := client.Connect(ctx); err != nil {
 		return fmt.Errorf("cannot connect to server. err: %v", err)
@@ -400,7 +403,7 @@ func insertDummyDocs(host string, proxyPort, numOfDocs int, mode MongoConnection
 	if err != nil {
 		return err
 	}
-	ctx, cancelFunc := context.WithTimeout(context.Background(), ClientTimeoutSec)
+	ctx, cancelFunc := context.WithTimeout(context.Background(), ClientTimeoutSecForTests)
 	defer cancelFunc()
 	if err := client.Connect(ctx); err != nil {
 		return fmt.Errorf("cannot connect to server. err: %v", err)
@@ -426,7 +429,7 @@ func cleanup(host string, proxyPort int, mode MongoConnectionMode) error {
 	if err != nil {
 		return err
 	}
-	ctx, cancelFunc := context.WithTimeout(context.Background(), ClientTimeoutSec)
+	ctx, cancelFunc := context.WithTimeout(context.Background(), ClientTimeoutSecForTests)
 	defer cancelFunc()
 	if err := client.Connect(ctx); err != nil {
 		return fmt.Errorf("cannot connect to server. err: %v", err)

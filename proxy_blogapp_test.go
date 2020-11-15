@@ -106,7 +106,7 @@ func runBlogApp(logger *slogger.Logger, host string, proxyPort, workerNum int, m
 	if err != nil {
 		return 0, false, fmt.Errorf("failed to get a test client. err=%v", err)
 	}
-	goctx, cancelFunc := context.WithTimeout(context.Background(), ClientTimeoutSec)
+	goctx, cancelFunc := context.WithTimeout(context.Background(), ClientTimeoutSecForTests)
 	defer cancelFunc()
 	if err := client.Connect(goctx); err != nil {
 		return 0, false, fmt.Errorf("cannot connect to server. err: %v", err)
@@ -144,7 +144,7 @@ func insertBlogsData(posts, commentsPerPost int, hostname string, port int, mode
 	if err != nil {
 		return err
 	}
-	ctx, cancelFunc := context.WithTimeout(context.Background(), ClientTimeoutSec)
+	ctx, cancelFunc := context.WithTimeout(context.Background(), ClientTimeoutSecForTests)
 	defer cancelFunc()
 	if err := client.Connect(ctx); err != nil {
 		return fmt.Errorf("cannot connect to server. err: %v", err)
@@ -187,7 +187,7 @@ func cleanupBlogApp(host string, proxyPort int, mode MongoConnectionMode) error 
 	if err != nil {
 		return err
 	}
-	ctx, cancelFunc := context.WithTimeout(context.Background(), ClientTimeoutSec)
+	ctx, cancelFunc := context.WithTimeout(context.Background(), ClientTimeoutSecForTests)
 	defer cancelFunc()
 	if err := client.Connect(ctx); err != nil {
 		return fmt.Errorf("cannot connect to server. err: %v", err)

@@ -136,7 +136,7 @@ func runFind(logger *slogger.Logger, host string, proxyPort, workerNum int, mode
 	if err != nil {
 		return 0, false, fmt.Errorf("failed to get a test client. err=%v", err)
 	}
-	goctx, cancelFunc := context.WithTimeout(context.Background(), ClientTimeoutSec)
+	goctx, cancelFunc := context.WithTimeout(context.Background(), ClientTimeoutSecForTests)
 	defer cancelFunc()
 	if err := client.Connect(goctx); err != nil {
 		return 0, false, fmt.Errorf("cannot connect to server. err: %v", err)
