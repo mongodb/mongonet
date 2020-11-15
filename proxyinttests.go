@@ -26,6 +26,7 @@ func DoConcurrencyTestRun(logger *slogger.Logger,
 	if preSetupFunc != nil {
 		err = preSetupFunc(logger, hostname, mongoPort, proxyPort, mode)
 		if err != nil {
+			logger.Logf(slogger.ERROR, "failed to run pre-setup. err=%v", err)
 			return
 		}
 	}
@@ -33,6 +34,7 @@ func DoConcurrencyTestRun(logger *slogger.Logger,
 	if setupFunc != nil {
 		err = setupFunc(logger, hostname, mongoPort, proxyPort, mode)
 		if err != nil {
+			logger.Logf(slogger.ERROR, "failed to run setup. err=%v", err)
 			return
 		}
 	}
