@@ -368,7 +368,6 @@ func (ps *ProxySession) getMongoConnection(rp *readpref.ReadPref) (*MongoConnect
 		return nil, err
 	}
 	ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "found a server. connecting")
-	start := time.Now()
 	ep, ok := srv.(driver.ErrorProcessor)
 	if !ok {
 		return nil, fmt.Errorf("server ErrorProcessor type assertion failed")
@@ -376,10 +375,6 @@ func (ps *ProxySession) getMongoConnection(rp *readpref.ReadPref) (*MongoConnect
 	conn, err := srv.Connection(ps.proxy.Context)
 	if err != nil {
 		return nil, err
-	}
-	duration := time.Since(start)
-	if duration.Milliseconds() > 500 { // TODO - debug, remove!
-		ps.proxy.logger.Logf(slogger.WARN, fmt.Sprintf("client: %v - connection took %v which is over 1000ms", ps.RemoteAddr(), duration))
 	}
 	ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "connected")
 	ec, ok := conn.(driver.Expirable)
