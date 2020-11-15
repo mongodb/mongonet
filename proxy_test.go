@@ -23,7 +23,7 @@ const (
 	ServerSelectionTimeoutSecForTests = 10
 	ParallelClients                   = 5
 	InterruptedAtShutdownErrorCode    = 11600
-	ClientTimeoutSec                  = 10 * time.Second
+	ClientTimeoutSec                  = 20 * time.Second
 )
 
 type MyFactory struct {
@@ -533,7 +533,7 @@ func privateTester(t *testing.T, pc ProxyConfig, host string, proxyPort, mongoPo
 		t.Fatalf("ops failures")
 		return
 	}
-	if cleared2 := proxy.GetPoolCleared(); cleared2 < cleared2 {
+	if cleared2 := proxy.GetPoolCleared(); cleared2 < cleared {
 		t.Fatalf("expected pool cleared to be gt previous value but was %v", cleared2)
 	}
 

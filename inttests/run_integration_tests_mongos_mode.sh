@@ -1,4 +1,5 @@
 #!/bin/bash
+set -vx
 
 echo ### RUNNING INTEGRATION TESTS
 # If you do no set MONGO_DIR on the command line it will default to the value below
