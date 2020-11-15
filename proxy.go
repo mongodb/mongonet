@@ -39,6 +39,7 @@ type Proxy struct {
 
 	Context            context.Context
 	connectionsCreated *int64
+	poolCleared        *int64
 }
 
 func (ps *ProxySession) logTrace(logger *slogger.Logger, trace bool, format string, args ...interface{}) {
@@ -92,6 +93,7 @@ func (ps *ProxySession) logMessageTrace(logger *slogger.Logger, trace bool, m Me
 // MongoConnectionWrapper is used to wrap the driver connection so we can explicitly expire (close out) connections on certain occasions that aren't being picked up by the driver
 type MongoConnectionWrapper struct {
 	conn          driver.Connection
+	ep            driver.ErrorProcessor
 	expirableConn driver.Expirable
 	bad           bool
 	logger        *slogger.Logger
@@ -222,6 +224,7 @@ func (ps *ProxySession) respondWithError(clientMessage Message, err error) error
 			0, // StartingFrom
 			1, // NumberReturned
 			[]SimpleBSON{doc},
+			bsoncore.Document(doc.BSON),
 		}
 		return SendMessage(rm, ps.conn)
 
@@ -251,6 +254,7 @@ func (ps *ProxySession) respondWithError(clientMessage Message, err error) error
 					doc,
 				},
 			},
+			bsoncore.Document(doc.BSON),
 		}
 		return SendMessage(rm, ps.conn)
 
@@ -295,53 +299,46 @@ https://docs.mongodb.com/manual/core/read-preference-staleness/
 const MinMaxStalenessVal int32 = 90
 
 func getReadPrefFromOpMsg(mm *MessageMessage, logger *slogger.Logger, defaultRp *readpref.ReadPref) (rp *readpref.ReadPref, err error) {
-	for _, section := range mm.Sections {
-		bs, ok := section.(*BodySection)
-		if !ok {
-			continue
+	rpVal, err2 := mm.BodyDoc.LookupErr("$readPreference")
+	if err2 != nil {
+		if err2 == bsoncore.ErrElementNotFound {
+			return defaultRp, nil
 		}
-		bsd := bsoncore.Document(bs.Body.BSON)
-		rpVal, err2 := bsd.LookupErr("$readPreference")
-		if err2 != nil {
-			if err2 == bsoncore.ErrElementNotFound {
-				return defaultRp, nil
-			}
-			return nil, fmt.Errorf("got an error looking up $readPreference: %v", err)
-		}
-		rpDoc, ok := rpVal.DocumentOK()
-		if !ok {
-			return nil, fmt.Errorf("$readPreference isn't a document")
-		}
-		opts := make([]readpref.Option, 0, 1)
-		if maxStalenessVal, err := rpDoc.LookupErr("maxStalenessSeconds"); err == nil {
-			if maxStalenessSec, ok := maxStalenessVal.AsInt32OK(); ok && maxStalenessSec >= MinMaxStalenessVal {
-				opts = append(opts, readpref.WithMaxStaleness(time.Duration(maxStalenessSec)*time.Second))
-			} else {
-				return nil, fmt.Errorf("maxStalenessSeconds %v is invalid", maxStalenessVal)
-			}
-		}
-		if modeVal, err2 := rpDoc.LookupErr("mode"); err2 == nil {
-			modeStr, ok := modeVal.StringValueOK()
-			if !ok {
-				return nil, fmt.Errorf("mode %v isn't a string", modeVal)
-			}
-			switch strings.ToLower(modeStr) {
-			case "primarypreferred":
-				return readpref.PrimaryPreferred(opts...), nil
-			case "secondary":
-				return readpref.Secondary(opts...), nil
-			case "secondarypreferred":
-				return readpref.SecondaryPreferred(opts...), nil
-			case "nearest":
-				return readpref.Nearest(opts...), nil
-			case "primary":
-				return defaultRp, nil
-			default:
-				return nil, fmt.Errorf("got unsupported read preference %v", modeStr)
-			}
+		return nil, fmt.Errorf("got an error looking up $readPreference: %v", err)
+	}
+	rpDoc, ok := rpVal.DocumentOK()
+	if !ok {
+		return nil, fmt.Errorf("$readPreference isn't a document")
+	}
+	opts := make([]readpref.Option, 0, 1)
+	if maxStalenessVal, err := rpDoc.LookupErr("maxStalenessSeconds"); err == nil {
+		if maxStalenessSec, ok := maxStalenessVal.AsInt32OK(); ok && maxStalenessSec >= MinMaxStalenessVal {
+			opts = append(opts, readpref.WithMaxStaleness(time.Duration(maxStalenessSec)*time.Second))
 		} else {
-			return nil, errors.New("read preference is missing the required \"mode\" field")
+			return nil, fmt.Errorf("maxStalenessSeconds %v is invalid", maxStalenessVal)
 		}
+	}
+	if modeVal, err2 := rpDoc.LookupErr("mode"); err2 == nil {
+		modeStr, ok := modeVal.StringValueOK()
+		if !ok {
+			return nil, fmt.Errorf("mode %v isn't a string", modeVal)
+		}
+		switch strings.ToLower(modeStr) {
+		case "primarypreferred":
+			return readpref.PrimaryPreferred(opts...), nil
+		case "secondary":
+			return readpref.Secondary(opts...), nil
+		case "secondarypreferred":
+			return readpref.SecondaryPreferred(opts...), nil
+		case "nearest":
+			return readpref.Nearest(opts...), nil
+		case "primary":
+			return defaultRp, nil
+		default:
+			return nil, fmt.Errorf("got unsupported read preference %v", modeStr)
+		}
+	} else {
+		return nil, errors.New("read preference is missing the required \"mode\" field")
 	}
 	return defaultRp, nil
 }
@@ -372,12 +369,16 @@ func (ps *ProxySession) getMongoConnection(rp *readpref.ReadPref) (*MongoConnect
 	}
 	ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "found a server. connecting")
 	start := time.Now()
+	ep, ok := srv.(driver.ErrorProcessor)
+	if !ok {
+		return nil, fmt.Errorf("server ErrorProcessor type assertion failed")
+	}
 	conn, err := srv.Connection(ps.proxy.Context)
 	if err != nil {
 		return nil, err
 	}
 	duration := time.Since(start)
-	if duration.Milliseconds() > 500 {
+	if duration.Milliseconds() > 500 { // TODO - debug, remove!
 		ps.proxy.logger.Logf(slogger.WARN, fmt.Sprintf("client: %v - connection took %vms which is over 1000ms", ps.RemoteAddr(), duration))
 	}
 	ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "connected")
@@ -385,7 +386,12 @@ func (ps *ProxySession) getMongoConnection(rp *readpref.ReadPref) (*MongoConnect
 	if !ok {
 		return nil, fmt.Errorf("bad connection type %T", conn)
 	}
-	return &MongoConnectionWrapper{conn, ec, false, ps.proxy.logger, ps.proxy.config.TraceConnPool}, nil
+	return &MongoConnectionWrapper{conn, ep, ec, false, ps.proxy.logger, ps.proxy.config.TraceConnPool}, nil
+}
+
+func wrapNetworkError(err error) error {
+	labels := []string{driver.NetworkError}
+	return driver.Error{Message: err.Error(), Labels: labels, Wrapped: err}
 }
 
 func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnectionWrapper, error) {
@@ -449,6 +455,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 	// Send message to mongo
 	err = mongoConn.conn.WriteWireMessage(ps.proxy.Context, m.Serialize())
 	if err != nil {
+		mongoConn.ep.ProcessError(wrapNetworkError(err), mongoConn.conn)
 		return mongoConn, NewStackErrorf("error writing to mongo: %v", err)
 	}
 
@@ -465,6 +472,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 		ret, err := mongoConn.conn.ReadWireMessage(ps.proxy.Context, nil)
 		if err != nil {
 			ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "error reading wire message mongo conn %v %v", mongoConn.conn.ID(), err)
+			mongoConn.ep.ProcessError(wrapNetworkError(err), mongoConn.conn)
 			return nil, NewStackErrorf("error reading wire message from mongo conn %v: %v", mongoConn.conn.ID(), err)
 		}
 		ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "read data from mongo conn %v", mongoConn.conn.ID())
@@ -475,6 +483,18 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 				return nil, err
 			}
 			return nil, NewStackErrorf("got error reading response from mongo %v", err)
+		}
+		switch mm := resp.(type) {
+		case *MessageMessage:
+			if err := extractError(mm.BodyDoc); err != nil {
+				ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "processing error %v on mongo conn %v", err, mongoConn.conn.ID())
+				mongoConn.ep.ProcessError(err, mongoConn.conn)
+			}
+		case *ReplyMessage:
+			if err := extractError(mm.CommandDoc); err != nil {
+				ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "processing error %v on mongo conn %v", err, mongoConn.conn.ID())
+				mongoConn.ep.ProcessError(err, mongoConn.conn)
+			}
 		}
 		if respInter != nil {
 			resp, err = respInter.InterceptMongoToClient(resp)
@@ -488,7 +508,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 		err = SendMessage(resp, ps.conn)
 		if err != nil {
 			mongoConn.bad = true
-			ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "error sending back data to user from mongo conn %v. err=%v", mongoConn.conn.ID(), err)
+			ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "got error sending response to client from conn %v. err=%v", mongoConn.conn.ID(), err)
 			return nil, NewStackErrorf("got error sending response to client from conn %v: %v", mongoConn.conn.ID(), err)
 		}
 		ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "sent back data to user from mongo conn %v", mongoConn.conn.ID())
@@ -518,9 +538,9 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 
 func NewProxy(pc ProxyConfig) (Proxy, error) {
 	ctx := context.Background()
-	var initCount int64 = 0
+	var initCount, initPoolCleared int64 = 0, 0
 	defaultReadPref := readpref.Primary()
-	p := Proxy{pc, nil, nil, nil, nil, defaultReadPref, ctx, &initCount}
+	p := Proxy{pc, nil, nil, nil, nil, defaultReadPref, ctx, &initCount, &initPoolCleared}
 	mongoClient, err := getMongoClient(&p, pc, ctx)
 	if err != nil {
 		return Proxy{}, NewStackErrorf("error getting driver client for %v: %v", pc.MongoAddress(), err)
@@ -564,6 +584,8 @@ func getMongoClient(p *Proxy, pc ProxyConfig, ctx context.Context) (*mongo.Clien
 					if trace {
 						p.logger.Logf(slogger.DEBUG, "**** Connection checked out %v", evt)
 					}
+				case event.PoolCleared:
+					p.IncrementPoolCleared()
 				}
 			},
 		}).
@@ -571,6 +593,9 @@ func getMongoClient(p *Proxy, pc ProxyConfig, ctx context.Context) (*mongo.Clien
 		SetMaxPoolSize(uint64(pc.MaxPoolSize))
 	if pc.MaxPoolIdleTimeSec > 0 {
 		opts.SetMaxConnIdleTime(time.Duration(pc.MaxPoolIdleTimeSec) * time.Second)
+	}
+	if pc.ConnectionPoolHeartbeatIntervalMs > 0 {
+		opts.SetHeartbeatInterval(time.Duration(pc.ConnectionPoolHeartbeatIntervalMs) * time.Millisecond)
 	}
 
 	if pc.MongoUser != "" {
@@ -628,8 +653,16 @@ func (p *Proxy) AddConnection() {
 	atomic.AddInt64(p.connectionsCreated, 1)
 }
 
+func (p *Proxy) IncrementPoolCleared() {
+	atomic.AddInt64(p.poolCleared, 1)
+}
+
 func (p *Proxy) GetConnectionsCreated() int64 {
 	return atomic.LoadInt64(p.connectionsCreated)
+}
+
+func (p *Proxy) GetPoolCleared() int64 {
+	return atomic.LoadInt64(p.poolCleared)
 }
 
 func (p *Proxy) CreateWorker(session *Session) (ServerWorker, error) {
