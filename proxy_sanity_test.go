@@ -147,7 +147,7 @@ func disableFailPoint(host string, mongoPort int, mode MongoConnectionMode) erro
 	return client.Database("admin").RunCommand(ctx, cmd).Err()
 }
 
-func runOps(host string, proxyPort, parallelism int, shouldFail bool, t *testing.T, mode MongoConnectionMode, secondaryReads bool) int32 {
+func runSanityOps(host string, proxyPort, parallelism int, shouldFail bool, t *testing.T, mode MongoConnectionMode, secondaryReads bool) int32 {
 	var wg sync.WaitGroup
 	var failing int32
 	if parallelism == 1 {
@@ -238,7 +238,7 @@ func privateSanityTester(t *testing.T, pc ProxyConfig, host string, proxyPort, m
 		t.Fatalf("expected pool cleared to equal 0 but was %v", cleared)
 	}
 
-	failing := runOps(host, proxyPort, parallelism*2, false, t, mode, secondaryReads)
+	failing := runSanityOps(host, proxyPort, parallelism*2, false, t, mode, secondaryReads)
 	if atomic.LoadInt32(&failing) > 0 {
 		t.Fatalf("ops failures")
 		return
@@ -254,7 +254,7 @@ func privateSanityTester(t *testing.T, pc ProxyConfig, host string, proxyPort, m
 	currConns = conns
 
 	t.Log("*** run ops again to confirm connections are reused")
-	failing = runOps(host, proxyPort, parallelism, false, t, mode, secondaryReads)
+	failing = runSanityOps(host, proxyPort, parallelism, false, t, mode, secondaryReads)
 	if atomic.LoadInt32(&failing) > 0 {
 		t.Fatalf("ops failures")
 		return
@@ -278,7 +278,7 @@ func privateSanityTester(t *testing.T, pc ProxyConfig, host string, proxyPort, m
 
 	t.Log("*** enable error code response failpoint and run ops")
 	enableFailPointErrorCode(host, mongoPort, InterruptedAtShutdownErrorCode, mode)
-	failing = runOps(host, proxyPort, parallelism, true, t, mode, secondaryReads)
+	failing = runSanityOps(host, proxyPort, parallelism, true, t, mode, secondaryReads)
 	if atomic.LoadInt32(&failing) > 0 {
 		t.Fatalf("ops failures")
 		return
@@ -295,7 +295,7 @@ func privateSanityTester(t *testing.T, pc ProxyConfig, host string, proxyPort, m
 
 	t.Log("*** enable close connection failpoint and run ops")
 	enableFailPointCloseConnection(host, mongoPort, mode)
-	failing = runOps(host, proxyPort, parallelism, true, t, mode, secondaryReads)
+	failing = runSanityOps(host, proxyPort, parallelism, true, t, mode, secondaryReads)
 
 	if atomic.LoadInt32(&failing) > 0 {
 		t.Fatalf("ops failures")
@@ -317,7 +317,7 @@ func privateSanityTester(t *testing.T, pc ProxyConfig, host string, proxyPort, m
 		return
 	}
 
-	failing = runOps(host, proxyPort, parallelism, false, t, mode, secondaryReads)
+	failing = runSanityOps(host, proxyPort, parallelism, false, t, mode, secondaryReads)
 	if atomic.LoadInt32(&failing) > 0 {
 		t.Fatalf("ops failures")
 		return

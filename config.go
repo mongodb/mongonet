@@ -28,8 +28,9 @@ func (m MongoConnectionMode) String() string {
 }
 
 const (
-	DefaultMaxPoolSize        = 100
-	DefaultMaxPoolIdleTimeSec = 0
+	DefaultMaxPoolSize                       = 100
+	DefaultMaxPoolIdleTimeSec                = 0
+	DefaultConnectionPoolHeartbeatIntervalMs = -1 // use driver default
 )
 
 type ProxyConfig struct {
@@ -48,14 +49,15 @@ type ProxyConfig struct {
 
 	AppName string
 
-	TraceConnPool             bool
-	ConnectionMode            MongoConnectionMode
-	ServerSelectionTimeoutSec int
-	MaxPoolSize               int
-	MaxPoolIdleTimeSec        int
+	TraceConnPool                     bool
+	ConnectionMode                    MongoConnectionMode
+	ServerSelectionTimeoutSec         int
+	MaxPoolSize                       int
+	MaxPoolIdleTimeSec                int
+	ConnectionPoolHeartbeatIntervalMs int // set to -1 to use the default
 }
 
-func NewProxyConfig(bindHost string, bindPort int, mongoUri, mongoHost string, mongoPort int, mongoUser, mongoPassword, appName string, traceConnPool bool, connectionMode MongoConnectionMode, serverSelectionTimeoutSec, maxPoolSize, maxPoolIdleTimeSec int) ProxyConfig {
+func NewProxyConfig(bindHost string, bindPort int, mongoUri, mongoHost string, mongoPort int, mongoUser, mongoPassword, appName string, traceConnPool bool, connectionMode MongoConnectionMode, serverSelectionTimeoutSec, maxPoolSize, maxPoolIdleTimeSec, connectionPoolHeartbeatIntervalMs int) ProxyConfig {
 
 	syncTlsConfig := NewSyncTlsConfig()
 	return ProxyConfig{
@@ -86,6 +88,7 @@ func NewProxyConfig(bindHost string, bindPort int, mongoUri, mongoHost string, m
 		serverSelectionTimeoutSec,
 		maxPoolSize,
 		maxPoolIdleTimeSec,
+		connectionPoolHeartbeatIntervalMs,
 	}
 }
 

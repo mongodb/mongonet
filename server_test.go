@@ -414,8 +414,8 @@ func TestServerWorkerWithContext(t *testing.T) {
 	}
 	sessCtrCurr := atomic.LoadInt32(&sessCtr)
 
-	if sessCtrCurr != int32(20) {
-		t.Errorf("expect session counter to be 20 but got %d", sessCtrCurr)
+	if sessCtrCurr != int32(30) {
+		t.Errorf("expect session counter to be 30 but got %d", sessCtrCurr)
 	}
 
 	server.Close()
