@@ -102,6 +102,9 @@ func privateConnectionPerformanceTesterFindUpdate(mode MongoConnectionMode, maxP
 		cleanupFunc,
 	)
 
+	if err != nil {
+		t.Errorf("failed to run tests. err=%v", err)
+	}
 	if failedCount > 0 {
 		t.Errorf("failed workers %v", failedCount)
 	}
