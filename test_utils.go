@@ -1,6 +1,7 @@
 package mongonet
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strconv"
@@ -327,4 +328,52 @@ func getHostAndPorts() (mongoPort, proxyPort int, hostname string) {
 		panic(err)
 	}
 	return
+}
+
+func insertDummyDocs(host string, proxyPort, numOfDocs int, mode MongoConnectionMode) error {
+	client, err := getTestClient(host, proxyPort, mode, false, "insertDummyDocs")
+	if err != nil {
+		return err
+	}
+	ctx, cancelFunc := context.WithTimeout(context.Background(), ClientTimeoutSec)
+	defer cancelFunc()
+	if err := client.Connect(ctx); err != nil {
+		return fmt.Errorf("cannot connect to server. err: %v", err)
+	}
+	defer client.Disconnect(ctx)
+
+	dbName, collName := "test2", "foo"
+
+	defer client.Disconnect(ctx)
+
+	coll := client.Database(dbName).Collection(collName)
+	// insert some docs
+	docs := make([]interface{}, numOfDocs)
+	for i := 0; i < numOfDocs; i++ {
+		docs[i] = bson.D{{"x", i}}
+	}
+	if _, err := coll.InsertMany(ctx, docs); err != nil {
+		return fmt.Errorf("initial insert failed. err: %v", err)
+	}
+	return nil
+}
+
+func cleanup(host string, proxyPort int, mode MongoConnectionMode) error {
+	client, err := getTestClient(host, proxyPort, mode, false, "cleanup")
+	if err != nil {
+		return err
+	}
+	ctx, cancelFunc := context.WithTimeout(context.Background(), ClientTimeoutSec)
+	defer cancelFunc()
+	if err := client.Connect(ctx); err != nil {
+		return fmt.Errorf("cannot connect to server. err: %v", err)
+	}
+	defer client.Disconnect(ctx)
+
+	dbName, collName := "test2", "foo"
+
+	defer client.Disconnect(ctx)
+
+	coll := client.Database(dbName).Collection(collName)
+	return coll.Drop(ctx)
 }

@@ -10,7 +10,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 )
 
-func runFind(logger *slogger.Logger, host string, proxyPort, workerNum int, mode MongoConnectionMode) (time.Duration, bool, error) {
+func runFindUpdate(logger *slogger.Logger, host string, proxyPort, workerNum int, mode MongoConnectionMode) (time.Duration, bool, error) {
 	start := time.Now()
 	dbName, collName := "test2", "foo"
 
@@ -46,12 +46,16 @@ func runFind(logger *slogger.Logger, host string, proxyPort, workerNum int, mode
 	if v != workerNum {
 		return 0, false, fmt.Errorf("fetched wrong doc %v for worker=%v", doc, workerNum)
 	}
+	_, err = coll.UpdateOne(goctx, bson.D{{"x", workerNum}}, bson.D{{"$set", bson.D{{"i", workerNum}}}})
+	if err != nil {
+		return 0, false, fmt.Errorf("failed to update the doc. err=%v", err)
+	}
 	elapsed := time.Since(start)
 	logger.Logf(slogger.DEBUG, "worker-%v finished after %v", workerNum, elapsed)
 	return elapsed, true, nil
 }
 
-func privateConnectionPerformanceTesterFindOne(mode MongoConnectionMode, maxPoolSize, workers int, targetAvgLatencyMs, targetMaxLatencyMs int64, t *testing.T) {
+func privateConnectionPerformanceTesterFindUpdate(mode MongoConnectionMode, maxPoolSize, workers int, targetAvgLatencyMs, targetMaxLatencyMs int64, t *testing.T) {
 	Iterations := 20
 	mongoPort, proxyPort, hostname := getHostAndPorts()
 	t.Logf("using proxy port=%v, pool size=%v", proxyPort, maxPoolSize)
@@ -68,7 +72,7 @@ func privateConnectionPerformanceTesterFindOne(mode MongoConnectionMode, maxPool
 	}
 
 	testFunc := func(logger *slogger.Logger, hostname string, mongoPort, proxyPort, workerNum, iteration int, mode MongoConnectionMode) (elapsed time.Duration, success bool, err error) {
-		return runFind(logger, hostname, serverPort, workerNum, mode)
+		return runFindUpdate(logger, hostname, serverPort, workerNum, mode)
 	}
 
 	cleanupFunc := func(logger *slogger.Logger, hostname string, mongoPort, proxyPort int, mode MongoConnectionMode) error {
@@ -113,26 +117,26 @@ func privateConnectionPerformanceTesterFindOne(mode MongoConnectionMode, maxPool
 	t.Logf("ALL DONE workers=%v, successful runs=%v, avg=%vms, max=%vms, failures=%v, percentiles=%v\nresults=%v", workers, len(results), avgLatencyMs, maxLatencyMs, failedCount, percentiles, results)
 }
 
-func TestProxyMongosModeConnectionPerformanceFindOneFiveThreads(t *testing.T) {
-	privateConnectionPerformanceTesterFindOne(Cluster, 0, 5, 50, 200, t)
+func TestProxyMongosModeConnectionPerformanceFindUpdateFiveThreads(t *testing.T) {
+	privateConnectionPerformanceTesterFindUpdate(Cluster, 0, 5, 50, 200, t)
 }
 
-func TestProxyMongosModeConnectionPerformanceFindOneTwentyThreads(t *testing.T) {
-	privateConnectionPerformanceTesterFindOne(Cluster, 0, 20, 100, 500, t)
+func TestProxyMongosModeConnectionPerformanceFindUpdateTwentyThreads(t *testing.T) {
+	privateConnectionPerformanceTesterFindUpdate(Cluster, 0, 20, 100, 500, t)
 }
 
-func TestProxyMongosModeConnectionPerformanceFindOneSixtyThreads(t *testing.T) {
-	privateConnectionPerformanceTesterFindOne(Cluster, 0, 60, 200, 1500, t)
+func TestProxyMongosModeConnectionPerformanceFindUpdateSixtyThreads(t *testing.T) {
+	privateConnectionPerformanceTesterFindUpdate(Cluster, 0, 60, 200, 1500, t)
 }
 
-func TestProxyMongodModeConnectionPerformanceFindOneFiveThreads(t *testing.T) {
-	privateConnectionPerformanceTesterFindOne(Direct, 0, 5, 50, 200, t)
+func TestProxyMongodModeConnectionPerformanceFindUpdateFiveThreads(t *testing.T) {
+	privateConnectionPerformanceTesterFindUpdate(Direct, 0, 5, 50, 200, t)
 }
 
-func TestProxyMongodModeConnectionPerformanceFindOneTwentyThreads(t *testing.T) {
-	privateConnectionPerformanceTesterFindOne(Direct, 0, 20, 100, 500, t)
+func TestProxyMongodModeConnectionPerformanceFindUpdateTwentyThreads(t *testing.T) {
+	privateConnectionPerformanceTesterFindUpdate(Direct, 0, 20, 100, 500, t)
 }
 
-func TestProxyMongodModeConnectionPerformanceFindOneSixtyThreads(t *testing.T) {
-	privateConnectionPerformanceTesterFindOne(Direct, 0, 60, 200, 1500, t)
+func TestProxyMongodModeConnectionPerformanceFindUpdateSixtyThreads(t *testing.T) {
+	privateConnectionPerformanceTesterFindUpdate(Direct, 0, 60, 200, 1500, t)
 }

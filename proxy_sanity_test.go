@@ -183,16 +183,16 @@ func privateSanityTestMongodMode(secondaryMode bool, t *testing.T) {
 		t.Fatalf("failed to disable failpoint. err=%v", err)
 		return
 	}
-	pc := getProxyConfig("localhost", mongoPort, proxyPort, DefaultMaxPoolSize, DefaultMaxPoolIdleTimeSec, Direct, true)
+	pc := getProxyConfig("localhost", mongoPort, proxyPort, DefaultMaxPoolSize, DefaultMaxPoolIdleTimeSec, Direct, false)
 	privateSanityTester(t, pc, "localhost", proxyPort, mongoPort, ParallelClients, Direct, secondaryMode)
 }
 
-func TestProxySanityMongodModePrimary(t *testing.T) {
+func TestProxyMongodModeSanityPrimary(t *testing.T) {
 	privateSanityTestMongodMode(false, t)
 }
 
 // this is expected to go through the same code as primary mode since Mongod mode essentially ignores read preference from client
-func TestProxySanityMongodModeSecondary(t *testing.T) {
+func TestProxyMongodModeSanitySecondary(t *testing.T) {
 	privateSanityTestMongodMode(true, t)
 }
 
@@ -203,15 +203,15 @@ func privateSanityTestMongosMode(secondaryMode bool, t *testing.T) {
 		t.Fatalf("failed to disable failpoint. err=%v", err)
 		return
 	}
-	pc := getProxyConfig(hostname, mongoPort, proxyPort, DefaultMaxPoolSize, DefaultMaxPoolIdleTimeSec, Cluster, true)
+	pc := getProxyConfig(hostname, mongoPort, proxyPort, DefaultMaxPoolSize, DefaultMaxPoolIdleTimeSec, Cluster, false)
 	privateSanityTester(t, pc, hostname, proxyPort, mongoPort, 5, Cluster, secondaryMode)
 }
 
-func TestProxySanityMongosModePrimary(t *testing.T) {
+func TestProxyMongosModeSanityPrimary(t *testing.T) {
 	privateSanityTestMongosMode(false, t)
 }
 
-func TestProxySanityMongosModeSecondary(t *testing.T) {
+func TestProxyMongosModeSanitySecondary(t *testing.T) {
 	privateSanityTestMongosMode(true, t)
 }
 
