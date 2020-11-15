@@ -11,23 +11,41 @@ import (
 
 	"github.com/mongodb/slogger/v2/slogger"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
 /*
 	DoConcurrencyTestRun - can be used by external applications to test out concurrency and pooling performance
+	preSetUpFunc will use a client over the underlying mongo
+	setupFunc, testFunc and cleanupFunc will use clients over the proxy
 	see full example on RunProxyConnectionPerformanceFindOne
 */
 func DoConcurrencyTestRun(logger *slogger.Logger,
 	hostname string, mongoPort, proxyPort int, mode MongoConnectionMode,
+	mongoClientFactory func(host string, port int, mode MongoConnectionMode, secondaryReads bool, appName string) (*mongo.Client, error),
 	iterations, workers int,
-	preSetupFunc func(logger *slogger.Logger, hostname string, mongoPort, proxyPort int, mode MongoConnectionMode) error,
-	setupFunc func(logger *slogger.Logger, hostname string, mongoPort, proxyPort int, mode MongoConnectionMode) error,
-	testFunc func(logger *slogger.Logger, hostname string, mongoPort, proxyPort, workerNum, iteration int, mode MongoConnectionMode) (elapsed time.Duration, success bool, err error),
-	cleanupFunc func(logger *slogger.Logger, hostname string, mongoPort, proxyPort int, mode MongoConnectionMode) error,
+	preSetupFunc func(logger *slogger.Logger, client *mongo.Client, ctx context.Context) error,
+	setupFunc func(logger *slogger.Logger, client *mongo.Client, ctx context.Context) error,
+	testFunc func(logger *slogger.Logger, client *mongo.Client, workerNum, iteration int, ctx context.Context) (elapsed time.Duration, success bool, err error),
+	cleanupFunc func(logger *slogger.Logger, client *mongo.Client, ctx context.Context) error,
 ) (results []int64, failedCount int32, maxLatencyMs, avgLatencyMs int64, percentiles map[int]int, err error) {
 	resLock := sync.RWMutex{}
 	if preSetupFunc != nil {
-		err = preSetupFunc(logger, hostname, mongoPort, proxyPort, mode)
+		var client *mongo.Client
+		client, err = mongoClientFactory(hostname, mongoPort, mode, false, "presetup")
+		if err != nil {
+			logger.Logf(slogger.ERROR, "failed to init connection for pre-setup. err=%v", err)
+			return
+		}
+		ctx, cancelFunc := context.WithTimeout(context.Background(), ClientTimeoutSecForTests)
+		defer cancelFunc()
+		err = client.Connect(ctx)
+		if err != nil {
+			logger.Logf(slogger.ERROR, "failed to connect on pre-setup. err=%v", err)
+			return
+		}
+		defer client.Disconnect(ctx)
+		err = preSetupFunc(logger, client, ctx)
 		if err != nil {
 			logger.Logf(slogger.ERROR, "failed to run pre-setup. err=%v", err)
 			return
@@ -35,14 +53,44 @@ func DoConcurrencyTestRun(logger *slogger.Logger,
 	}
 
 	if setupFunc != nil {
-		err = setupFunc(logger, hostname, mongoPort, proxyPort, mode)
+		var client *mongo.Client
+		client, err = mongoClientFactory(hostname, proxyPort, mode, false, "setup")
+		if err != nil {
+			logger.Logf(slogger.ERROR, "failed to init connection for setup. err=%v", err)
+			return
+		}
+		ctx, cancelFunc := context.WithTimeout(context.Background(), ClientTimeoutSecForTests)
+		defer cancelFunc()
+		err = client.Connect(ctx)
+		if err != nil {
+			logger.Logf(slogger.ERROR, "failed to connect on setup. err=%v", err)
+			return
+		}
+		defer client.Disconnect(ctx)
+		err = setupFunc(logger, client, ctx)
 		if err != nil {
 			logger.Logf(slogger.ERROR, "failed to run setup. err=%v", err)
 			return
 		}
 	}
 
-	defer cleanupFunc(logger, hostname, mongoPort, proxyPort, mode)
+	defer func() {
+		var client *mongo.Client
+		client, err = mongoClientFactory(hostname, proxyPort, mode, false, "cleanup")
+		if err != nil {
+			logger.Logf(slogger.ERROR, "failed to init connection for cleanup. err=%v", err)
+			return
+		}
+		ctx, cancelFunc := context.WithTimeout(context.Background(), ClientTimeoutSecForTests)
+		defer cancelFunc()
+		err = client.Connect(ctx)
+		if err != nil {
+			logger.Logf(slogger.ERROR, "failed to connect on cleanup. err=%v", err)
+			return
+		}
+		defer client.Disconnect(ctx)
+		cleanupFunc(logger, client, ctx)
+	}()
 
 	var wg sync.WaitGroup
 ITERATIONS:
@@ -58,7 +106,21 @@ ITERATIONS:
 				var elapsed time.Duration
 				logger.Logf(slogger.DEBUG, "running worker-%v", num)
 				if testFunc != nil {
-					elapsed, success, err = testFunc(logger, hostname, mongoPort, proxyPort, num, j, mode)
+					var client *mongo.Client
+					client, err = mongoClientFactory(hostname, proxyPort, mode, false, fmt.Sprintf("worker-%v", num))
+					if err != nil {
+						logger.Logf(slogger.ERROR, "failed to init connection for cleanup. err=%v", err)
+						return
+					}
+					ctx, cancelFunc := context.WithTimeout(context.Background(), ClientTimeoutSecForTests)
+					defer cancelFunc()
+					err = client.Connect(ctx)
+					if err != nil {
+						logger.Logf(slogger.ERROR, "failed to connect on testFunc. err=%v", err)
+						return
+					}
+					defer client.Disconnect(ctx)
+					elapsed, success, err = testFunc(logger, client, num, j, ctx)
 					logger.Logf(slogger.INFO, "worker-%v success=%v, elapsed=%v, err=%v", num, success, elapsed, err)
 					if !success {
 						logger.Logf(slogger.WARN, "worker-%v failed! err=%v", num, err)
@@ -118,38 +180,26 @@ type ConnectionPerformanceTestGoal struct {
 	MaxLatencyMs int64
 }
 
-func RunProxyConnectionPerformanceFindOne(iterations, mongoPort, proxyPort int, hostname string, logger *slogger.Logger, mode MongoConnectionMode) error {
-	if err := runProxyConnectionPerformanceFindOne(iterations, mongoPort, proxyPort, hostname, logger, 5, 50, 200, mode); err != nil {
-		return err
+func RunProxyConnectionPerformanceFindOne(iterations, mongoPort, proxyPort int, hostname string, logger *slogger.Logger, mode MongoConnectionMode, goals []ConnectionPerformanceTestGoal, mongoClientFactory func(host string, port int, mode MongoConnectionMode, secondaryReads bool, appName string) (*mongo.Client, error)) error {
+	for _, goal := range goals {
+		if err := runProxyConnectionPerformanceFindOne(iterations, mongoPort, proxyPort, hostname, logger, goal.Workers, goal.AvgLatencyMs, goal.MaxLatencyMs, mode, mongoClientFactory); err != nil {
+			return err
+		}
 	}
-	if err := runProxyConnectionPerformanceFindOne(iterations, mongoPort, proxyPort, hostname, logger, 20, 100, 500, mode); err != nil {
-		return err
-	}
-	return runProxyConnectionPerformanceFindOne(iterations, mongoPort, proxyPort, hostname, logger, 60, 200, 1500, mode)
+	return nil
 }
 
-func runFind(logger *slogger.Logger, host string, proxyPort, workerNum int, mode MongoConnectionMode) (time.Duration, bool, error) {
+func runFind(logger *slogger.Logger, client *mongo.Client, workerNum int, ctx context.Context) (time.Duration, bool, error) {
 	start := time.Now()
 	dbName, collName := "test2", "foo"
-
-	client, err := getTestClient(host, proxyPort, mode, false, fmt.Sprintf("worker-%v", workerNum))
-	if err != nil {
-		return 0, false, fmt.Errorf("failed to get a test client. err=%v", err)
-	}
-	goctx, cancelFunc := context.WithTimeout(context.Background(), ClientTimeoutSecForTests)
-	defer cancelFunc()
-	if err := client.Connect(goctx); err != nil {
-		return 0, false, fmt.Errorf("cannot connect to server. err: %v", err)
-	}
-	defer client.Disconnect(goctx)
 	doc := bson.D{}
 	coll := client.Database(dbName).Collection(collName)
 
-	cur, err := coll.Find(goctx, bson.D{{"x", workerNum}})
+	cur, err := coll.Find(ctx, bson.D{{"x", workerNum}})
 	if err != nil {
 		return 0, false, fmt.Errorf("failed to run find. err=%v", err)
 	}
-	cur.Next(goctx)
+	cur.Next(ctx)
 	if err := cur.Decode(&doc); err != nil {
 		return 0, false, fmt.Errorf("failed to decode find. err=%v", err)
 	}
@@ -169,23 +219,24 @@ func runFind(logger *slogger.Logger, host string, proxyPort, workerNum int, mode
 	return elapsed, true, nil
 }
 
-func runProxyConnectionPerformanceFindOne(iterations, mongoPort, proxyPort int, hostname string, logger *slogger.Logger, workers int, targetAvgLatencyMs, targetMaxLatencyMs int64, mode MongoConnectionMode) error {
-	preSetupFunc := func(logger *slogger.Logger, hostname string, mongoPort, proxyPort int, mode MongoConnectionMode) error {
-		return disableFailPoint(hostname, mongoPort, mode)
+func runProxyConnectionPerformanceFindOne(iterations, mongoPort, proxyPort int, hostname string, logger *slogger.Logger, workers int, targetAvgLatencyMs, targetMaxLatencyMs int64, mode MongoConnectionMode, mongoClientFactory func(host string, port int, mode MongoConnectionMode, secondaryReads bool, appName string) (*mongo.Client, error)) error {
+	preSetupFunc := func(logger *slogger.Logger, client *mongo.Client, ctx context.Context) error {
+		return disableFailPoint(client, ctx)
 	}
-	setupFunc := func(logger *slogger.Logger, hostname string, mongoPort, proxyPort int, mode MongoConnectionMode) error {
-		return insertDummyDocs(hostname, proxyPort, 1000, mode)
-	}
-
-	testFunc := func(logger *slogger.Logger, hostname string, mongoPort, proxyPort, workerNum, iteration int, mode MongoConnectionMode) (elapsed time.Duration, success bool, err error) {
-		return runFind(logger, hostname, proxyPort, workerNum, mode)
+	setupFunc := func(logger *slogger.Logger, client *mongo.Client, ctx context.Context) error {
+		return insertDummyDocs(client, 1000, ctx)
 	}
 
-	cleanupFunc := func(logger *slogger.Logger, hostname string, mongoPort, proxyPort int, mode MongoConnectionMode) error {
-		return cleanup(hostname, proxyPort, mode)
+	testFunc := func(logger *slogger.Logger, client *mongo.Client, workerNum, iteration int, ctx context.Context) (elapsed time.Duration, success bool, err error) {
+		return runFind(logger, client, workerNum, ctx)
+	}
+
+	cleanupFunc := func(logger *slogger.Logger, client *mongo.Client, ctx context.Context) error {
+		return cleanup(client, ctx)
 	}
 	results, failedCount, maxLatencyMs, avgLatencyMs, percentiles, err := DoConcurrencyTestRun(logger,
 		hostname, mongoPort, proxyPort, mode,
+		mongoClientFactory,
 		iterations, workers,
 		preSetupFunc,
 		setupFunc,

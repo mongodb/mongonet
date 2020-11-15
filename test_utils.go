@@ -68,17 +68,7 @@ func enableFailPointErrorCode(host string, mongoPort, errorCode int, mode MongoC
 	return client.Database("admin").RunCommand(ctx, cmd).Err()
 }
 
-func disableFailPoint(host string, mongoPort int, mode MongoConnectionMode) error {
-	client, err := getTestClient(host, mongoPort, mode, false, "disableFailPoint")
-	if err != nil {
-		return err
-	}
-	ctx, cancelFunc := context.WithTimeout(context.Background(), ClientTimeoutSecForTests)
-	defer cancelFunc()
-	if err := client.Connect(ctx); err != nil {
-		return fmt.Errorf("cannot connect to server. err: %v", err)
-	}
-	defer client.Disconnect(ctx)
+func disableFailPoint(client *mongo.Client, ctx context.Context) error {
 	cmd := bson.D{
 		{"configureFailPoint", "failCommand"},
 		{"mode", "off"},
@@ -398,18 +388,7 @@ func getHostAndPorts() (mongoPort, proxyPort int, hostname string) {
 	return
 }
 
-func insertDummyDocs(host string, proxyPort, numOfDocs int, mode MongoConnectionMode) error {
-	client, err := getTestClient(host, proxyPort, mode, false, "insertDummyDocs")
-	if err != nil {
-		return err
-	}
-	ctx, cancelFunc := context.WithTimeout(context.Background(), ClientTimeoutSecForTests)
-	defer cancelFunc()
-	if err := client.Connect(ctx); err != nil {
-		return fmt.Errorf("cannot connect to server. err: %v", err)
-	}
-	defer client.Disconnect(ctx)
-
+func insertDummyDocs(client *mongo.Client, numOfDocs int, ctx context.Context) error {
 	dbName, collName := "test2", "foo"
 
 	coll := client.Database(dbName).Collection(collName)
@@ -424,18 +403,7 @@ func insertDummyDocs(host string, proxyPort, numOfDocs int, mode MongoConnection
 	return nil
 }
 
-func cleanup(host string, proxyPort int, mode MongoConnectionMode) error {
-	client, err := getTestClient(host, proxyPort, mode, false, "cleanup")
-	if err != nil {
-		return err
-	}
-	ctx, cancelFunc := context.WithTimeout(context.Background(), ClientTimeoutSecForTests)
-	defer cancelFunc()
-	if err := client.Connect(ctx); err != nil {
-		return fmt.Errorf("cannot connect to server. err: %v", err)
-	}
-	defer client.Disconnect(ctx)
-
+func cleanup(client *mongo.Client, ctx context.Context) error {
 	dbName, collName := "test2", "foo"
 
 	coll := client.Database(dbName).Collection(collName)

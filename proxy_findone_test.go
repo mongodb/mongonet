@@ -29,7 +29,7 @@ func privateConnectionPerformanceTesterFindOne(mode MongoConnectionMode, maxPool
 
 	go proxy.Run()
 
-	if err := runProxyConnectionPerformanceFindOne(Iterations, mongoPort, proxyPort, hostToUse, proxy.NewLogger("tester"), workers, targetAvgLatencyMs, targetMaxLatencyMs, mode); err != nil {
+	if err := runProxyConnectionPerformanceFindOne(Iterations, mongoPort, proxyPort, hostToUse, proxy.NewLogger("tester"), workers, targetAvgLatencyMs, targetMaxLatencyMs, mode, getTestClient); err != nil {
 		t.Error(err)
 	}
 }
