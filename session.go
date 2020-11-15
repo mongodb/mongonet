@@ -10,6 +10,7 @@ import (
 
 	"github.com/mongodb/slogger/v2/slogger"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/x/bsonx/bsoncore"
 )
 
 type Session struct {
@@ -139,6 +140,7 @@ func (s *Session) RespondToCommand(clientMessage Message, doc SimpleBSON) error 
 			0, // StartingFrom
 			1, // NumberReturned
 			[]SimpleBSON{doc},
+			bsoncore.Document(doc.BSON),
 		}
 		return SendMessage(rm, s.conn)
 
@@ -172,6 +174,7 @@ func (s *Session) RespondToCommand(clientMessage Message, doc SimpleBSON) error 
 					doc,
 				},
 			},
+			bsoncore.Document(doc.BSON),
 		}
 		return SendMessage(rm, s.conn)
 
@@ -214,6 +217,7 @@ func (s *Session) RespondWithError(clientMessage Message, err error) error {
 			0, // StartingFrom
 			1, // NumberReturned
 			[]SimpleBSON{doc},
+			bsoncore.Document(doc.BSON),
 		}
 		return SendMessage(rm, s.conn)
 
@@ -247,6 +251,7 @@ func (s *Session) RespondWithError(clientMessage Message, err error) error {
 					doc,
 				},
 			},
+			bsoncore.Document(doc.BSON),
 		}
 		return SendMessage(rm, s.conn)
 

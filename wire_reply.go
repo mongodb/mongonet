@@ -1,5 +1,7 @@
 package mongonet
 
+import "go.mongodb.org/mongo-driver/x/bsonx/bsoncore"
+
 func (m *ReplyMessage) HasResponse() bool {
 	return false // because its a response
 }
@@ -65,6 +67,8 @@ func parseReplyMessage(header MessageHeader, buf []byte) (Message, error) {
 		rm.Docs = append(rm.Docs, doc)
 		loc += int(doc.Size)
 	}
-
+	if len(rm.Docs) > 0 {
+		rm.CommandDoc = bsoncore.Document(rm.Docs[0].BSON)
+	}
 	return rm, nil
 }
