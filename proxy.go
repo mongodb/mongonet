@@ -15,6 +15,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/mongodb/mongonet/util"
 	"github.com/mongodb/slogger/v2/slogger"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/event"
@@ -357,7 +358,7 @@ func PinnedServerSelector(addr address.Address) description.ServerSelector {
 func (ps *ProxySession) getMongoConnection(rp *readpref.ReadPref) (*MongoConnectionWrapper, error) {
 	ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "finding a server")
 	var srvSelector description.ServerSelector
-	if ps.proxy.config.ConnectionMode == Cluster {
+	if ps.proxy.config.ConnectionMode == util.Cluster {
 		srvSelector = description.ReadPrefSelector(rp)
 	} else {
 		// Direct
@@ -401,7 +402,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 		return mongoConn, NewStackErrorf("got error reading from client: %v", err)
 	}
 	var rp *readpref.ReadPref = ps.proxy.defaultReadPref
-	if ps.proxy.config.ConnectionMode == Cluster {
+	if ps.proxy.config.ConnectionMode == util.Cluster {
 		// only concerned about OP_MSG at this point
 		mm, ok := m.(*MessageMessage)
 		if ok {
@@ -550,14 +551,14 @@ func NewProxy(pc ProxyConfig) (Proxy, error) {
 
 func getMongoClient(p *Proxy, pc ProxyConfig, ctx context.Context) (*mongo.Client, error) {
 	opts := options.Client()
-	if pc.ConnectionMode == Direct {
+	if pc.ConnectionMode == util.Direct {
 		opts.ApplyURI(fmt.Sprintf("mongodb://%s", pc.MongoAddress()))
 	} else {
 		opts.ApplyURI(pc.MongoURI)
 	}
 	trace := p.config.TraceConnPool
 	opts.
-		SetDirect(pc.ConnectionMode == Direct).
+		SetDirect(pc.ConnectionMode == util.Direct).
 		SetAppName(pc.AppName).
 		SetPoolMonitor(&event.PoolMonitor{
 			Event: func(evt *event.PoolEvent) {

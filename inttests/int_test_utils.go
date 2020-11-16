@@ -1,20 +1,17 @@
-package mongonet
+package inttests
 
 import (
 	"context"
 	"fmt"
 	"math/rand"
-	"os"
-	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
+	. "github.com/mongodb/mongonet"
+	"github.com/mongodb/mongonet/util"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
-	"go.mongodb.org/mongo-driver/mongo/readpref"
 )
 
 const (
@@ -22,99 +19,30 @@ const (
 	ClientTimeoutSecForTests          = 20 * time.Second
 )
 
-func enableFailPointCloseConnection(host string, mongoPort int, mode MongoConnectionMode) error {
-	client, err := getTestClient(host, mongoPort, mode, false, "enableFailPointCloseConnection")
-	if err != nil {
-		return err
+func insertDummyDocs(client *mongo.Client, numOfDocs int, ctx context.Context) error {
+	dbName, collName := "test2", "foo"
+
+	coll := client.Database(dbName).Collection(collName)
+	// insert some docs
+	docs := make([]interface{}, numOfDocs)
+	for i := 0; i < numOfDocs; i++ {
+		docs[i] = bson.D{{"x", i}}
 	}
-	ctx, cancelFunc := context.WithTimeout(context.Background(), ClientTimeoutSecForTests)
-	defer cancelFunc()
-	if err := client.Connect(ctx); err != nil {
-		return fmt.Errorf("cannot connect to server. err: %v", err)
+	if _, err := coll.InsertMany(ctx, docs); err != nil {
+		return fmt.Errorf("initial insert failed. err: %v", err)
 	}
-	defer client.Disconnect(ctx)
-	// cannot fail "find" because it'll prevent certain driver machinery when operating against replica sets to work properly
-	cmd := bson.D{
-		{"configureFailPoint", "failCommand"},
-		{"mode", "alwaysOn"},
-		{"data", bson.D{
-			{"failCommands", []string{"update"}},
-			{"closeConnection", true},
-		}},
-	}
-	return client.Database("admin").RunCommand(ctx, cmd).Err()
+	return nil
 }
 
-func enableFailPointErrorCode(host string, mongoPort, errorCode int, mode MongoConnectionMode) error {
-	client, err := getTestClient(host, mongoPort, mode, false, "enableFailPointErrorCode")
-	if err != nil {
-		return err
-	}
-	ctx, cancelFunc := context.WithTimeout(context.Background(), ClientTimeoutSecForTests)
-	defer cancelFunc()
-	if err := client.Connect(ctx); err != nil {
-		return fmt.Errorf("cannot connect to server. err: %v", err)
-	}
-	defer client.Disconnect(ctx)
-	// cannot fail "find" because it'll prevent certain driver machinery when operating against replica sets to work properly
-	cmd := bson.D{
-		{"configureFailPoint", "failCommand"},
-		{"mode", "alwaysOn"},
-		{"data", bson.D{
-			{"failCommands", []string{"update"}},
-			{"errorCode", errorCode},
-		}},
-	}
-	return client.Database("admin").RunCommand(ctx, cmd).Err()
-}
+func cleanup(client *mongo.Client, ctx context.Context) error {
+	dbName, collName := "test2", "foo"
 
-func disableFailPoint(client *mongo.Client, ctx context.Context) error {
-	cmd := bson.D{
-		{"configureFailPoint", "failCommand"},
-		{"mode", "off"},
-	}
-	return client.Database("admin").RunCommand(ctx, cmd).Err()
-}
-
-func EphemeralPort() (int, error) {
-	fd, err := syscall.Socket(
-		syscall.AF_INET,
-		syscall.SOCK_STREAM,
-		syscall.IPPROTO_TCP,
-	)
-	if err != nil {
-		return -1, fmt.Errorf("Failed to obtain socket. err=%v", err)
-	}
-
-	defer syscall.Close(fd)
-
-	err = syscall.Bind(
-		fd,
-		&syscall.SockaddrInet4{
-			Port: 0,                   // 0 requests that the kernel assign an ephemeral port
-			Addr: [4]byte{0, 0, 0, 0}, // 0.0.0.0 means any IP address
-		},
-	)
-	if err != nil {
-		return -1, fmt.Errorf("Failed to bind socket. err=%v", err)
-	}
-
-	var sockaddr syscall.Sockaddr
-	sockaddr, err = syscall.Getsockname(fd)
-	if err != nil {
-		return -1, fmt.Errorf("Failed to Getsockname() for fd %v. err=%v", fd, err)
-	}
-
-	sockaddr4, ok := sockaddr.(*syscall.SockaddrInet4)
-	if !ok {
-		return -1, fmt.Errorf("Expected *syscall.SockaddrInet4 from Getsockname(), but got %#v", sockaddr)
-	}
-
-	return sockaddr4.Port, nil
+	coll := client.Database(dbName).Collection(collName)
+	return coll.Drop(ctx)
 }
 
 type MyFactory struct {
-	mode      MongoConnectionMode
+	mode      util.MongoConnectionMode
 	mongoPort int
 	proxyPort int
 }
@@ -124,7 +52,7 @@ func (myf *MyFactory) NewInterceptor(ps *ProxySession) (ProxyInterceptor, error)
 }
 
 type MyResponseInterceptor struct {
-	mode      MongoConnectionMode
+	mode      util.MongoConnectionMode
 	mongoPort int
 	proxyPort int
 }
@@ -196,7 +124,7 @@ func (mri *MyResponseInterceptor) InterceptMongoToClient(m Message) (Message, er
 		if err != nil {
 			return mm, err
 		}
-		if mri.mode == Cluster {
+		if mri.mode == util.Cluster {
 			n, err = fixIsMasterCluster(doc)
 		} else {
 			// direct mode
@@ -230,7 +158,7 @@ func (mri *MyResponseInterceptor) InterceptMongoToClient(m Message) (Message, er
 		if err != nil {
 			return mm, err
 		}
-		if mri.mode == Cluster {
+		if mri.mode == util.Cluster {
 			n, err = fixIsMasterCluster(doc)
 		} else {
 			// direct mode
@@ -245,7 +173,7 @@ func (mri *MyResponseInterceptor) InterceptMongoToClient(m Message) (Message, er
 
 type MyInterceptor struct {
 	ps        *ProxySession
-	mode      MongoConnectionMode
+	mode      util.MongoConnectionMode
 	mongoPort int
 	proxyPort int
 }
@@ -344,72 +272,6 @@ func (myi *MyInterceptor) InterceptClientToMongo(m Message) (Message, ResponseIn
 	return m, nil, nil
 }
 
-func getTestClient(host string, port int, mode MongoConnectionMode, secondaryReads bool, appName string) (*mongo.Client, error) {
-	opts := options.Client().ApplyURI(fmt.Sprintf("mongodb://%s:%d", host, port)).
-		SetDirect(mode == Direct)
-	if secondaryReads {
-		opts.SetReadPreference(readpref.Secondary())
-	}
-	if appName != "" {
-		opts.SetAppName(appName)
-	}
-	client, err := mongo.NewClient(opts)
-	if err != nil {
-		return nil, fmt.Errorf("cannot create a mongo client. err: %v", err)
-	}
-	return client, nil
-}
-
-func getProxyConfig(hostname string, mongoPort, proxyPort, maxPoolSize, maxPoolIdleTimeSec int, mode MongoConnectionMode, enableTracing bool) ProxyConfig {
-	var uri string
-	if mode == Cluster {
-		uri = fmt.Sprintf("mongodb://%s:%v,%s:%v,%s:%v/?replSet=proxytest", hostname, mongoPort, hostname, mongoPort+1, hostname, mongoPort+2)
-	}
-	pc := NewProxyConfig("localhost", proxyPort, uri, hostname, mongoPort, "", "", "test proxy", enableTracing, mode, ServerSelectionTimeoutSecForTests, maxPoolSize, maxPoolIdleTimeSec, 500)
-	pc.MongoSSLSkipVerify = true
-	pc.InterceptorFactory = &MyFactory{mode, mongoPort, proxyPort}
-	return pc
-}
-
-func getHostAndPorts() (mongoPort, proxyPort int, hostname string) {
-	var err error
-	mongoPort = 30000
-	proxyPort, err = EphemeralPort()
-	if err != nil {
-		panic(err)
-	}
-	if os.Getenv("MONGO_PORT") != "" {
-		mongoPort, _ = strconv.Atoi(os.Getenv("MONGO_PORT"))
-	}
-	hostname, err = os.Hostname()
-	if err != nil {
-		panic(err)
-	}
-	return
-}
-
-func insertDummyDocs(client *mongo.Client, numOfDocs int, ctx context.Context) error {
-	dbName, collName := "test2", "foo"
-
-	coll := client.Database(dbName).Collection(collName)
-	// insert some docs
-	docs := make([]interface{}, numOfDocs)
-	for i := 0; i < numOfDocs; i++ {
-		docs[i] = bson.D{{"x", i}}
-	}
-	if _, err := coll.InsertMany(ctx, docs); err != nil {
-		return fmt.Errorf("initial insert failed. err: %v", err)
-	}
-	return nil
-}
-
-func cleanup(client *mongo.Client, ctx context.Context) error {
-	dbName, collName := "test2", "foo"
-
-	coll := client.Database(dbName).Collection(collName)
-	return coll.Drop(ctx)
-}
-
 const charset = "abcdefghijklmnopqrstuvwxyz" +
 	"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
@@ -435,4 +297,24 @@ func RandDate() time.Time {
 
 	sec := seededRand.Int63n(delta) + min
 	return time.Unix(sec, 0)
+}
+
+func getRandStringArray(maxArrLen, strLen int) []string {
+	arrLen := rand.Intn(maxArrLen) + 1
+	arr := make([]string, arrLen)
+	for i := 0; i < arrLen; i++ {
+		arr[i] = RandString(strLen)
+	}
+	return arr
+}
+
+func getProxyConfig(hostname string, mongoPort, proxyPort, maxPoolSize, maxPoolIdleTimeSec int, mode util.MongoConnectionMode, enableTracing bool) ProxyConfig {
+	var uri string
+	if mode == util.Cluster {
+		uri = fmt.Sprintf("mongodb://%s:%v,%s:%v,%s:%v/?replSet=proxytest", hostname, mongoPort, hostname, mongoPort+1, hostname, mongoPort+2)
+	}
+	pc := NewProxyConfig("localhost", proxyPort, uri, hostname, mongoPort, "", "", "test proxy", enableTracing, mode, ServerSelectionTimeoutSecForTests, maxPoolSize, maxPoolIdleTimeSec, 500)
+	pc.MongoSSLSkipVerify = true
+	pc.InterceptorFactory = &MyFactory{mode, mongoPort, proxyPort}
+	return pc
 }

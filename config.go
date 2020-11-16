@@ -4,6 +4,7 @@ import (
 	"crypto/x509"
 	"fmt"
 
+	"github.com/mongodb/mongonet/util"
 	"github.com/mongodb/slogger/v2/slogger"
 )
 
@@ -11,20 +12,6 @@ type SSLPair struct {
 	Cert string `json:"cert"`
 	Key  string `json:"key"`
 	Id   string
-}
-
-type MongoConnectionMode int
-
-const (
-	Direct  MongoConnectionMode = iota // directly connect to a specific node
-	Cluster                            // use server selection and read preference to pick a node
-)
-
-func (m MongoConnectionMode) String() string {
-	if m == Direct {
-		return "direct"
-	}
-	return "cluster"
 }
 
 const (
@@ -50,14 +37,14 @@ type ProxyConfig struct {
 	AppName string
 
 	TraceConnPool                     bool
-	ConnectionMode                    MongoConnectionMode
+	ConnectionMode                    util.MongoConnectionMode
 	ServerSelectionTimeoutSec         int
 	MaxPoolSize                       int
 	MaxPoolIdleTimeSec                int
 	ConnectionPoolHeartbeatIntervalMs int // set to -1 to use the default
 }
 
-func NewProxyConfig(bindHost string, bindPort int, mongoUri, mongoHost string, mongoPort int, mongoUser, mongoPassword, appName string, traceConnPool bool, connectionMode MongoConnectionMode, serverSelectionTimeoutSec, maxPoolSize, maxPoolIdleTimeSec, connectionPoolHeartbeatIntervalMs int) ProxyConfig {
+func NewProxyConfig(bindHost string, bindPort int, mongoUri, mongoHost string, mongoPort int, mongoUser, mongoPassword, appName string, traceConnPool bool, connectionMode util.MongoConnectionMode, serverSelectionTimeoutSec, maxPoolSize, maxPoolIdleTimeSec, connectionPoolHeartbeatIntervalMs int) ProxyConfig {
 
 	syncTlsConfig := NewSyncTlsConfig()
 	return ProxyConfig{
