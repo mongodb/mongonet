@@ -217,6 +217,7 @@ func RunIntTest(mode util.MongoConnectionMode, maxPoolSize, workers int, targetA
 }
 
 func analyzeResults(err error, workers int, failedCount int32, avgLatencyMs, targetAvgLatencyMs, maxLatencyMs, targetMaxLatencyMs int64, results []int64, percentiles map[int]int, logger *slogger.Logger) error {
+	defer logger.Logf(slogger.INFO, "ALL DONE workers=%v, successful runs=%v, avg=%vms, max=%vms, failures=%v, percentiles=%v\nresults=%v", workers, len(results), avgLatencyMs, maxLatencyMs, failedCount, percentiles, results)
 	if err != nil {
 		return fmt.Errorf("failed to run tests. err=%v", err)
 	}
@@ -232,6 +233,5 @@ func analyzeResults(err error, workers int, failedCount int32, avgLatencyMs, tar
 	if len(results) == 0 {
 		return fmt.Errorf("no successful runs")
 	}
-	logger.Logf(slogger.INFO, "ALL DONE workers=%v, successful runs=%v, avg=%vms, max=%vms, failures=%v, percentiles=%v\nresults=%v", workers, len(results), avgLatencyMs, maxLatencyMs, failedCount, percentiles, results)
 	return nil
 }
