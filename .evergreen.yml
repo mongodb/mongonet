@@ -1,0 +1,151 @@
+stepback: true
+
+command_type: system
+
+functions:
+  "fetch source":
+    - command: git.get_project
+      params:
+        directory: mongonet
+    - command: git.apply_patch
+      params:
+        directory: mongonet
+  "fetch mongodb":
+    - command: shell.exec
+      params:
+        working_dir: mongonet
+        script: |
+          set -vx
+          rm -rf mongodb
+          mkdir -p mongodb/bin
+          cd mongodb
+          curl ${mongo_url} -o mongodb.tgz
+          ${decompress} mongodb.tgz
+          chmod +x ./mongodb-*/bin/*
+          mv ./mongodb-*/bin/* ./bin
+  "run unit tests":
+    - command: shell.exec
+      params:
+        working_dir: mongonet
+        script: |
+          set -euvx
+          ${gorootvars}
+          export GOPATH=`pwd`/.gopath
+          go test > test.suite
+          exitcode=$?
+          cat test.suite
+          exit $exitcode
+  "run integration tests mongod mode":
+    - command: shell.exec
+      params:
+        working_dir: mongonet
+        script: |
+          set -euvx
+          ${gorootvars}
+          export GOPATH=`pwd`/.gopath
+          export MONGO_DIR=`pwd`/mongodb/bin
+          export PATH=$PATH:$MONGO_DIR
+          go version
+          sh inttests/run_integration_tests_mongod_mode.sh
+  "run integration tests mongos mode":
+    - command: shell.exec
+      params:
+        working_dir: mongonet
+        script: |
+          set -euvx
+          ${gorootvars}
+          export GOPATH=`pwd`/.gopath
+          export MONGO_DIR=`pwd`/mongodb/bin
+          export PATH=$PATH:$MONGO_DIR
+          go version
+          sh inttests/run_integration_tests_mongos_mode.sh
+  "run go vet":
+    - command: shell.exec
+      params:
+        working_dir: mongonet
+        script: |
+          set -euvx
+          export GOPATH=`pwd`/.gopath
+          ${gorootvars} go version
+          ${gorootvars} go vet --composites=false ./...
+          exitcode=$?
+          exit $exitcode
+
+  "check go fmt":
+    - command: shell.exec
+      params:
+        working_dir: mongonet
+        script: |
+          set -euvx
+          ${gorootvars} go version
+          export files_needing_formatting=`${gorootvars} gofmt -l -s -w .`
+          echo 'FILES NEEDING FORMATTING:'
+          for i in $files_needing_formatting; do echo $i; done
+          echo
+          test `echo $files_needing_formatting | wc -w` = '0'
+          exit $?
+
+tasks:
+  - name: RunUnitTests
+    priority: 5
+    commands:
+      - func: "fetch source"
+      - func: "fetch mongodb"
+      - func: "run unit tests"
+
+  - name: RunIntegrationTestsMongosMode
+    priority: 5
+    commands:
+      - func: "fetch source"
+      - func: "fetch mongodb"
+      - func: "run integration tests mongos mode"
+
+  - name: RunIntegrationTestsMongodMode
+    priority: 5
+    commands:
+      - func: "fetch source"
+      - func: "fetch mongodb"
+      - func: "run integration tests mongod mode"
+
+  - name: CheckGoFmt
+    commands:
+      - func: "fetch source"
+      - func: "check go fmt"
+
+  - name: GoVet
+    commands:
+      - func: "fetch source"
+      - func: "run go vet"
+
+buildvariants:
+
+- name: rhel7
+  display_name: RHEL 7
+  expansions:
+    mongo_url: https://downloads.mongodb.com/linux/mongodb-linux-x86_64-enterprise-rhel70-4.4.1.tgz
+    gorootvars: export PATH="/opt/golang/go1.14/bin:$PATH" GOROOT=/opt/golang/go1.14
+  run_on:
+    - rhel70
+  tasks:
+    - "RunUnitTests"
+    - "RunIntegrationTestsMongosMode"
+    - "RunIntegrationTestsMongodMode"
+
+- name: check-go-fmt
+  display_name: Check go fmt (linux)
+  run_on:
+    - amazon1-2018-test
+  expansions:
+    gorootvars: PATH="/opt/golang/go1.14/bin:$PATH" GOROOT=/opt/golang/go1.14
+  tasks:
+    - "CheckGoFmt"
+
+- name: linux-go-vet
+  display_name: go vet (Linux)
+  run_on:
+    - rhel70
+  expansions:
+    gorootvars: PATH="/opt/golang/go1.14/bin:$PATH" GOROOT=/opt/golang/go1.14
+  tasks:
+    - "GoVet"
+      
