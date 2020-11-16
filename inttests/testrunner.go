@@ -25,6 +25,7 @@ import (
 func DoConcurrencyTestRun(logger *slogger.Logger,
 	hostname string, mongoPort, proxyPort int, mode util.MongoConnectionMode,
 	mongoClientFactory func(host string, port int, mode util.MongoConnectionMode, secondaryReads bool, appName string) (*mongo.Client, error),
+	proxyClientFactory func(host string, port int, mode util.MongoConnectionMode, secondaryReads bool, appName string) (*mongo.Client, error),
 	iterations, workers int,
 	preSetupFunc func(logger *slogger.Logger, client *mongo.Client, ctx context.Context) error,
 	setupFunc func(logger *slogger.Logger, client *mongo.Client, ctx context.Context) error,
@@ -56,7 +57,7 @@ func DoConcurrencyTestRun(logger *slogger.Logger,
 
 	if setupFunc != nil {
 		var client *mongo.Client
-		client, err = mongoClientFactory(hostname, proxyPort, mode, false, "setup")
+		client, err = proxyClientFactory(hostname, proxyPort, mode, false, "setup")
 		if err != nil {
 			logger.Logf(slogger.ERROR, "failed to init connection for setup. err=%v", err)
 			return
@@ -78,7 +79,7 @@ func DoConcurrencyTestRun(logger *slogger.Logger,
 
 	defer func() {
 		var client *mongo.Client
-		client, err = mongoClientFactory(hostname, proxyPort, mode, false, "cleanup")
+		client, err = proxyClientFactory(hostname, proxyPort, mode, false, "cleanup")
 		if err != nil {
 			logger.Logf(slogger.ERROR, "failed to init connection for cleanup. err=%v", err)
 			return
@@ -109,7 +110,7 @@ ITERATIONS:
 				logger.Logf(slogger.DEBUG, "running worker-%v", num)
 				if testFunc != nil {
 					var client *mongo.Client
-					client, err = mongoClientFactory(hostname, proxyPort, mode, false, fmt.Sprintf("worker-%v", num))
+					client, err = proxyClientFactory(hostname, proxyPort, mode, false, fmt.Sprintf("worker-%v", num))
 					if err != nil {
 						logger.Logf(slogger.ERROR, "failed to init connection for cleanup. err=%v", err)
 						return
@@ -183,7 +184,10 @@ type ConnectionPerformanceTestGoal struct {
 }
 
 func RunIntTest(mode util.MongoConnectionMode, maxPoolSize, workers int, targetAvgLatencyMs, targetMaxLatencyMs int64, t *testing.T,
-	testFunc func(iterations, mongoPort, proxyPort int, hostname string, logger *slogger.Logger, workers int, targetAvgLatencyMs, targetMaxLatencyMs int64, mode util.MongoConnectionMode, mongoClientFactory func(host string, port int, mode util.MongoConnectionMode, secondaryReads bool, appName string) (*mongo.Client, error)) error,
+	testFunc func(iterations, mongoPort, proxyPort int, hostname string, logger *slogger.Logger, workers int, targetAvgLatencyMs, targetMaxLatencyMs int64, mode util.MongoConnectionMode,
+		mongoClientFactory func(host string, port int, mode util.MongoConnectionMode, secondaryReads bool, appName string) (*mongo.Client, error),
+		proxyClientFactory func(host string, port int, mode util.MongoConnectionMode, secondaryReads bool, appName string) (*mongo.Client, error),
+	) error,
 ) {
 	Iterations := 20
 	mongoPort, proxyPort, hostname := util.GetHostAndPorts()
@@ -207,7 +211,7 @@ func RunIntTest(mode util.MongoConnectionMode, maxPoolSize, workers int, targetA
 
 	go proxy.Run()
 
-	if err := testFunc(Iterations, mongoPort, proxyPort, hostToUse, proxy.NewLogger("tester"), workers, targetAvgLatencyMs, targetMaxLatencyMs, mode, util.GetTestClient); err != nil {
+	if err := testFunc(Iterations, mongoPort, proxyPort, hostToUse, proxy.NewLogger("tester"), workers, targetAvgLatencyMs, targetMaxLatencyMs, mode, util.GetTestClient, util.GetTestClient); err != nil {
 		t.Error(err)
 	}
 }

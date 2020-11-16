@@ -13,9 +13,12 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-func RunProxyConnectionPerformanceFindUpdateRandomDur(iterations, mongoPort, proxyPort int, hostname string, logger *slogger.Logger, mode util.MongoConnectionMode, goals []ConnectionPerformanceTestGoal, mongoClientFactory func(host string, port int, mode util.MongoConnectionMode, secondaryReads bool, appName string) (*mongo.Client, error)) error {
+func RunProxyConnectionPerformanceFindUpdateRandomDur(iterations, mongoPort, proxyPort int, hostname string, logger *slogger.Logger, mode util.MongoConnectionMode, goals []ConnectionPerformanceTestGoal,
+	mongoClientFactory func(host string, port int, mode util.MongoConnectionMode, secondaryReads bool, appName string) (*mongo.Client, error),
+	proxyClientFactory func(host string, port int, mode util.MongoConnectionMode, secondaryReads bool, appName string) (*mongo.Client, error),
+) error {
 	for _, goal := range goals {
-		if err := runProxyConnectionPerformanceFindUpdateRandomDur(iterations, mongoPort, proxyPort, hostname, logger, goal.Workers, goal.AvgLatencyMs, goal.MaxLatencyMs, mode, mongoClientFactory); err != nil {
+		if err := runProxyConnectionPerformanceFindUpdateRandomDur(iterations, mongoPort, proxyPort, hostname, logger, goal.Workers, goal.AvgLatencyMs, goal.MaxLatencyMs, mode, mongoClientFactory, proxyClientFactory); err != nil {
 			return err
 		}
 	}
@@ -60,7 +63,10 @@ func runFindUpdateRandomDur(logger *slogger.Logger, client *mongo.Client, worker
 	return elapsed, true, nil
 }
 
-func runProxyConnectionPerformanceFindUpdateRandomDur(iterations, mongoPort, proxyPort int, hostname string, logger *slogger.Logger, workers int, targetAvgLatencyMs, targetMaxLatencyMs int64, mode util.MongoConnectionMode, mongoClientFactory func(host string, port int, mode util.MongoConnectionMode, secondaryReads bool, appName string) (*mongo.Client, error)) error {
+func runProxyConnectionPerformanceFindUpdateRandomDur(iterations, mongoPort, proxyPort int, hostname string, logger *slogger.Logger, workers int, targetAvgLatencyMs, targetMaxLatencyMs int64, mode util.MongoConnectionMode,
+	mongoClientFactory func(host string, port int, mode util.MongoConnectionMode, secondaryReads bool, appName string) (*mongo.Client, error),
+	proxyClientFactory func(host string, port int, mode util.MongoConnectionMode, secondaryReads bool, appName string) (*mongo.Client, error),
+) error {
 	preSetupFunc := func(logger *slogger.Logger, client *mongo.Client, ctx context.Context) error {
 		return util.DisableFailPoint(client, ctx)
 	}
@@ -78,6 +84,7 @@ func runProxyConnectionPerformanceFindUpdateRandomDur(iterations, mongoPort, pro
 	results, failedCount, maxLatencyMs, avgLatencyMs, percentiles, err := DoConcurrencyTestRun(logger,
 		hostname, mongoPort, proxyPort, mode,
 		mongoClientFactory,
+		proxyClientFactory,
 		iterations, workers,
 		preSetupFunc,
 		setupFunc,
