@@ -95,7 +95,6 @@ func DisableFailPoint(client *mongo.Client, ctx context.Context) error {
 }
 
 func EnableFailPointCloseConnection(mongoPort int) error {
-	// cannot fail "find" because it'll prevent certain driver machinery when operating against replica sets to work properly
 	ctx, cancelFunc := context.WithTimeout(context.Background(), ClientTimeoutSecForTests)
 	defer cancelFunc()
 	client, err := GetTestClient("localhost", mongoPort, Direct, false, "enableFailPointCloseConnection", ctx)
@@ -115,7 +114,6 @@ func EnableFailPointCloseConnection(mongoPort int) error {
 }
 
 func EnableFailPointErrorCode(mongoPort, errorCode int) error {
-	// cannot fail "find" because it'll prevent certain driver machinery when operating against replica sets to work properly
 	ctx, cancelFunc := context.WithTimeout(context.Background(), ClientTimeoutSecForTests)
 	defer cancelFunc()
 	client, err := GetTestClient("localhost", mongoPort, Direct, false, "enableFailPointErrorCode", ctx)
