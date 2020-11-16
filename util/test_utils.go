@@ -60,10 +60,13 @@ func GetHostAndPorts() (mongoPort, proxyPort int, hostname string) {
 	if os.Getenv("MONGO_PORT") != "" {
 		mongoPort, _ = strconv.Atoi(os.Getenv("MONGO_PORT"))
 	}
-	hostname, err = os.Hostname()
-	if err != nil {
-		panic(err)
-	}
+	/*
+		hostname, err = os.Hostname()
+		if err != nil {
+			panic(err)
+		}
+	*/
+	hostname = "localhost"
 	return
 }
 
