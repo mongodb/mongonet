@@ -4,6 +4,7 @@ import (
 	"crypto/x509"
 	"fmt"
 
+	"github.com/mongodb/mongonet/util"
 	"github.com/mongodb/slogger/v2/slogger"
 )
 
@@ -13,19 +14,12 @@ type SSLPair struct {
 	Id   string
 }
 
-type MongoConnectionMode int
-
+// driver defaults
 const (
-	Direct  MongoConnectionMode = iota // directly connect to a specific node
-	Cluster                            // use server selection and read preference to pick a node
+	DefaultMaxPoolSize                       = 100
+	DefaultMaxPoolIdleTimeSec                = 0
+	DefaultConnectionPoolHeartbeatIntervalMs = 0
 )
-
-func (m MongoConnectionMode) String() string {
-	if m == Direct {
-		return "direct"
-	}
-	return "cluster"
-}
 
 type ProxyConfig struct {
 	ServerConfig
@@ -43,12 +37,15 @@ type ProxyConfig struct {
 
 	AppName string
 
-	TraceConnPool             bool
-	ConnectionMode            MongoConnectionMode
-	ServerSelectionTimeoutSec int
+	TraceConnPool                     bool
+	ConnectionMode                    util.MongoConnectionMode
+	ServerSelectionTimeoutSec         int
+	MaxPoolSize                       int
+	MaxPoolIdleTimeSec                int
+	ConnectionPoolHeartbeatIntervalMs int
 }
 
-func NewProxyConfig(bindHost string, bindPort int, mongoUri, mongoHost string, mongoPort int, mongoUser, mongoPassword, appName string, traceConnPool bool, connectionMode MongoConnectionMode, serverSelectionTimeoutSec int) ProxyConfig {
+func NewProxyConfig(bindHost string, bindPort int, mongoUri, mongoHost string, mongoPort int, mongoUser, mongoPassword, appName string, traceConnPool bool, connectionMode util.MongoConnectionMode, serverSelectionTimeoutSec, maxPoolSize, maxPoolIdleTimeSec, connectionPoolHeartbeatIntervalMs int) ProxyConfig {
 
 	syncTlsConfig := NewSyncTlsConfig()
 	return ProxyConfig{
@@ -77,6 +74,9 @@ func NewProxyConfig(bindHost string, bindPort int, mongoUri, mongoHost string, m
 		traceConnPool,
 		connectionMode,
 		serverSelectionTimeoutSec,
+		maxPoolSize,
+		maxPoolIdleTimeSec,
+		connectionPoolHeartbeatIntervalMs,
 	}
 }
 

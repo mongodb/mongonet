@@ -5,7 +5,8 @@ echo ### RUNNING INTEGRATION TESTS
 # If you do no set MONGO_DIR on the command line it will default to the value below
 MONGO_DIR=${MONGO_DIR:-"/opt/mongo/64/3.4.0/bin"}
 export MONGO_PORT=30000 # base port
-HOSTNAME=`hostname -f`
+#HOSTNAME=`hostname -f`
+HOSTNAME="localhost"
 
 pkill mongod
 sleep 5
@@ -20,6 +21,5 @@ $MONGO_DIR/mongo --port $MONGO_PORT --eval "rs.initiate({'_id': 'proxytest', 'pr
 
 sleep 10 # let replica set reach steady state
 
-cd ..
-go test -test.v -run TestProxySanityMongosMode
+go test -test.v -run TestProxyMongosMode
 
