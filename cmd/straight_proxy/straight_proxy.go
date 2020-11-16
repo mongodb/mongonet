@@ -4,6 +4,7 @@ import (
 	"flag"
 
 	"github.com/mongodb/mongonet"
+	"github.com/mongodb/mongonet/util"
 )
 
 func main() {
@@ -15,7 +16,7 @@ func main() {
 
 	flag.Parse()
 
-	pc := mongonet.NewProxyConfig(*bindHost, *bindPort, "", *mongoHost, *mongoPort, "", "", "straight proxy", false, mongonet.Direct, 5, mongonet.DefaultMaxPoolSize, mongonet.DefaultMaxPoolIdleTimeSec, mongonet.DefaultConnectionPoolHeartbeatIntervalMs)
+	pc := mongonet.NewProxyConfig(*bindHost, *bindPort, "", *mongoHost, *mongoPort, "", "", "straight proxy", false, util.Direct, 5, mongonet.DefaultMaxPoolSize, mongonet.DefaultMaxPoolIdleTimeSec, mongonet.DefaultConnectionPoolHeartbeatIntervalMs)
 	pc.MongoSSLSkipVerify = true
 
 	proxy, err := mongonet.NewProxy(pc)

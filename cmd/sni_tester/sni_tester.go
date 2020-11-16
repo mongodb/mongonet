@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/mongodb/mongonet"
+	"github.com/mongodb/mongonet/util"
 	"go.mongodb.org/mongo-driver/bson"
 )
 
@@ -88,7 +89,7 @@ func main() {
 
 	flag.Parse()
 
-	pc := mongonet.NewProxyConfig(*bindHost, *bindPort, "", *mongoHost, *mongoPort, "", "", "sni_tester", false, mongonet.Direct, 5, mongonet.DefaultMaxPoolSize, mongonet.DefaultMaxPoolIdleTimeSec, mongonet.DefaultConnectionPoolHeartbeatIntervalMs)
+	pc := mongonet.NewProxyConfig(*bindHost, *bindPort, "", *mongoHost, *mongoPort, "", "", "sni_tester", false, util.Direct, 5, mongonet.DefaultMaxPoolSize, mongonet.DefaultMaxPoolIdleTimeSec, mongonet.DefaultConnectionPoolHeartbeatIntervalMs)
 
 	pc.UseSSL = true
 	if len(flag.Args()) < 2 {

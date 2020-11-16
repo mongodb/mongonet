@@ -78,7 +78,7 @@ func TestBSONWalk2(test *testing.T) {
 }
 
 func TestBSONWalk3(test *testing.T) {
-	doc := bson.D{{"a", 1}, {"b", 3}, {"c", []bson.D{bson.D{{"x", 5}}, bson.D{{"x", 7}}}}}
+	doc := bson.D{{"a", 1}, {"b", 3}, {"c", []bson.D{{{"x", 5}}, {{"x", 7}}}}}
 	walker := &testWalker{}
 	doc, err := BSONWalk(doc, "c.x", walker)
 	if err != nil {
@@ -145,7 +145,7 @@ func TestBSONWalk5(test *testing.T) {
 }
 
 func TestBSONWalk6(test *testing.T) {
-	doc := bson.D{{"a", 1}, {"b", 3}, {"c", []bson.D{bson.D{{"x", 5}}, bson.D{{"x", 111}, {"y", 3}}, bson.D{{"x", 7}}}}}
+	doc := bson.D{{"a", 1}, {"b", 3}, {"c", []bson.D{{{"x", 5}}, {{"x", 111}, {"y", 3}}, {{"x", 7}}}}}
 	walker := &testWalker{}
 	doc, err := BSONWalk(doc, "c.x", walker)
 	if err != nil {
@@ -291,7 +291,7 @@ func TestBSONWalkAll2(test *testing.T) {
 }
 
 func TestBSONWalkAll3(test *testing.T) {
-	doc := bson.D{{"a", 10}, {"b", bson.D{{"a", 1}}}, {"c", []bson.D{bson.D{{"x", 5}}, bson.D{{"a", 1}}}}}
+	doc := bson.D{{"a", 10}, {"b", bson.D{{"a", 1}}}, {"c", []bson.D{{{"x", 5}}, {{"a", 1}}}}}
 	walker := &testWalker{}
 	doc, err := BSONWalkAll(doc, "a", walker)
 	if err != nil {
