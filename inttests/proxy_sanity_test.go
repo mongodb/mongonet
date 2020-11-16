@@ -241,7 +241,7 @@ func privateSanityTester(t *testing.T, pc ProxyConfig, host string, proxyPort, m
 		return
 	}
 	conns = proxy.GetConnectionsCreated()
-	if conns-int64(currConns) > int64(parallelism) {
+	if conns-int64(currConns) > (int64(parallelism) * 2) {
 		t.Fatalf("expected connections created to not significantly increase (%v), but got %v", currConns, conns)
 	}
 	currConns = conns
