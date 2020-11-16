@@ -341,7 +341,6 @@ func getReadPrefFromOpMsg(mm *MessageMessage, logger *slogger.Logger, defaultRp 
 	} else {
 		return nil, errors.New("read preference is missing the required \"mode\" field")
 	}
-	return defaultRp, nil
 }
 
 func PinnedServerSelector(addr address.Address) description.ServerSelector {
