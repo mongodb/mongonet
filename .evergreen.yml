@@ -46,7 +46,8 @@ functions:
           export MONGO_DIR=`pwd`/mongodb/bin
           export PATH=$PATH:$MONGO_DIR
           go version
-          sh inttests/run_integration_tests_mongod_mode.sh
+          cd inttests
+          sh ./run_integration_tests_mongod_mode.sh
   "run integration tests mongos mode":
     - command: shell.exec
       params:
@@ -58,7 +59,8 @@ functions:
           export MONGO_DIR=`pwd`/mongodb/bin
           export PATH=$PATH:$MONGO_DIR
           go version
-          sh inttests/run_integration_tests_mongos_mode.sh
+          cd inttests
+          sh ./run_integration_tests_mongos_mode.sh
   "run go vet":
     - command: shell.exec
       params:
