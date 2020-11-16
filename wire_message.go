@@ -119,6 +119,7 @@ func parseMessageMessage(header MessageHeader, buf []byte) (Message, error) {
 		if kind == BodySectionKind {
 			if section.(*BodySection) != nil {
 				hasBodySection = true
+				msg.BodyDoc = section.(*BodySection).Body.BSON
 			}
 		}
 		sections = append(sections, section)
