@@ -24,8 +24,8 @@ import (
 */
 func DoConcurrencyTestRun(logger *slogger.Logger,
 	hostname string, mongoPort, proxyPort int, mode util.MongoConnectionMode,
-	mongoClientFactory func(host string, port int, mode util.MongoConnectionMode, secondaryReads bool, appName string) (*mongo.Client, error),
-	proxyClientFactory func(host string, port int, mode util.MongoConnectionMode, secondaryReads bool, appName string) (*mongo.Client, error),
+	mongoClientFactory func(host string, port int, mode util.MongoConnectionMode, secondaryReads bool, appName string, ctx context.Context) (*mongo.Client, error),
+	proxyClientFactory func(host string, port int, mode util.MongoConnectionMode, secondaryReads bool, appName string, ctx context.Context) (*mongo.Client, error),
 	iterations, workers int,
 	preSetupFunc func(logger *slogger.Logger, client *mongo.Client, ctx context.Context) error,
 	setupFunc func(logger *slogger.Logger, client *mongo.Client, ctx context.Context) error,
@@ -35,16 +35,11 @@ func DoConcurrencyTestRun(logger *slogger.Logger,
 	resLock := sync.RWMutex{}
 	if preSetupFunc != nil {
 		var client *mongo.Client
-		client, err = mongoClientFactory(hostname, mongoPort, mode, false, "presetup")
+		ctx, cancelFunc := context.WithTimeout(context.Background(), util.ClientTimeoutSecForTests)
+		defer cancelFunc()
+		client, err = mongoClientFactory(hostname, mongoPort, mode, false, "presetup", ctx)
 		if err != nil {
 			logger.Logf(slogger.ERROR, "failed to init connection for pre-setup. err=%v", err)
-			return
-		}
-		ctx, cancelFunc := context.WithTimeout(context.Background(), ClientTimeoutSecForTests)
-		defer cancelFunc()
-		err = client.Connect(ctx)
-		if err != nil {
-			logger.Logf(slogger.ERROR, "failed to connect on pre-setup. err=%v", err)
 			return
 		}
 		defer client.Disconnect(ctx)
@@ -57,16 +52,11 @@ func DoConcurrencyTestRun(logger *slogger.Logger,
 
 	if setupFunc != nil {
 		var client *mongo.Client
-		client, err = proxyClientFactory(hostname, proxyPort, mode, false, "setup")
+		ctx, cancelFunc := context.WithTimeout(context.Background(), util.ClientTimeoutSecForTests)
+		defer cancelFunc()
+		client, err = proxyClientFactory(hostname, proxyPort, mode, false, "setup", ctx)
 		if err != nil {
 			logger.Logf(slogger.ERROR, "failed to init connection for setup. err=%v", err)
-			return
-		}
-		ctx, cancelFunc := context.WithTimeout(context.Background(), ClientTimeoutSecForTests)
-		defer cancelFunc()
-		err = client.Connect(ctx)
-		if err != nil {
-			logger.Logf(slogger.ERROR, "failed to connect on setup. err=%v", err)
 			return
 		}
 		defer client.Disconnect(ctx)
@@ -79,16 +69,11 @@ func DoConcurrencyTestRun(logger *slogger.Logger,
 
 	defer func() {
 		var client *mongo.Client
-		client, err = proxyClientFactory(hostname, proxyPort, mode, false, "cleanup")
+		ctx, cancelFunc := context.WithTimeout(context.Background(), util.ClientTimeoutSecForTests)
+		defer cancelFunc()
+		client, err = proxyClientFactory(hostname, proxyPort, mode, false, "cleanup", ctx)
 		if err != nil {
 			logger.Logf(slogger.ERROR, "failed to init connection for cleanup. err=%v", err)
-			return
-		}
-		ctx, cancelFunc := context.WithTimeout(context.Background(), ClientTimeoutSecForTests)
-		defer cancelFunc()
-		err = client.Connect(ctx)
-		if err != nil {
-			logger.Logf(slogger.ERROR, "failed to connect on cleanup. err=%v", err)
 			return
 		}
 		defer client.Disconnect(ctx)
@@ -110,16 +95,11 @@ ITERATIONS:
 				logger.Logf(slogger.DEBUG, "running worker-%v", num)
 				if testFunc != nil {
 					var client *mongo.Client
-					client, err = proxyClientFactory(hostname, proxyPort, mode, false, fmt.Sprintf("worker-%v", num))
+					ctx, cancelFunc := context.WithTimeout(context.Background(), util.ClientTimeoutSecForTests)
+					defer cancelFunc()
+					client, err = proxyClientFactory(hostname, proxyPort, mode, false, fmt.Sprintf("worker-%v", num), ctx)
 					if err != nil {
 						logger.Logf(slogger.ERROR, "failed to init connection for cleanup. err=%v", err)
-						return
-					}
-					ctx, cancelFunc := context.WithTimeout(context.Background(), ClientTimeoutSecForTests)
-					defer cancelFunc()
-					err = client.Connect(ctx)
-					if err != nil {
-						logger.Logf(slogger.ERROR, "failed to connect on testFunc. err=%v", err)
 						return
 					}
 					defer client.Disconnect(ctx)
@@ -185,12 +165,12 @@ type ConnectionPerformanceTestGoal struct {
 
 func RunIntTest(mode util.MongoConnectionMode, maxPoolSize, workers int, targetAvgLatencyMs, targetMaxLatencyMs int64, t *testing.T,
 	testFunc func(iterations, mongoPort, proxyPort int, hostname string, logger *slogger.Logger, workers int, targetAvgLatencyMs, targetMaxLatencyMs int64, mode util.MongoConnectionMode,
-		mongoClientFactory func(host string, port int, mode util.MongoConnectionMode, secondaryReads bool, appName string) (*mongo.Client, error),
-		proxyClientFactory func(host string, port int, mode util.MongoConnectionMode, secondaryReads bool, appName string) (*mongo.Client, error),
+		mongoClientFactory util.ClientFactoryFunc,
+		proxyClientFactory util.ClientFactoryFunc,
 	) error,
 ) {
 	Iterations := 20
-	mongoPort, proxyPort, hostname := util.GetHostAndPorts()
+	mongoPort, proxyPort, hostname := util.GetTestHostAndPorts()
 	t.Logf("using proxy port=%v, pool size=%v", proxyPort, maxPoolSize)
 	hostToUse := hostname
 	if mode == util.Direct {

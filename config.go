@@ -14,10 +14,11 @@ type SSLPair struct {
 	Id   string
 }
 
+// driver defaults
 const (
 	DefaultMaxPoolSize                       = 100
 	DefaultMaxPoolIdleTimeSec                = 0
-	DefaultConnectionPoolHeartbeatIntervalMs = -1 // use driver default
+	DefaultConnectionPoolHeartbeatIntervalMs = 0
 )
 
 type ProxyConfig struct {
@@ -41,7 +42,7 @@ type ProxyConfig struct {
 	ServerSelectionTimeoutSec         int
 	MaxPoolSize                       int
 	MaxPoolIdleTimeSec                int
-	ConnectionPoolHeartbeatIntervalMs int // set to -1 to use the default
+	ConnectionPoolHeartbeatIntervalMs int
 }
 
 func NewProxyConfig(bindHost string, bindPort int, mongoUri, mongoHost string, mongoPort int, mongoUser, mongoPassword, appName string, traceConnPool bool, connectionMode util.MongoConnectionMode, serverSelectionTimeoutSec, maxPoolSize, maxPoolIdleTimeSec, connectionPoolHeartbeatIntervalMs int) ProxyConfig {

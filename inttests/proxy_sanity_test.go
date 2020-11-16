@@ -20,61 +20,12 @@ const (
 	InterruptedAtShutdownErrorCode = 11600
 )
 
-func enableFailPointCloseConnection(mongoPort int) error {
-	// cannot fail "find" because it'll prevent certain driver machinery when operating against replica sets to work properly
-	client, err := util.GetTestClient("localhost", mongoPort, util.Direct, false, "enableFailPointCloseConnection")
-	if err != nil {
-		return err
-	}
-	ctx, cancelFunc := context.WithTimeout(context.Background(), ClientTimeoutSecForTests)
-	defer cancelFunc()
-	if err := client.Connect(ctx); err != nil {
-		return fmt.Errorf("cannot connect to server. err: %v", err)
-	}
-	defer client.Disconnect(ctx)
-	cmd := bson.D{
-		{"configureFailPoint", "failCommand"},
-		{"mode", "alwaysOn"},
-		{"data", bson.D{
-			{"failCommands", []string{"update"}},
-			{"closeConnection", true},
-		}},
-	}
-	return client.Database("admin").RunCommand(ctx, cmd).Err()
-}
-
-func enableFailPointErrorCode(mongoPort, errorCode int) error {
-	// cannot fail "find" because it'll prevent certain driver machinery when operating against replica sets to work properly
-	client, err := util.GetTestClient("localhost", mongoPort, util.Direct, false, "enableFailPointErrorCode")
-	if err != nil {
-		return err
-	}
-	ctx, cancelFunc := context.WithTimeout(context.Background(), ClientTimeoutSecForTests)
-	defer cancelFunc()
-	if err := client.Connect(ctx); err != nil {
-		return fmt.Errorf("cannot connect to server. err: %v", err)
-	}
-	defer client.Disconnect(ctx)
-	cmd := bson.D{
-		{"configureFailPoint", "failCommand"},
-		{"mode", "alwaysOn"},
-		{"data", bson.D{
-			{"failCommands", []string{"update"}},
-			{"errorCode", errorCode},
-		}},
-	}
-	return client.Database("admin").RunCommand(ctx, cmd).Err()
-}
-
 func runCommandFailOp(host string, proxyPort int, mode util.MongoConnectionMode, secondaryReads bool) error {
-	client, err := util.GetTestClient(host, proxyPort, mode, secondaryReads, "runCommandFailOp")
+	ctx, cancelFunc := context.WithTimeout(context.Background(), util.ClientTimeoutSecForTests)
+	defer cancelFunc()
+	client, err := util.GetTestClient(host, proxyPort, mode, secondaryReads, "runCommandFailOp", ctx)
 	if err != nil {
 		return err
-	}
-	ctx, cancelFunc := context.WithTimeout(context.Background(), ClientTimeoutSecForTests)
-	defer cancelFunc()
-	if err := client.Connect(ctx); err != nil {
-		return fmt.Errorf("cannot connect to server. err: %v", err)
 	}
 	defer client.Disconnect(ctx)
 	res := client.Database("test").RunCommand(ctx, bson.D{{"createIndexes", "bla"}})
@@ -82,14 +33,11 @@ func runCommandFailOp(host string, proxyPort int, mode util.MongoConnectionMode,
 }
 
 func runInsertFindUpdate(host string, proxyPort, iteration int, shouldFail bool, mode util.MongoConnectionMode, secondaryReads bool) error {
-	client, err := util.GetTestClient(host, proxyPort, mode, secondaryReads, fmt.Sprintf("runInsertFindUpdate-iteration%v", iteration))
+	ctx, cancelFunc := context.WithTimeout(context.Background(), util.ClientTimeoutSecForTests)
+	defer cancelFunc()
+	client, err := util.GetTestClient(host, proxyPort, mode, secondaryReads, fmt.Sprintf("runInsertFindUpdate-iteration%v", iteration), ctx)
 	if err != nil {
 		return err
-	}
-	ctx, cancelFunc := context.WithTimeout(context.Background(), ClientTimeoutSecForTests)
-	defer cancelFunc()
-	if err := client.Connect(ctx); err != nil {
-		return fmt.Errorf("cannot connect to server. err: %v", err)
 	}
 	defer client.Disconnect(ctx)
 	coll := client.Database("test").Collection(fmt.Sprintf("bar_%v", iteration))
@@ -160,21 +108,18 @@ func runSanityOps(host string, proxyPort, parallelism int, shouldFail bool, t *t
 }
 
 func disableFailPoint(mongoPort int) error {
-	client, err := util.GetTestClient("localhost", mongoPort, util.Direct, false, "disableFailPoint")
+	ctx, cancelFunc := context.WithTimeout(context.Background(), util.ClientTimeoutSecForTests)
+	defer cancelFunc()
+	client, err := util.GetTestClient("localhost", mongoPort, util.Direct, false, "disableFailPoint", ctx)
 	if err != nil {
 		return err
-	}
-	ctx, cancelFunc := context.WithTimeout(context.Background(), ClientTimeoutSecForTests)
-	defer cancelFunc()
-	if err := client.Connect(ctx); err != nil {
-		return fmt.Errorf("cannot connect to server. err: %v", err)
 	}
 	defer client.Disconnect(ctx)
 	return util.DisableFailPoint(client, ctx)
 }
 
 func privateSanityTestMongodMode(secondaryMode bool, t *testing.T) {
-	mongoPort, proxyPort, _ := util.GetHostAndPorts()
+	mongoPort, proxyPort, _ := util.GetTestHostAndPorts()
 	t.Logf("using proxy port %v", proxyPort)
 
 	if err := disableFailPoint(mongoPort); err != nil {
@@ -186,7 +131,7 @@ func privateSanityTestMongodMode(secondaryMode bool, t *testing.T) {
 }
 
 func privateSanityTestMongosMode(secondaryMode bool, t *testing.T) {
-	mongoPort, proxyPort, hostname := util.GetHostAndPorts()
+	mongoPort, proxyPort, hostname := util.GetTestHostAndPorts()
 	t.Logf("using proxy port %v", proxyPort)
 	if err := disableFailPoint(mongoPort); err != nil {
 		t.Fatalf("failed to disable failpoint. err=%v", err)
@@ -258,7 +203,7 @@ func privateSanityTester(t *testing.T, pc ProxyConfig, host string, proxyPort, m
 	}
 
 	t.Log("*** enable error code response failpoint and run ops")
-	enableFailPointErrorCode(mongoPort, InterruptedAtShutdownErrorCode)
+	util.EnableFailPointErrorCode(mongoPort, InterruptedAtShutdownErrorCode)
 	failing = runSanityOps(host, proxyPort, parallelism, true, t, mode, secondaryReads)
 	if atomic.LoadInt32(&failing) > 0 {
 		t.Fatalf("ops failures")
@@ -275,7 +220,7 @@ func privateSanityTester(t *testing.T, pc ProxyConfig, host string, proxyPort, m
 	}
 
 	t.Log("*** enable close connection failpoint and run ops")
-	enableFailPointCloseConnection(mongoPort)
+	util.EnableFailPointCloseConnection(mongoPort)
 	failing = runSanityOps(host, proxyPort, parallelism, true, t, mode, secondaryReads)
 
 	if atomic.LoadInt32(&failing) > 0 {

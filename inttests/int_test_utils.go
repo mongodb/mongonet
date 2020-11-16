@@ -16,7 +16,6 @@ import (
 
 const (
 	ServerSelectionTimeoutSecForTests = 10
-	ClientTimeoutSecForTests          = 20 * time.Second
 )
 
 func insertDummyDocs(client *mongo.Client, numOfDocs int, ctx context.Context) error {
@@ -42,13 +41,14 @@ func cleanup(client *mongo.Client, ctx context.Context) error {
 }
 
 type MyFactory struct {
-	mode      util.MongoConnectionMode
-	mongoPort int
-	proxyPort int
+	mode            util.MongoConnectionMode
+	mongoPort       int
+	proxyPort       int
+	disableIsMaster bool
 }
 
 func (myf *MyFactory) NewInterceptor(ps *ProxySession) (ProxyInterceptor, error) {
-	return &MyInterceptor{ps, myf.mode, myf.mongoPort, myf.proxyPort}, nil
+	return &MyInterceptor{ps, myf.mode, myf.mongoPort, myf.proxyPort, myf.disableIsMaster}, nil
 }
 
 type MyResponseInterceptor struct {
@@ -172,10 +172,11 @@ func (mri *MyResponseInterceptor) InterceptMongoToClient(m Message) (Message, er
 }
 
 type MyInterceptor struct {
-	ps        *ProxySession
-	mode      util.MongoConnectionMode
-	mongoPort int
-	proxyPort int
+	ps                       *ProxySession
+	mode                     util.MongoConnectionMode
+	mongoPort                int
+	proxyPort                int
+	disableStreamingIsMaster bool
 }
 
 func (myi *MyInterceptor) Close() {
@@ -214,59 +215,58 @@ func (myi *MyInterceptor) InterceptClientToMongo(m Message) (Message, ResponseIn
 		if idx := BSONIndexOf(query, "client"); idx >= 0 {
 			query = append(query[:idx], query[idx+1:]...)
 		}
-		/*
-			uncomment to disable streaming isMaster
+		if myi.disableStreamingIsMaster {
 			if idx := BSONIndexOf(query, "topologyVersion"); idx >= 0 {
 				query = append(query[:idx], query[idx+1:]...)
 			}
 			if idx := BSONIndexOf(query, "maxAwaitTimeMS"); idx >= 0 {
 				query = append(query[:idx], query[idx+1:]...)
 			}
-		*/
+		}
 		qb, err := SimpleBSONConvert(query)
 		if err != nil {
 			panic(err)
 		}
 		mm.Query = qb
 		return mm, &MyResponseInterceptor{myi.mode, myi.mongoPort, myi.proxyPort}, nil
-		/*
-			uncomment to disable streaming isMaster
-			case *MessageMessage:
-				var err error
-				var bodySection *BodySection = nil
-				for _, section := range mm.Sections {
-					if bs, ok := section.(*BodySection); ok {
-						if bodySection != nil {
-							return mm, nil, NewStackErrorf("OP_MSG should not have more than one body section!  Second body section: %v", bs)
-						}
-						bodySection = bs
-					}
+	case *MessageMessage:
+		if !myi.disableStreamingIsMaster {
+			return mm, nil, nil
+		}
+		var err error
+		var bodySection *BodySection = nil
+		for _, section := range mm.Sections {
+			if bs, ok := section.(*BodySection); ok {
+				if bodySection != nil {
+					return mm, nil, NewStackErrorf("OP_MSG should not have more than one body section!  Second body section: %v", bs)
 				}
+				bodySection = bs
+			}
+		}
 
-				if bodySection == nil {
-					return mm, nil, NewStackErrorf("OP_MSG should have a body section!")
-				}
-				doc, err := bodySection.Body.ToBSOND()
-				if err != nil {
-					return mm, nil, err
-				}
-				if strings.ToLower(doc[0].Key) != "ismaster" {
-					return mm, nil, nil
-				}
-				if idx := BSONIndexOf(doc, "maxAwaitTimeMS"); idx >= 0 {
-					doc = append(doc[:idx], doc[idx+1:]...)
-				}
-				if idx := BSONIndexOf(doc, "topologyVersion"); idx >= 0 {
-					doc = append(doc[:idx], doc[idx+1:]...)
-				}
-				n, err := SimpleBSONConvert(doc)
-				if err != nil {
-					panic(err)
-				}
-				bodySection.Body = n
+		if bodySection == nil {
+			return mm, nil, NewStackErrorf("OP_MSG should have a body section!")
+		}
+		doc, err := bodySection.Body.ToBSOND()
+		if err != nil {
+			return mm, nil, err
+		}
+		if strings.ToLower(doc[0].Key) != "ismaster" {
+			return mm, nil, nil
+		}
+		if idx := BSONIndexOf(doc, "maxAwaitTimeMS"); idx >= 0 {
+			doc = append(doc[:idx], doc[idx+1:]...)
+		}
+		if idx := BSONIndexOf(doc, "topologyVersion"); idx >= 0 {
+			doc = append(doc[:idx], doc[idx+1:]...)
+		}
+		n, err := SimpleBSONConvert(doc)
+		if err != nil {
+			panic(err)
+		}
+		bodySection.Body = n
 
-				return mm, &MyResponseInterceptor{myi.mode, myi.mongoPort, myi.proxyPort}, nil
-		*/
+		return mm, &MyResponseInterceptor{myi.mode, myi.mongoPort, myi.proxyPort}, nil
 	}
 
 	return m, nil, nil
@@ -315,6 +315,6 @@ func getProxyConfig(hostname string, mongoPort, proxyPort, maxPoolSize, maxPoolI
 	}
 	pc := NewProxyConfig("localhost", proxyPort, uri, hostname, mongoPort, "", "", "test proxy", enableTracing, mode, ServerSelectionTimeoutSecForTests, maxPoolSize, maxPoolIdleTimeSec, 500)
 	pc.MongoSSLSkipVerify = true
-	pc.InterceptorFactory = &MyFactory{mode, mongoPort, proxyPort}
+	pc.InterceptorFactory = &MyFactory{mode, mongoPort, proxyPort, false}
 	return pc
 }

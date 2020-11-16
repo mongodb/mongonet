@@ -6,12 +6,17 @@ import (
 	"os"
 	"strconv"
 	"syscall"
+	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.mongodb.org/mongo-driver/mongo/readpref"
 )
+
+const ClientTimeoutSecForTests = 20 * time.Second
+
+type ClientFactoryFunc func(host string, port int, mode MongoConnectionMode, secondaryReads bool, appName string, ctx context.Context) (*mongo.Client, error)
 
 func EphemeralPort() (int, error) {
 	fd, err := syscall.Socket(
@@ -50,7 +55,7 @@ func EphemeralPort() (int, error) {
 	return sockaddr4.Port, nil
 }
 
-func GetHostAndPorts() (mongoPort, proxyPort int, hostname string) {
+func GetTestHostAndPorts() (mongoPort, proxyPort int, hostname string) {
 	var err error
 	mongoPort = 30000
 	proxyPort, err = EphemeralPort()
@@ -60,17 +65,11 @@ func GetHostAndPorts() (mongoPort, proxyPort int, hostname string) {
 	if os.Getenv("MONGO_PORT") != "" {
 		mongoPort, _ = strconv.Atoi(os.Getenv("MONGO_PORT"))
 	}
-	/*
-		hostname, err = os.Hostname()
-		if err != nil {
-			panic(err)
-		}
-	*/
 	hostname = "localhost"
 	return
 }
 
-func GetTestClient(host string, port int, mode MongoConnectionMode, secondaryReads bool, appName string) (*mongo.Client, error) {
+func GetTestClient(host string, port int, mode MongoConnectionMode, secondaryReads bool, appName string, ctx context.Context) (*mongo.Client, error) {
 	opts := options.Client().ApplyURI(fmt.Sprintf("mongodb://%s:%d", host, port)).
 		SetDirect(mode == Direct)
 	if secondaryReads {
@@ -83,13 +82,54 @@ func GetTestClient(host string, port int, mode MongoConnectionMode, secondaryRea
 	if err != nil {
 		return nil, fmt.Errorf("cannot create a mongo client. err: %v", err)
 	}
-	return client, nil
+	err = client.Connect(ctx)
+	return client, err
 }
 
 func DisableFailPoint(client *mongo.Client, ctx context.Context) error {
 	cmd := bson.D{
 		{"configureFailPoint", "failCommand"},
 		{"mode", "off"},
+	}
+	return client.Database("admin").RunCommand(ctx, cmd).Err()
+}
+
+func EnableFailPointCloseConnection(mongoPort int) error {
+	// cannot fail "find" because it'll prevent certain driver machinery when operating against replica sets to work properly
+	ctx, cancelFunc := context.WithTimeout(context.Background(), ClientTimeoutSecForTests)
+	defer cancelFunc()
+	client, err := GetTestClient("localhost", mongoPort, Direct, false, "enableFailPointCloseConnection", ctx)
+	if err != nil {
+		return err
+	}
+	defer client.Disconnect(ctx)
+	cmd := bson.D{
+		{"configureFailPoint", "failCommand"},
+		{"mode", "alwaysOn"},
+		{"data", bson.D{
+			{"failCommands", []string{"update"}},
+			{"closeConnection", true},
+		}},
+	}
+	return client.Database("admin").RunCommand(ctx, cmd).Err()
+}
+
+func EnableFailPointErrorCode(mongoPort, errorCode int) error {
+	// cannot fail "find" because it'll prevent certain driver machinery when operating against replica sets to work properly
+	ctx, cancelFunc := context.WithTimeout(context.Background(), ClientTimeoutSecForTests)
+	defer cancelFunc()
+	client, err := GetTestClient("localhost", mongoPort, Direct, false, "enableFailPointErrorCode", ctx)
+	if err != nil {
+		return err
+	}
+	defer client.Disconnect(ctx)
+	cmd := bson.D{
+		{"configureFailPoint", "failCommand"},
+		{"mode", "alwaysOn"},
+		{"data", bson.D{
+			{"failCommands", []string{"update"}},
+			{"errorCode", errorCode},
+		}},
 	}
 	return client.Database("admin").RunCommand(ctx, cmd).Err()
 }
