@@ -785,12 +785,12 @@ func (p *Proxy) CreateWorker(session *Session) (ServerWorker, error) {
 				return nil, err
 			}
 
-			requestErrorsHook, err := ps.proxy.config.CollectorHookFactory.NewHook("processingDuration", "type", "request")
+			requestErrorsHook, err := ps.proxy.config.CollectorHookFactory.NewHook("processingErrors", "type", "request")
 			if err != nil {
 				return nil, err
 			}
 
-			responseErrorsHook, err := ps.proxy.config.CollectorHookFactory.NewHook("processingDuration", "type", "response")
+			responseErrorsHook, err := ps.proxy.config.CollectorHookFactory.NewHook("processingErrors", "type", "response")
 			if err != nil {
 				return nil, err
 			}
