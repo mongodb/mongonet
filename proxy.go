@@ -775,22 +775,22 @@ func (p *Proxy) CreateWorker(session *Session) (ServerWorker, error) {
 		}
 
 		if ps.proxy.config.CollectorHookFactory != nil {
-			requestDurationHook, err := ps.proxy.config.CollectorHookFactory.NewHook("mtmproxy_processing_duration_seconds", "type", "request_total")
+			requestDurationHook, err := ps.proxy.config.CollectorHookFactory.NewHook("processingDuration", "type", "request_total")
 			if err != nil {
 				return nil, err
 			}
 
-			responseDurationHook, err := ps.proxy.config.CollectorHookFactory.NewHook("mtmproxy_processing_duration_seconds", "type", "response_total")
+			responseDurationHook, err := ps.proxy.config.CollectorHookFactory.NewHook("processingDuration", "type", "response_total")
 			if err != nil {
 				return nil, err
 			}
 
-			requestErrorsHook, err := ps.proxy.config.CollectorHookFactory.NewHook("mtmproxy_processing_errors_total", "type", "request")
+			requestErrorsHook, err := ps.proxy.config.CollectorHookFactory.NewHook("processingDuration", "type", "request")
 			if err != nil {
 				return nil, err
 			}
 
-			responseErrorsHook, err := ps.proxy.config.CollectorHookFactory.NewHook("mtmproxy_processing_errors_total", "type", "response")
+			responseErrorsHook, err := ps.proxy.config.CollectorHookFactory.NewHook("processingDuration", "type", "response")
 			if err != nil {
 				return nil, err
 			}
