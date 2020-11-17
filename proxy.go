@@ -592,7 +592,9 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 		}
 
 		ps.logMessageTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, resp)
-		responseDurationHook.StopTimer()
+		if ps.isMetricsEnabled {
+			responseDurationHook.StopTimer()
+		}
 
 		// Send message back to user
 		ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "sending back data to user from mongo conn %v", mongoConn.conn.ID())
