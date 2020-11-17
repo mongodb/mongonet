@@ -130,7 +130,22 @@ type ProxySession struct {
 
 	proxy       *Proxy
 	interceptor ProxyInterceptor
+	hooks       map[string]MetricsHook
 	mongoConn   *MongoConnectionWrapper
+}
+
+type MetricsHook interface {
+	StartTimer() error
+	StopTimer()
+	SetGauge(val float64) error
+	AddCounterGauge(val float64) error
+	SubGauge(val float64) error
+	IncCounterGauge() error
+	DecGauge() error
+}
+
+type MetricsHookFactory interface {
+	NewHook(metricName, labelName, labelValue string) (MetricsHook, error)
 }
 
 type ResponseInterceptor interface {
@@ -390,11 +405,34 @@ func wrapNetworkError(err error) error {
 }
 
 func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnectionWrapper, error) {
+	requestDurationHook, ok := ps.hooks["requestDurationHook"]
+	if !ok {
+		return nil, fmt.Errorf("could not access the request processing duration metric hook")
+	}
+	responseDurationHook, ok := ps.hooks["responseDurationHook"]
+	if !ok {
+		return nil, fmt.Errorf("could not access the response processing duration metric hook")
+	}
+	requestErrorsHook, ok := ps.hooks["requestErrorsHook"]
+	if !ok {
+		return nil, fmt.Errorf("could not access the request processing errors metric hook")
+	}
+	responseErrorsHook, ok := ps.hooks["responseErrorsHook"]
+	if !ok {
+		return nil, fmt.Errorf("could not access the response processing errors metric hook")
+	}
+
 	// reading message from client
+	err := requestDurationHook.StartTimer()
+	if err != nil {
+		ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "failed to start request duration metric hook timer %v", err)
+	}
+
 	ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "reading message from client")
 	m, err := ReadMessage(ps.conn)
 	if err != nil {
 		ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "reading message from client fail %v", err)
+		requestErrorsHook.IncCounterGauge()
 		if err == io.EOF {
 			return mongoConn, err
 		}
@@ -407,6 +445,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 		if ok {
 			rp2, err := getReadPrefFromOpMsg(mm, ps.proxy.logger, rp)
 			if err != nil {
+				requestErrorsHook.IncCounterGauge()
 				return mongoConn, err
 			}
 			if rp2 != nil {
@@ -422,13 +461,16 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 		m, respInter, err = ps.interceptor.InterceptClientToMongo(m)
 		if err != nil {
 			if m == nil {
+				requestErrorsHook.IncCounterGauge()
 				return mongoConn, err
 			}
 			if !m.HasResponse() {
 				// we can't respond, so we just fail
+				requestErrorsHook.IncCounterGauge()
 				return mongoConn, err
 			}
 			if respondErr := ps.RespondWithError(m, err); respondErr != nil {
+				requestErrorsHook.IncCounterGauge()
 				return mongoConn, NewStackErrorf("couldn't send error response to client; original error: %v, error sending response: %v", err, respondErr)
 			}
 			return mongoConn, nil
@@ -441,15 +483,19 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 	if mongoConn == nil || !mongoConn.expirableConn.Alive() {
 		mongoConn, err = ps.getMongoConnection(rp)
 		if err != nil {
+			requestErrorsHook.IncCounterGauge()
 			ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "failed to get a new connection. err=%v", err)
 			return nil, NewStackErrorf("cannot get connection to mongo %v using connection mode=%v readpref=%v", err, ps.proxy.config.ConnectionMode, rp)
 		}
 		ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "got new connection %v using connection mode=%v readpref=%v", mongoConn.conn.ID(), ps.proxy.config.ConnectionMode, rp)
 	}
 
+	requestDurationHook.StopTimer()
+
 	// Send message to mongo
 	err = mongoConn.conn.WriteWireMessage(ps.proxy.Context, m.Serialize())
 	if err != nil {
+		requestErrorsHook.IncCounterGauge()
 		mongoConn.ep.ProcessError(wrapNetworkError(err), mongoConn.conn)
 		return mongoConn, NewStackErrorf("error writing to mongo: %v", err)
 	}
@@ -467,13 +513,21 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 		ret, err := mongoConn.conn.ReadWireMessage(ps.proxy.Context, nil)
 		if err != nil {
 			ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "error reading wire message mongo conn %v %v", mongoConn.conn.ID(), err)
+			responseErrorsHook.IncCounterGauge()
 			mongoConn.ep.ProcessError(wrapNetworkError(err), mongoConn.conn)
 			return nil, NewStackErrorf("error reading wire message from mongo conn %v: %v", mongoConn.conn.ID(), err)
 		}
+
+		err = responseDurationHook.StartTimer()
+		if err != nil {
+			ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "failed to start response duration metric hook timer %v", err)
+		}
+
 		ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "read data from mongo conn %v", mongoConn.conn.ID())
 		resp, err := ReadMessageFromBytes(ret)
 		if err != nil {
 			ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "error reading message from bytes on mongo conn %v %v", mongoConn.conn.ID(), err)
+			responseErrorsHook.IncCounterGauge()
 			if err == io.EOF {
 				return nil, err
 			}
@@ -482,11 +536,13 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 		switch mm := resp.(type) {
 		case *MessageMessage:
 			if err := extractError(mm.BodyDoc); err != nil {
+				responseErrorsHook.IncCounterGauge()
 				ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "processing error %v on mongo conn %v", err, mongoConn.conn.ID())
 				mongoConn.ep.ProcessError(err, mongoConn.conn)
 			}
 		case *ReplyMessage:
 			if err := extractError(mm.CommandDoc); err != nil {
+				responseErrorsHook.IncCounterGauge()
 				ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "processing error %v on mongo conn %v", err, mongoConn.conn.ID())
 				mongoConn.ep.ProcessError(err, mongoConn.conn)
 			}
@@ -494,14 +550,19 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 		if respInter != nil {
 			resp, err = respInter.InterceptMongoToClient(resp)
 			if err != nil {
+				responseErrorsHook.IncCounterGauge()
 				return nil, NewStackErrorf("error intercepting message %v", err)
 			}
 		}
+
 		ps.logMessageTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, resp)
+		responseDurationHook.StopTimer()
+
 		// Send message back to user
 		ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "sending back data to user from mongo conn %v", mongoConn.conn.ID())
 		err = SendMessage(resp, ps.conn)
 		if err != nil {
+			responseErrorsHook.IncCounterGauge()
 			mongoConn.bad = true
 			ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "got error sending response to client from conn %v. err=%v", mongoConn.conn.ID(), err)
 			return nil, NewStackErrorf("got error sending response to client from conn %v: %v", mongoConn.conn.ID(), err)
@@ -526,6 +587,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 				return nil, nil
 			}
 		default:
+			responseErrorsHook.IncCounterGauge()
 			return nil, NewStackErrorf("bad response type from server %T", r)
 		}
 	}
@@ -663,12 +725,38 @@ func (p *Proxy) GetPoolCleared() int64 {
 func (p *Proxy) CreateWorker(session *Session) (ServerWorker, error) {
 	var err error
 
-	ps := &ProxySession{session, p, nil, nil}
+	ps := &ProxySession{session, p, nil, nil, nil}
 	if p.config.InterceptorFactory != nil {
 		ps.interceptor, err = ps.proxy.config.InterceptorFactory.NewInterceptor(ps)
 		if err != nil {
 			return nil, err
 		}
+
+		requestDurationHook, err := ps.proxy.config.CollectorHookFactory.NewHook("mtmproxy_processing_duration_seconds", "type", "request_total")
+		if err != nil {
+			return nil, err
+		}
+
+		responseDurationHook, err := ps.proxy.config.CollectorHookFactory.NewHook("mtmproxy_processing_duration_seconds", "type", "response_total")
+		if err != nil {
+			return nil, err
+		}
+
+		requestErrorsHook, err := ps.proxy.config.CollectorHookFactory.NewHook("mtmproxy_processing_errors_total", "type", "request")
+		if err != nil {
+			return nil, err
+		}
+
+		responseErrorsHook, err := ps.proxy.config.CollectorHookFactory.NewHook("mtmproxy_processing_errors_total", "type", "response")
+		if err != nil {
+			return nil, err
+		}
+
+		ps.hooks = make(map[string]MetricsHook)
+		ps.hooks["requestDurationHook"] = requestDurationHook
+		ps.hooks["responseDurationHook"] = responseDurationHook
+		ps.hooks["requestErrorsHook"] = requestErrorsHook
+		ps.hooks["responseErrorsHook"] = responseErrorsHook
 
 		session.conn = CheckedConn{session.conn.(net.Conn), ps.interceptor}
 	}

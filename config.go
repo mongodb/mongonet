@@ -33,7 +33,8 @@ type ProxyConfig struct {
 	MongoUser          string
 	MongoPassword      string
 
-	InterceptorFactory ProxyInterceptorFactory
+	InterceptorFactory   ProxyInterceptorFactory
+	CollectorHookFactory MetricsHookFactory
 
 	AppName string
 
@@ -70,6 +71,7 @@ func NewProxyConfig(bindHost string, bindPort int, mongoUri, mongoHost string, m
 		mongoUser,
 		mongoPassword,
 		nil, // InterceptorFactory
+		nil, // CollectorHookFactory
 		appName,
 		traceConnPool,
 		connectionMode,
