@@ -445,10 +445,13 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 		return mongoConn, NewStackErrorf("got error reading from client: %v", err)
 	}
 
+	isRequestTimerStarted := false
 	if ps.isMetricsEnabled {
 		hookErr := requestDurationHook.StartTimer()
 		if hookErr != nil {
 			ps.proxy.logger.Logf(slogger.WARN, "failed to start request duration metric hook timer %v", hookErr)
+		} else {
+			isRequestTimerStarted = true
 		}
 	}
 
@@ -529,7 +532,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 		ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "got new connection %v using connection mode=%v readpref=%v", mongoConn.conn.ID(), ps.proxy.config.ConnectionMode, rp)
 	}
 
-	if ps.isMetricsEnabled {
+	if ps.isMetricsEnabled && isRequestTimerStarted {
 		requestDurationHook.StopTimer()
 	}
 
@@ -569,10 +572,13 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 			return nil, NewStackErrorf("error reading wire message from mongo conn %v: %v", mongoConn.conn.ID(), err)
 		}
 
+		isResponseTimerStarted := false
 		if ps.isMetricsEnabled {
 			hookErr := responseDurationHook.StartTimer()
 			if hookErr != nil {
 				ps.proxy.logger.Logf(slogger.WARN, "failed to start reponse duration metric hook timer %v", hookErr)
+			} else {
+				isResponseTimerStarted = true
 			}
 		}
 
@@ -629,7 +635,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 		}
 
 		ps.logMessageTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, resp)
-		if ps.isMetricsEnabled {
+		if ps.isMetricsEnabled && isResponseTimerStarted {
 			responseDurationHook.StopTimer()
 		}
 
