@@ -192,26 +192,26 @@ func RunIntTest(mode util.MongoConnectionMode, maxPoolSize, workers int, targetA
 	go proxy.Run()
 
 	if err := testFunc(Iterations, mongoPort, proxyPort, hostToUse, proxy.NewLogger("tester"), workers, targetAvgLatencyMs, targetMaxLatencyMs, mode, util.GetTestClient, util.GetTestClient); err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
 }
 
 func analyzeResults(err error, workers int, failedCount int32, avgLatencyMs, targetAvgLatencyMs, maxLatencyMs, targetMaxLatencyMs int64, results []int64, percentiles map[int]int, logger *slogger.Logger) error {
 	defer logger.Logf(slogger.INFO, "ALL DONE workers=%v, successful runs=%v, avg=%vms, max=%vms, failures=%v, percentiles=%v\nresults=%v", workers, len(results), avgLatencyMs, maxLatencyMs, failedCount, percentiles, results)
 	if err != nil {
-		return fmt.Errorf("failed to run tests. err=%v", err)
+		return fmt.Errorf("ERROR failed to run tests. err=%v", err)
 	}
 	if failedCount > 0 {
-		return fmt.Errorf("failed workers %v", failedCount)
+		return fmt.Errorf("ERROR failed workers %v", failedCount)
 	}
 	if avgLatencyMs > targetAvgLatencyMs {
-		return fmt.Errorf("average latency %v > %v", avgLatencyMs, targetAvgLatencyMs)
+		return fmt.Errorf("ERROR average latency %v > %v", avgLatencyMs, targetAvgLatencyMs)
 	}
 	if maxLatencyMs > targetMaxLatencyMs {
-		return fmt.Errorf("max latency %v > %v", maxLatencyMs, targetMaxLatencyMs)
+		return fmt.Errorf("ERROR max latency %v > %v", maxLatencyMs, targetMaxLatencyMs)
 	}
 	if len(results) == 0 {
-		return fmt.Errorf("no successful runs")
+		return fmt.Errorf("ERROR no successful runs")
 	}
 	return nil
 }
