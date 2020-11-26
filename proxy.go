@@ -36,7 +36,7 @@ type Proxy struct {
 	poolCleared        *int64
 
 	// using a sync.Map instead of a map paired with mutex because sync.Map is optimized for cases in which the access pattern is predominant by reads
-	remoteConnections sync.Map
+	remoteConnections *sync.Map
 }
 
 type RemoteConnection struct {
@@ -67,7 +67,7 @@ func NewProxy(pc ProxyConfig) (Proxy, error) {
 	ctx := context.Background()
 	var initCount, initPoolCleared int64 = 0, 0
 	defaultReadPref := readpref.Primary()
-	p := Proxy{pc, nil, nil, nil, nil, defaultReadPref, ctx, &initCount, &initPoolCleared, sync.Map{}}
+	p := Proxy{pc, nil, nil, nil, nil, defaultReadPref, ctx, &initCount, &initPoolCleared, &sync.Map{}}
 	mongoClient, err := getMongoClientFromProxyConfig(&p, pc, ctx)
 	if err != nil {
 		return Proxy{}, NewStackErrorf("error getting driver client for %v: %v", pc.MongoAddress(), err)
