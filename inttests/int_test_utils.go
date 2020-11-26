@@ -9,6 +9,7 @@ import (
 
 	. "github.com/mongodb/mongonet"
 	"github.com/mongodb/mongonet/util"
+	"github.com/mongodb/slogger/v2/slogger"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -194,22 +195,22 @@ func (myi *MyInterceptor) CheckConnectionInterval() time.Duration {
 	return 0
 }
 
-func (myi *MyInterceptor) InterceptClientToMongo(m Message) (Message, ResponseInterceptor, error) {
+func (myi *MyInterceptor) InterceptClientToMongo(m Message) (Message, ResponseInterceptor, string, error) {
 	switch mm := m.(type) {
 	case *QueryMessage:
 		if !NamespaceIsCommand(mm.Namespace) {
-			return m, nil, nil
+			return m, nil, "", nil
 		}
 
 		query, err := mm.Query.ToBSOND()
 		if err != nil || len(query) == 0 {
 			// let mongod handle error message
-			return m, nil, nil
+			return m, nil, "", nil
 		}
 
 		cmdName := strings.ToLower(query[0].Key)
 		if cmdName != "ismaster" {
-			return m, nil, nil
+			return m, nil, "", nil
 		}
 		// remove client
 		if idx := BSONIndexOf(query, "client"); idx >= 0 {
@@ -228,31 +229,43 @@ func (myi *MyInterceptor) InterceptClientToMongo(m Message) (Message, ResponseIn
 			panic(err)
 		}
 		mm.Query = qb
-		return mm, &MyResponseInterceptor{myi.mode, myi.mongoPort, myi.proxyPort}, nil
+		return mm, &MyResponseInterceptor{myi.mode, myi.mongoPort, myi.proxyPort}, "", nil
 	case *MessageMessage:
-		if !myi.disableStreamingIsMaster {
-			return mm, nil, nil
-		}
 		var err error
 		var bodySection *BodySection = nil
 		for _, section := range mm.Sections {
 			if bs, ok := section.(*BodySection); ok {
 				if bodySection != nil {
-					return mm, nil, NewStackErrorf("OP_MSG should not have more than one body section!  Second body section: %v", bs)
+					return mm, nil, "", NewStackErrorf("OP_MSG should not have more than one body section!  Second body section: %v", bs)
 				}
 				bodySection = bs
 			}
 		}
 
 		if bodySection == nil {
-			return mm, nil, NewStackErrorf("OP_MSG should have a body section!")
+			return mm, nil, "", NewStackErrorf("OP_MSG should have a body section!")
 		}
 		doc, err := bodySection.Body.ToBSOND()
 		if err != nil {
-			return mm, nil, err
+			return mm, nil, "", err
+		}
+		var rsName string
+		if idx := BSONIndexOf(doc, "$db"); idx >= 0 {
+			db, _, err := GetAsString(doc[idx])
+			if err != nil {
+				panic(err)
+			}
+			if db == util.RemoteDbNameForTests {
+				rsName = "proxytest2"
+				myi.ps.Logf(slogger.DEBUG, "got a remote DB request")
+			}
+		}
+
+		if !myi.disableStreamingIsMaster {
+			return mm, nil, rsName, nil
 		}
 		if strings.ToLower(doc[0].Key) != "ismaster" {
-			return mm, nil, nil
+			return mm, nil, "", nil
 		}
 		if idx := BSONIndexOf(doc, "maxAwaitTimeMS"); idx >= 0 {
 			doc = append(doc[:idx], doc[idx+1:]...)
@@ -266,10 +279,10 @@ func (myi *MyInterceptor) InterceptClientToMongo(m Message) (Message, ResponseIn
 		}
 		bodySection.Body = n
 
-		return mm, &MyResponseInterceptor{myi.mode, myi.mongoPort, myi.proxyPort}, nil
+		return mm, &MyResponseInterceptor{myi.mode, myi.mongoPort, myi.proxyPort}, rsName, nil
 	}
 
-	return m, nil, nil
+	return m, nil, "", nil
 }
 
 const charset = "abcdefghijklmnopqrstuvwxyz" +

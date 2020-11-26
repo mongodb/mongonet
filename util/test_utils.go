@@ -14,7 +14,10 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/readpref"
 )
 
-const ClientTimeoutSecForTests = 20 * time.Second
+const (
+	ClientTimeoutSecForTests = 20 * time.Second
+	RemoteDbNameForTests     = "testRemote"
+)
 
 type ClientFactoryFunc func(host string, port int, mode MongoConnectionMode, secondaryReads bool, appName string, ctx context.Context) (*mongo.Client, error)
 
