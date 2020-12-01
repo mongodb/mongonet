@@ -177,7 +177,7 @@ func RunIntTest(mode util.MongoConnectionMode, maxPoolSize, workers int, targetA
 		hostToUse = "localhost"
 	}
 
-	pc := getProxyConfig(hostToUse, mongoPort, proxyPort, maxPoolSize, DefaultMaxPoolIdleTimeSec, mode, false)
+	pc := getProxyConfig(hostToUse, mongoPort, proxyPort, maxPoolSize, DefaultMaxPoolIdleTimeSec, mode, true)
 	pc.LogLevel = slogger.DEBUG
 	proxy, err := NewProxy(pc)
 	if err != nil {
@@ -190,10 +190,10 @@ func RunIntTest(mode util.MongoConnectionMode, maxPoolSize, workers int, targetA
 	}
 
 	if mode == util.Cluster {
-		if err := proxy.AddRemoteConnection("proxytest2", "mongodb://localhost:40000,localhost:40001,localhost:40002", "testproxy", false, ServerSelectionTimeoutSecForTests, maxPoolSize, nil); err != nil {
+		if err := proxy.AddRemoteConnection(util.RemoteRsName, "mongodb://localhost:40000,localhost:40001,localhost:40002", "testproxy", false, ServerSelectionTimeoutSecForTests, maxPoolSize, nil); err != nil {
 			t.Fatal(err)
 		}
-		defer proxy.ClearRemoteConnection("proxytest2", 10)
+		defer proxy.ClearRemoteConnection(util.RemoteRsName, 10)
 	}
 	go proxy.Run()
 

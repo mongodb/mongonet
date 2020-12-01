@@ -463,6 +463,28 @@ func translatePaths(v BSONWalkVisitor, doc bson.D, path []string) (bson.D, error
 	return doc, nil
 }
 
+func TestBSONGetValueByNestedPathForTests(t *testing.T) {
+	doc := bson.D{
+		{"x", 1},
+		{"a", bson.D{
+			{"b", bson.D{{"c", 2}}},
+			{"d", primitive.A{bson.D{{"x", 5}}, bson.D{{"x", 2}, {"x", 3}}, bson.D{{"x", 111}}}},
+		}},
+	}
+	v := BSONGetValueByNestedPathForTests(doc, "x", -1)
+	if v.(int) != 1 {
+		t.Fatalf("expected %v to equal 1", v)
+	}
+	v = BSONGetValueByNestedPathForTests(doc, "a.b.c", -1)
+	if v.(int) != 2 {
+		t.Fatalf("expected %v to equal 1", v)
+	}
+	v = BSONGetValueByNestedPathForTests(doc, "a.d.x", 1)
+	if v.(int) != 2 {
+		t.Fatalf("expected %v to equal 1", v)
+	}
+}
+
 // visitorFunc is a function implementation of BSONWalkVisitor
 type visitorFunc func(*bson.E) error
 

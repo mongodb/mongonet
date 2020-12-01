@@ -97,12 +97,13 @@ func (ps *ProxySession) DoLoopTemp() {
 			if ps.mongoConn != nil {
 				ps.mongoConn.Close(ps)
 			}
-			if err != io.EOF {
-				ps.logger.Logf(slogger.WARN, "error doing loop: %v", err)
-			}
 			retryError, shouldRetry = err.(*ProxyRetryError)
 			if shouldRetry {
+				ps.logger.Logf(slogger.WARN, "%v", retryError)
 				break
+			}
+			if err != io.EOF {
+				ps.logger.Logf(slogger.WARN, "error doing loop: %v", err)
 			}
 			return
 		}
@@ -122,6 +123,7 @@ func (ps *ProxySession) DoLoopTemp() {
 			}
 			return
 		}
+		return
 	}
 }
 

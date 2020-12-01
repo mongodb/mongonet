@@ -19,7 +19,7 @@ type ProxyRetryError struct {
 }
 
 func (e *ProxyRetryError) Error() string {
-	return fmt.Sprintf("ProxyRetryError - retryOnRs=%s", e.RetryOnRs)
+	return fmt.Sprintf("ProxyRetryError - going to retry on %s", e.RetryOnRs)
 }
 
 func NewProxyRetryError(msgToRetry Message, retryOnRs string) *ProxyRetryError {

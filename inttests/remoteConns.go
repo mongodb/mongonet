@@ -30,7 +30,7 @@ func RunProxyConnectionPerformanceRemoteConns(iterations, mongoPort, proxyPort i
 	return nil
 }
 
-func findOne(logger *slogger.Logger, coll *mongo.Collection, goctx context.Context) error {
+func findOneRemoteConn(logger *slogger.Logger, coll *mongo.Collection, goctx context.Context) error {
 	rand.Seed(time.Now().UnixNano())
 	doc := bson.D{}
 	res := coll.FindOne(goctx, bson.D{})
@@ -69,8 +69,7 @@ func runRemoteConns(logger *slogger.Logger, client *mongo.Client, workerNum int,
 	if workerNum%2 == 0 {
 		coll = remoteColl
 	}
-
-	if err := findOne(logger, coll, ctx); err != nil {
+	if err := findOneRemoteConn(logger, coll, ctx); err != nil {
 		return 0, false, err
 	}
 
@@ -113,6 +112,101 @@ func runProxyConnectionPerformanceRemoteConns(iterations, mongoPort, proxyPort i
 
 	testFunc := func(logger *slogger.Logger, client *mongo.Client, workerNum, iteration int, ctx context.Context) (elapsed time.Duration, success bool, err error) {
 		return runRemoteConns(logger, client, workerNum, ctx)
+	}
+
+	cleanupFunc := func(logger *slogger.Logger, client *mongo.Client, ctx context.Context) error {
+		return nil
+	}
+	results, failedCount, maxLatencyMs, avgLatencyMs, percentiles, err := DoConcurrencyTestRun(logger,
+		hostname, mongoPort, proxyPort, mode,
+		mongoClientFactory,
+		proxyClientFactory,
+		iterations, workers,
+		preSetupFunc,
+		setupFunc,
+		testFunc,
+		cleanupFunc,
+	)
+
+	return analyzeResults(err, workers, failedCount, avgLatencyMs, targetAvgLatencyMs, maxLatencyMs, targetMaxLatencyMs, results, percentiles, logger)
+}
+
+func findOneRemoteConnRetry(logger *slogger.Logger, coll *mongo.Collection, goctx context.Context) error {
+	rand.Seed(time.Now().UnixNano())
+	doc := bson.D{}
+	res := coll.FindOne(goctx, bson.D{})
+	if res.Err() != nil {
+		return res.Err()
+	}
+	if err := res.Decode(&doc); err != nil {
+		return err
+	}
+	if ix := mongonet.BSONIndexOf(doc, "val"); ix >= 0 {
+		val, _, err := mongonet.GetAsInt(doc[ix])
+		if err != nil {
+			return err
+		}
+		if val != util.RetryOnRemoteVal*2 {
+			return fmt.Errorf("expected val=%v but got %v", util.RetryOnRemoteVal*2, val)
+		}
+		return nil
+	}
+	return fmt.Errorf("unexpected doc %v", doc)
+}
+
+func runRemoteConnsRetry(logger *slogger.Logger, client *mongo.Client, workerNum int, ctx context.Context) (time.Duration, bool, error) {
+	rand.Seed(time.Now().UnixNano())
+	start := time.Now()
+
+	coll := client.Database(util.RetryOnRemoteDbNameForTests).Collection(RemoteConnCollName)
+
+	if err := findOneRemoteConnRetry(logger, coll, ctx); err != nil {
+		return 0, false, err
+	}
+
+	elapsed := time.Since(start)
+	logger.Logf(slogger.DEBUG, "worker-%v finished after %v", workerNum, elapsed)
+	return elapsed, true, nil
+}
+
+/*
+	the response interceptor will return a retry error if the client ran a find on `RetryOnRemoteDbNameForTests` and the local RS returned `{val: 10}`
+	We'll assert that the remote RS returns `{val: 20}`
+*/
+func runProxyConnectionPerformanceRetryOnRemoteConns(iterations, mongoPort, proxyPort int, hostname string, logger *slogger.Logger, workers int, targetAvgLatencyMs, targetMaxLatencyMs int64, mode util.MongoConnectionMode,
+	mongoClientFactory util.ClientFactoryFunc,
+	proxyClientFactory util.ClientFactoryFunc,
+) error {
+	preSetupFunc := func(logger *slogger.Logger, client *mongo.Client, ctx context.Context) error {
+		client2, err := mongoClientFactory(hostname, 40000, util.Cluster, false, "presetup", ctx)
+		if err != nil {
+			return err
+		}
+		defer client2.Disconnect(ctx)
+		if err := util.DisableFailPoint(client2, ctx); err != nil {
+			return err
+		}
+		return util.DisableFailPoint(client, ctx)
+	}
+	setupFunc := func(logger *slogger.Logger, client *mongo.Client, ctx context.Context) error {
+		localColl := client.Database(util.RetryOnRemoteDbNameForTests).Collection(RemoteConnCollName)
+		client2, err := mongoClientFactory(hostname, 40000, util.Cluster, false, "presetup", ctx)
+		if err != nil {
+			return err
+		}
+		defer client2.Disconnect(ctx)
+		remoteColl := client2.Database(util.RetryOnRemoteDbNameForTests).Collection(RemoteConnCollName)
+		if _, err := localColl.InsertOne(ctx, bson.D{{"val", util.RetryOnRemoteVal}}); err != nil {
+			return err
+		}
+		if _, err := remoteColl.InsertOne(ctx, bson.D{{"val", util.RetryOnRemoteVal * 2}}); err != nil {
+			return err
+		}
+		return nil
+	}
+
+	testFunc := func(logger *slogger.Logger, client *mongo.Client, workerNum, iteration int, ctx context.Context) (elapsed time.Duration, success bool, err error) {
+		return runRemoteConnsRetry(logger, client, workerNum, ctx)
 	}
 
 	cleanupFunc := func(logger *slogger.Logger, client *mongo.Client, ctx context.Context) error {
