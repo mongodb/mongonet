@@ -31,10 +31,11 @@ functions:
           set -euvx
           ${gorootvars}
           export GOPATH=`pwd`/.gopath
-          go test > test.suite
+          go test -test.v > test.suite
           exitcode=$?
           cat test.suite
           exit $exitcode
+
   "run integration tests mongod mode":
     - command: shell.exec
       params:
@@ -47,8 +48,10 @@ functions:
           export PATH=$PATH:$MONGO_DIR
           go version
           cd inttests
-          sh ./run_integration_tests_mongod_mode.sh > test.suite
+          sh ./run_integration_tests_mongod_mode.sh
           exitcode=$?
+          mv test.suite ../test.suite
+          cd ..
           cat test.suite
           exit $exitcode
 
@@ -64,8 +67,10 @@ functions:
           export PATH=$PATH:$MONGO_DIR
           go version
           cd inttests
-          sh ./run_integration_tests_mongos_mode.sh > test.suite
+          sh ./run_integration_tests_mongos_mode.sh
           exitcode=$?
+          mv test.suite ../test.suite
+          cd ..
           cat test.suite
           exit $exitcode
 
@@ -128,23 +133,9 @@ tasks:
       - func: "run go vet"
 
 post:
-  - command: archive.targz_pack
+  - command: gotest.parse_files
     params:
-      target: "logs.tgz"
-      source_dir: "mongonet"
-      include:
-        - "test.suite"
-
-  - command: s3.put
-    params:
-      aws_key: ${aws_key}
-      aws_secret: ${aws_secret}
-      local_file: logs.tgz
-      remote_file: ${patch_dir}mongonet-${build_id}-${task_name}-logs.tgz
-      bucket: mciuploads
-      permissions: public-read
-      content_type: ${content_type|application/x-gzip}
-      display_name: Logs
+      files: ["mongonet/test.suite"]
 
 buildvariants:
 
