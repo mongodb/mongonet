@@ -47,7 +47,11 @@ functions:
           export PATH=$PATH:$MONGO_DIR
           go version
           cd inttests
-          sh ./run_integration_tests_mongod_mode.sh
+          sh ./run_integration_tests_mongod_mode.sh > test.suite
+          exitcode=$?
+          cat test.suite
+          exit $exitcode
+
   "run integration tests mongos mode":
     - command: shell.exec
       params:
@@ -60,7 +64,11 @@ functions:
           export PATH=$PATH:$MONGO_DIR
           go version
           cd inttests
-          sh ./run_integration_tests_mongos_mode.sh
+          sh ./run_integration_tests_mongos_mode.sh > test.suite
+          exitcode=$?
+          cat test.suite
+          exit $exitcode
+          
   "run go vet":
     - command: shell.exec
       params:
@@ -118,6 +126,29 @@ tasks:
     commands:
       - func: "fetch source"
       - func: "run go vet"
+
+post:
+  - command: archive.targz_pack
+    params:
+      target: "logs.tgz"
+      source_dir: "mongonet"
+      include:
+        - "test.suite"
+
+  - command: s3.put
+    params:
+      aws_key: ${aws_key}
+      aws_secret: ${aws_secret}
+      local_file: logs.tgz
+      remote_file: ${patch_dir}mongonet-${build_id}-${task_name}-logs.tgz
+      bucket: mongonet
+      permissions: public-read
+      content_type: ${content_type|application/x-gzip}
+      display_name: Logs
+    
+   - command: gotest.parse_files
+    params:
+      files: ["mongonet/test.suite"]
 
 buildvariants:
 
