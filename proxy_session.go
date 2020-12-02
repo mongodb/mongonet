@@ -396,10 +396,8 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 		}
 	}
 	if mongoConn == nil || !mongoConn.expirableConn.Alive() {
-		var topology *topology.Topology
-		if remoteRs == "" {
-			topology = ps.proxy.topology
-		} else {
+		topology := ps.proxy.topology
+		if remoteRs != "" {
 			ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "getting remote connection for %s", remoteRs)
 			rc, ok := ps.proxy.remoteConnections.Load(remoteRs)
 			if !ok {
