@@ -330,9 +330,9 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, m Message, ret
 	}
 
 	// reading message from client
-	ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "reading message from client")
 	var err error
 	if !isRetry {
+		ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "reading message from client")
 		m, err = ReadMessage(ps.conn)
 		if err != nil {
 			ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "reading message from client fail %v", err)
@@ -347,6 +347,8 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, m Message, ret
 			}
 			return mongoConn, NewStackErrorf("got error reading from client: %v", err)
 		}
+	} else {
+		ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "retrying a message from client")
 	}
 
 	isRequestTimerStarted := false

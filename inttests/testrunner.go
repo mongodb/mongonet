@@ -169,7 +169,7 @@ func RunIntTest(mode util.MongoConnectionMode, maxPoolSize, workers int, targetA
 		proxyClientFactory util.ClientFactoryFunc,
 	) error,
 ) {
-	Iterations := 20
+	Iterations := 10
 	mongoPort, proxyPort, hostname := util.GetTestHostAndPorts()
 	t.Logf("using proxy port=%v, pool size=%v", proxyPort, maxPoolSize)
 	hostToUse := hostname
