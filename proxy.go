@@ -80,7 +80,7 @@ func NewProxy(pc ProxyConfig) (Proxy, error) {
 	return p, nil
 }
 
-func getMongoClientFromUri(p *Proxy, uri, appName string, trace bool, serverSelectionTimeoutSec, maxPoolSize int, rootCAs *x509.CertPool, ctx context.Context) (*mongo.Client, error) {
+func getBaseClientOptions(p *Proxy, uri, appName string, trace bool, serverSelectionTimeoutSec, maxPoolSize, maxPoolIdleTimeSec, connectionPoolHeartbeatIntervalMs int) *options.ClientOptions {
 	opts := options.Client()
 	opts.ApplyURI(uri).
 		SetAppName(appName).
@@ -111,58 +111,34 @@ func getMongoClientFromUri(p *Proxy, uri, appName string, trace bool, serverSele
 		}).
 		SetServerSelectionTimeout(time.Duration(serverSelectionTimeoutSec) * time.Second).
 		SetMaxPoolSize(uint64(maxPoolSize))
+	if maxPoolIdleTimeSec > 0 {
+		opts.SetMaxConnIdleTime(time.Duration(maxPoolIdleTimeSec) * time.Second)
+	}
+	if connectionPoolHeartbeatIntervalMs > 0 {
+		opts.SetHeartbeatInterval(time.Duration(connectionPoolHeartbeatIntervalMs) * time.Millisecond)
+	}
+	return opts
+}
+
+func getMongoClientFromUri(p *Proxy, uri, appName string, trace bool, serverSelectionTimeoutSec, maxPoolSize, maxPoolIdleTimeSec, connectionPoolHeartbeatIntervalMs int, rootCAs *x509.CertPool, ctx context.Context) (*mongo.Client, error) {
+	opts := getBaseClientOptions(p, uri, appName, trace, serverSelectionTimeoutSec, maxPoolSize, maxPoolIdleTimeSec, connectionPoolHeartbeatIntervalMs)
 	if rootCAs != nil {
 		tlsConfig := &tls.Config{RootCAs: rootCAs}
 		opts.SetTLSConfig(tlsConfig)
 	}
-	// TODO - confirm we're getting auth
 	return mongo.Connect(ctx, opts)
 }
 
 func getMongoClientFromProxyConfig(p *Proxy, pc ProxyConfig, ctx context.Context) (*mongo.Client, error) {
-	opts := options.Client()
+	var uri string
 	if pc.ConnectionMode == util.Direct {
-		opts.ApplyURI(fmt.Sprintf("mongodb://%s", pc.MongoAddress()))
+		uri = fmt.Sprintf("mongodb://%s", pc.MongoAddress())
 	} else {
-		opts.ApplyURI(pc.MongoURI)
+		uri = pc.MongoURI
 	}
-	trace := p.config.TraceConnPool
+	opts := getBaseClientOptions(p, uri, pc.AppName, p.config.TraceConnPool, pc.ServerSelectionTimeoutSec, pc.MaxPoolSize, pc.MaxPoolIdleTimeSec, pc.ConnectionPoolHeartbeatIntervalMs)
 	opts.
-		SetDirect(pc.ConnectionMode == util.Direct).
-		SetAppName(pc.AppName).
-		SetPoolMonitor(&event.PoolMonitor{
-			Event: func(evt *event.PoolEvent) {
-				switch evt.Type {
-				case event.ConnectionCreated:
-					if trace {
-						p.logger.Logf(slogger.DEBUG, "**** Connection created %v", evt)
-					}
-					p.AddConnection()
-				case "ConnectionCheckOutStarted":
-					if trace {
-						p.logger.Logf(slogger.DEBUG, "**** Connection check out started %v", evt)
-					}
-				case "ConnectionCheckedIn":
-					if trace {
-						p.logger.Logf(slogger.DEBUG, "**** Connection checked in %v", evt)
-					}
-				case "ConnectionCheckedOut":
-					if trace {
-						p.logger.Logf(slogger.DEBUG, "**** Connection checked out %v", evt)
-					}
-				case event.PoolCleared:
-					p.IncrementPoolCleared()
-				}
-			},
-		}).
-		SetServerSelectionTimeout(time.Duration(pc.ServerSelectionTimeoutSec) * time.Second).
-		SetMaxPoolSize(uint64(pc.MaxPoolSize))
-	if pc.MaxPoolIdleTimeSec > 0 {
-		opts.SetMaxConnIdleTime(time.Duration(pc.MaxPoolIdleTimeSec) * time.Second)
-	}
-	if pc.ConnectionPoolHeartbeatIntervalMs > 0 {
-		opts.SetHeartbeatInterval(time.Duration(pc.ConnectionPoolHeartbeatIntervalMs) * time.Millisecond)
-	}
+		SetDirect(pc.ConnectionMode == util.Direct)
 
 	if pc.MongoUser != "" {
 		auth := options.Credential{
@@ -181,13 +157,13 @@ func getMongoClientFromProxyConfig(p *Proxy, pc ProxyConfig, ctx context.Context
 	return mongo.Connect(ctx, opts)
 }
 
-func (p *Proxy) AddRemoteConnection(rsName, uri, appName string, trace bool, serverSelectionTimeoutSec, maxPoolSize int, rootCAs *x509.CertPool) error {
+func (p *Proxy) AddRemoteConnection(rsName, uri, appName string, trace bool, serverSelectionTimeoutSec, maxPoolSize, maxPoolIdleTimeSec, connectionPoolHeartbeatIntervalMs int, rootCAs *x509.CertPool) error {
 	p.logger.Logf(slogger.DEBUG, "adding remote connection for %s", rsName)
 	if _, ok := p.remoteConnections.Load(rsName); ok {
 		p.logger.Logf(slogger.DEBUG, "remote connection for %s already exists", rsName)
 		return nil
 	}
-	client, err := getMongoClientFromUri(p, uri, appName, trace, serverSelectionTimeoutSec, maxPoolSize, rootCAs, p.Context)
+	client, err := getMongoClientFromUri(p, uri, appName, trace, serverSelectionTimeoutSec, maxPoolSize, maxPoolIdleTimeSec, connectionPoolHeartbeatIntervalMs, rootCAs, p.Context)
 	if err != nil {
 		return err
 	}
