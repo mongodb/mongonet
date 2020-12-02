@@ -68,7 +68,7 @@ functions:
           exitcode=$?
           cat test.suite
           exit $exitcode
-          
+
   "run go vet":
     - command: shell.exec
       params:
@@ -141,12 +141,12 @@ post:
       aws_secret: ${aws_secret}
       local_file: logs.tgz
       remote_file: ${patch_dir}mongonet-${build_id}-${task_name}-logs.tgz
-      bucket: mongonet
+      bucket: mciuploads
       permissions: public-read
       content_type: ${content_type|application/x-gzip}
       display_name: Logs
     
-   - command: gotest.parse_files
+  - command: gotest.parse_files
     params:
       files: ["mongonet/test.suite"]
 
