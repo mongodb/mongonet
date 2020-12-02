@@ -26,7 +26,7 @@ $MONGO_DIR/mongod --port $((MONGO_PORT+2)) --dbpath `pwd`/dbpath/6 --logpath `pw
 $MONGO_DIR/mongo --port $MONGO_PORT --eval "rs.initiate({'_id': 'proxytest2', 'protocolVersion': 1, 'writeConcernMajorityJournalDefault': false, 'members': [{_id:0, host:'$HOSTNAME:$MONGO_PORT'},{_id:1, host:'$HOSTNAME:$((MONGO_PORT+1))',priority:0},{_id:2, host:'$HOSTNAME:$((MONGO_PORT+2))',priority:0}]})"
 
 
-sleep 20 # let replica sets reach steady state
+sleep 10 # let replica sets reach steady state
 
-go test -test.v -run TestProxyMongosMode  > mongostest.suite
+go test -test.v -run TestProxyMongosMode > mongostest.suite
 

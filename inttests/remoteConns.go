@@ -100,7 +100,13 @@ func runProxyConnectionPerformanceRemoteConns(iterations, mongoPort, proxyPort i
 		if err := util.DisableFailPoint(client2, ctx); err != nil {
 			return err
 		}
-		return util.DisableFailPoint(client, ctx)
+		if err := util.DisableFailPoint(client, ctx); err != nil {
+			return err
+		}
+		if err := cleanupRemoteConns(client, ctx); err != nil {
+			return err
+		}
+		return cleanupRemoteConns(client2, ctx)
 	}
 	setupFunc := func(logger *slogger.Logger, client *mongo.Client, ctx context.Context) error {
 		localColl := client.Database(LocalDbName).Collection(RemoteConnCollName)
@@ -203,7 +209,13 @@ func runProxyConnectionPerformanceRetryOnRemoteConns(iterations, mongoPort, prox
 		if err := util.DisableFailPoint(client2, ctx); err != nil {
 			return err
 		}
-		return util.DisableFailPoint(client, ctx)
+		if err := util.DisableFailPoint(client, ctx); err != nil {
+			return err
+		}
+		if err := cleanupRemoteConns(client, ctx); err != nil {
+			return err
+		}
+		return cleanupRemoteConns(client2, ctx)
 	}
 	setupFunc := func(logger *slogger.Logger, client *mongo.Client, ctx context.Context) error {
 		localColl := client.Database(util.RetryOnRemoteDbNameForTests).Collection(RemoteConnCollName)
@@ -227,15 +239,20 @@ func runProxyConnectionPerformanceRetryOnRemoteConns(iterations, mongoPort, prox
 	}
 
 	cleanupFunc := func(logger *slogger.Logger, client *mongo.Client, ctx context.Context) error {
-		client2, err := mongoClientFactory(hostname, 40000, util.Cluster, false, "cleanup", ctx)
+		client2, err := mongoClientFactory(hostname, 30000, util.Cluster, false, "cleanup", ctx)
 		if err != nil {
 			return err
 		}
 		defer client2.Disconnect(ctx)
-		if err := cleanupRemoteConns(client, ctx); err != nil {
+		client3, err := mongoClientFactory(hostname, 40000, util.Cluster, false, "cleanup", ctx)
+		if err != nil {
 			return err
 		}
-		return cleanupRemoteConns(client2, ctx)
+		defer client3.Disconnect(ctx)
+		if err := cleanupRemoteConns(client2, ctx); err != nil {
+			return err
+		}
+		return cleanupRemoteConns(client3, ctx)
 	}
 	results, failedCount, maxLatencyMs, avgLatencyMs, percentiles, err := DoConcurrencyTestRun(logger,
 		hostname, mongoPort, proxyPort, mode,
