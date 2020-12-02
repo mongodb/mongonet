@@ -14,6 +14,6 @@ rm -rf dbpath || true
 mkdir dbpath || true
 $MONGO_DIR/mongod --port $MONGO_PORT --dbpath `pwd`/dbpath --logpath `pwd`/dbpath/mongod.log --fork --setParameter enableTestCommands=1
 
-go test -test.v -run TestProxyMongodMode > test.suite
+go test -test.v -run TestProxyMongodMode > mongodtest.suite
 
  

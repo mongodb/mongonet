@@ -31,9 +31,9 @@ functions:
           set -euvx
           ${gorootvars}
           export GOPATH=`pwd`/.gopath
-          go test -test.v > test.suite
+          go test -test.v > unittest.suite
           exitcode=$?
-          cat test.suite
+          cat unittest.suite
           exit $exitcode
 
   "run integration tests mongod mode":
@@ -50,9 +50,9 @@ functions:
           cd inttests
           sh ./run_integration_tests_mongod_mode.sh
           exitcode=$?
-          mv test.suite ../test.suite
+          mv mongodtest.suite ../mongodtest.suite
           cd ..
-          cat test.suite
+          cat mongodtest.suite
           exit $exitcode
 
   "run integration tests mongos mode":
@@ -69,9 +69,9 @@ functions:
           cd inttests
           sh ./run_integration_tests_mongos_mode.sh
           exitcode=$?
-          mv test.suite ../test.suite
+          mv mongostest.suite ../mongostest.suite
           cd ..
-          cat test.suite
+          cat mongostest.suite
           exit $exitcode
 
   "run go vet":
@@ -135,7 +135,13 @@ tasks:
 post:
   - command: gotest.parse_files
     params:
-      files: ["mongonet/test.suite"]
+      files: ["mongonet/mongodtest.suite"]
+  - command: gotest.parse_files
+    params:
+      files: ["mongonet/mongostest.suite"]
+  - command: gotest.parse_files
+    params:
+      files: ["mongonet/unittest.suite"]
 
 buildvariants:
 
