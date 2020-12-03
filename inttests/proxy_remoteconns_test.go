@@ -10,7 +10,7 @@ func TestProxyMongosModeConnectionPerformanceRemoteConns(t *testing.T) {
 	goals := []ConnectionPerformanceTestGoal{
 		{
 			Workers:      5,
-			AvgLatencyMs: 50,
+			AvgLatencyMs: 70,
 			MaxLatencyMs: 300,
 		},
 		{
@@ -33,7 +33,7 @@ func TestProxyMongosModeConnectionPerformanceRetryOnRemoteConns(t *testing.T) {
 	goals := []ConnectionPerformanceTestGoal{
 		{
 			Workers:      5,
-			AvgLatencyMs: 50,
+			AvgLatencyMs: 70,
 			MaxLatencyMs: 300,
 		},
 		{

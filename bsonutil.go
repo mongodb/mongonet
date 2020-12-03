@@ -376,6 +376,9 @@ func BSONGetValueByNestedPathForTests(doc bson.D, nestedPath string, arrIndex in
 		case bson.D:
 			tempDoc = v
 		case primitive.A:
+			if arrIndex < 0 || len(v) <= arrIndex {
+				return v
+			}
 			switch v2 := v[arrIndex].(type) {
 			case bson.D:
 				tempDoc = v2

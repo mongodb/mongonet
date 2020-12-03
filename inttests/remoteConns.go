@@ -107,22 +107,21 @@ func runProxyConnectionPerformanceRemoteConns(iterations, mongoPort, proxyPort i
 		if err := cleanupRemoteConns(client, ctx); err != nil {
 			return err
 		}
-		return cleanupRemoteConns(client2, ctx)
-	}
-	setupFunc := func(logger *slogger.Logger, client *mongo.Client, ctx context.Context) error {
-		localColl := client.Database(LocalDbName).Collection(RemoteConnCollName)
-		client2, err := mongoClientFactory(hostname, 40000, util.Cluster, false, "presetup", ctx)
-		if err != nil {
+		if err := cleanupRemoteConns(client2, ctx); err != nil {
 			return err
 		}
-		defer client2.Disconnect(ctx)
-		remoteColl := client2.Database(util.RemoteDbNameForTests).Collection(RemoteConnCollName)
+		localColl := client.Database(LocalDbName).Collection(RemoteConnCollName)
 		if _, err := localColl.InsertOne(ctx, bson.D{{"a", 1}}); err != nil {
 			return err
 		}
+		remoteColl := client2.Database(util.RemoteDbNameForTests).Collection(RemoteConnCollName)
+
 		if _, err := remoteColl.InsertOne(ctx, bson.D{{"a", 2}}); err != nil {
 			return err
 		}
+		return nil
+	}
+	setupFunc := func(logger *slogger.Logger, client *mongo.Client, ctx context.Context) error {
 		return nil
 	}
 
@@ -216,22 +215,20 @@ func runProxyConnectionPerformanceRetryOnRemoteConns(iterations, mongoPort, prox
 		if err := cleanupRemoteConns(client, ctx); err != nil {
 			return err
 		}
-		return cleanupRemoteConns(client2, ctx)
-	}
-	setupFunc := func(logger *slogger.Logger, client *mongo.Client, ctx context.Context) error {
-		localColl := client.Database(util.RetryOnRemoteDbNameForTests).Collection(RemoteConnCollName)
-		client2, err := mongoClientFactory(hostname, 40000, util.Cluster, false, "presetup", ctx)
-		if err != nil {
+		if err := cleanupRemoteConns(client2, ctx); err != nil {
 			return err
 		}
-		defer client2.Disconnect(ctx)
-		remoteColl := client2.Database(util.RetryOnRemoteDbNameForTests).Collection(RemoteConnCollName)
+		localColl := client.Database(util.RetryOnRemoteDbNameForTests).Collection(RemoteConnCollName)
 		if _, err := localColl.InsertOne(ctx, bson.D{{"val", util.RetryOnRemoteVal}}); err != nil {
 			return err
 		}
+		remoteColl := client2.Database(util.RetryOnRemoteDbNameForTests).Collection(RemoteConnCollName)
 		if _, err := remoteColl.InsertOne(ctx, bson.D{{"val", util.RetryOnRemoteVal * 2}}); err != nil {
 			return err
 		}
+		return nil
+	}
+	setupFunc := func(logger *slogger.Logger, client *mongo.Client, ctx context.Context) error {
 		return nil
 	}
 
