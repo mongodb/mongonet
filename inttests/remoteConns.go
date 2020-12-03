@@ -192,6 +192,19 @@ func runRemoteConnsRetry(logger *slogger.Logger, client *mongo.Client, workerNum
 	return elapsed, true, nil
 }
 
+func debugPrintCollContents(coll *mongo.Collection, tipe string, ctx context.Context) error {
+	var res []interface{}
+	cur, err := coll.Find(ctx, bson.D{})
+	if err != nil {
+		return err
+	}
+	if err := cur.All(ctx, &res); err != nil {
+		return err
+	}
+	fmt.Println("*** ", tipe, " coll results:", res)
+	return nil
+}
+
 /*
 	the response interceptor will return a retry error if the client ran a find on `RetryOnRemoteDbNameForTests` and the local RS returned `{val: 10}`
 	We'll assert that the remote RS returns `{val: 20}`
@@ -220,32 +233,19 @@ func runProxyConnectionPerformanceRetryOnRemoteConns(iterations, mongoPort, prox
 		}
 		time.Sleep(time.Second)
 		localColl := client.Database(util.RetryOnRemoteDbNameForTests).Collection(RemoteConnCollName)
+		remoteColl := client2.Database(util.RetryOnRemoteDbNameForTests).Collection(RemoteConnCollName)
+		debugPrintCollContents(localColl, "local-before", ctx)
+		debugPrintCollContents(remoteColl, "remote-before", ctx)
 		if _, err := localColl.InsertOne(ctx, bson.D{{"val", util.RetryOnRemoteVal}}); err != nil {
 			return err
 		}
-		remoteColl := client2.Database(util.RetryOnRemoteDbNameForTests).Collection(RemoteConnCollName)
+
 		if _, err := remoteColl.InsertOne(ctx, bson.D{{"val", util.RetryOnRemoteVal * 2}}); err != nil {
 			return err
 		}
 		time.Sleep(time.Second)
-		var res []interface{}
-		cur, err := localColl.Find(ctx, bson.D{})
-		if err != nil {
-			return err
-		}
-		if err := cur.All(ctx, &res); err != nil {
-			return err
-		}
-		fmt.Println("*** local coll res", res)
-		var res2 []interface{}
-		cur2, err := remoteColl.Find(ctx, bson.D{})
-		if err != nil {
-			return err
-		}
-		if err := cur2.All(ctx, &res2); err != nil {
-			return err
-		}
-		fmt.Println("*** remote coll res", res2)
+		debugPrintCollContents(localColl, "local", ctx)
+		debugPrintCollContents(remoteColl, "remote", ctx)
 		return nil
 	}
 	setupFunc := func(logger *slogger.Logger, client *mongo.Client, ctx context.Context) error {
