@@ -218,6 +218,7 @@ func runProxyConnectionPerformanceRetryOnRemoteConns(iterations, mongoPort, prox
 		if err := cleanupRemoteConns(client2, ctx); err != nil {
 			return err
 		}
+		time.Sleep(time.Second)
 		localColl := client.Database(util.RetryOnRemoteDbNameForTests).Collection(RemoteConnCollName)
 		if _, err := localColl.InsertOne(ctx, bson.D{{"val", util.RetryOnRemoteVal}}); err != nil {
 			return err
@@ -226,6 +227,25 @@ func runProxyConnectionPerformanceRetryOnRemoteConns(iterations, mongoPort, prox
 		if _, err := remoteColl.InsertOne(ctx, bson.D{{"val", util.RetryOnRemoteVal * 2}}); err != nil {
 			return err
 		}
+		time.Sleep(time.Second)
+		var res []interface{}
+		cur, err := localColl.Find(ctx, bson.D{})
+		if err != nil {
+			return err
+		}
+		if err := cur.All(ctx, &res); err != nil {
+			return err
+		}
+		fmt.Println("*** local coll res", res)
+		var res2 []interface{}
+		cur2, err := remoteColl.Find(ctx, bson.D{})
+		if err != nil {
+			return err
+		}
+		if err := cur2.All(ctx, &res2); err != nil {
+			return err
+		}
+		fmt.Println("*** remote coll res", res2)
 		return nil
 	}
 	setupFunc := func(logger *slogger.Logger, client *mongo.Client, ctx context.Context) error {
