@@ -214,25 +214,30 @@ func runProxyConnectionPerformanceRetryOnRemoteConns(iterations, mongoPort, prox
 	proxyClientFactory util.ClientFactoryFunc,
 ) error {
 	preSetupFunc := func(logger *slogger.Logger, client *mongo.Client, ctx context.Context) error {
+		client1, err := mongoClientFactory(hostname, 30000, util.Cluster, false, "presetup", ctx)
+		if err != nil {
+			return err
+		}
+		defer client1.Disconnect(ctx)
 		client2, err := mongoClientFactory(hostname, 40000, util.Cluster, false, "presetup", ctx)
 		if err != nil {
 			return err
 		}
 		defer client2.Disconnect(ctx)
+		if err := util.DisableFailPoint(client1, ctx); err != nil {
+			return err
+		}
 		if err := util.DisableFailPoint(client2, ctx); err != nil {
 			return err
 		}
-		if err := util.DisableFailPoint(client, ctx); err != nil {
-			return err
-		}
-		if err := cleanupRemoteConns(client, ctx); err != nil {
+		if err := cleanupRemoteConns(client1, ctx); err != nil {
 			return err
 		}
 		if err := cleanupRemoteConns(client2, ctx); err != nil {
 			return err
 		}
 		time.Sleep(time.Second)
-		localColl := client.Database(util.RetryOnRemoteDbNameForTests).Collection(RemoteConnCollName)
+		localColl := client1.Database(util.RetryOnRemoteDbNameForTests).Collection(RemoteConnCollName)
 		remoteColl := client2.Database(util.RetryOnRemoteDbNameForTests).Collection(RemoteConnCollName)
 		debugPrintCollContents(localColl, "local-before", ctx)
 		debugPrintCollContents(remoteColl, "remote-before", ctx)
