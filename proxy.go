@@ -120,6 +120,7 @@ func getBaseClientOptions(p *Proxy, uri, appName string, trace bool, serverSelec
 	return opts
 }
 
+// should be used by remote connections
 func getMongoClientFromUri(p *Proxy, uri, appName string, trace bool, serverSelectionTimeoutSec, maxPoolSize, maxPoolIdleTimeSec, connectionPoolHeartbeatIntervalMs int, rootCAs *x509.CertPool, ctx context.Context) (*mongo.Client, error) {
 	opts := getBaseClientOptions(p, uri, appName, trace, serverSelectionTimeoutSec, maxPoolSize, maxPoolIdleTimeSec, connectionPoolHeartbeatIntervalMs)
 	if rootCAs != nil {
@@ -129,6 +130,7 @@ func getMongoClientFromUri(p *Proxy, uri, appName string, trace bool, serverSele
 	return mongo.Connect(ctx, opts)
 }
 
+// should be used by local connections
 func getMongoClientFromProxyConfig(p *Proxy, pc ProxyConfig, ctx context.Context) (*mongo.Client, error) {
 	var uri string
 	if pc.ConnectionMode == util.Direct {
@@ -159,7 +161,7 @@ func getMongoClientFromProxyConfig(p *Proxy, pc ProxyConfig, ctx context.Context
 
 func (p *Proxy) AddRemoteConnection(rsName, uri, appName string, trace bool, serverSelectionTimeoutSec, maxPoolSize, maxPoolIdleTimeSec, connectionPoolHeartbeatIntervalMs int, rootCAs *x509.CertPool) error {
 	p.logger.Logf(slogger.DEBUG, "adding remote connection for %s", rsName)
-	if _, ok := p.remoteConnections.Load(rsName); ok {
+	if _, alreadyAdded := p.remoteConnections.Load(rsName); alreadyAdded {
 		p.logger.Logf(slogger.DEBUG, "remote connection for %s already exists", rsName)
 		return nil
 	}

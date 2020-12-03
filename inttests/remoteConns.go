@@ -65,6 +65,7 @@ func runRemoteConns(logger *slogger.Logger, client *mongo.Client, workerNum int,
 	localColl := client.Database(LocalDbName).Collection(RemoteConnCollName)
 	remoteColl := client.Database(util.RemoteDbNameForTests).Collection(RemoteConnCollName)
 
+	// we'd like to simulate a workload in which 50% of the connections are local and 50% are remote
 	coll := localColl
 	if workerNum%2 == 0 {
 		coll = remoteColl
