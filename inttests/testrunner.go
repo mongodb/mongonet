@@ -189,6 +189,12 @@ func RunIntTest(mode util.MongoConnectionMode, maxPoolSize, workers int, targetA
 		panic("failed to call OnSSLConfig")
 	}
 
+	if mode == util.Cluster {
+		if err := proxy.AddRemoteConnection("proxytest2", "mongodb://localhost:40000,localhost:40001,localhost:40002", "testproxy", false, ServerSelectionTimeoutSecForTests, maxPoolSize, DefaultMaxPoolIdleTimeSec, DefaultConnectionPoolHeartbeatIntervalMs, nil); err != nil {
+			t.Fatal(err)
+		}
+		defer proxy.ClearRemoteConnection("proxytest2", 10)
+	}
 	go proxy.Run()
 
 	if err := testFunc(Iterations, mongoPort, proxyPort, hostToUse, proxy.NewLogger("tester"), workers, targetAvgLatencyMs, targetMaxLatencyMs, mode, util.GetTestClient, util.GetTestClient); err != nil {
