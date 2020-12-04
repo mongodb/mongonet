@@ -48,12 +48,7 @@ functions:
           export PATH=$PATH:$MONGO_DIR
           go version
           cd inttests
-          ./run_integration_tests_mongod_mode.sh > mongodtest.suite
-          exitcode=$?
-          mv mongodtest.suite ../mongodtest.suite
-          cd ..
-          cat mongodtest.suite
-          exit $exitcode
+          sh ./run_integration_tests_mongod_mode.sh
 
   "run integration tests mongos mode":
     - command: shell.exec
@@ -67,7 +62,7 @@ functions:
           export PATH=$PATH:$MONGO_DIR
           go version
           cd inttests
-          ./run_integration_tests_mongos_mode.sh
+          sh ./run_integration_tests_mongos_mode.sh
 
   "run go vet":
     - command: shell.exec
@@ -128,12 +123,6 @@ tasks:
       - func: "run go vet"
 
 post:
-  - command: gotest.parse_files
-    params:
-      files: ["mongonet/mongodtest.suite"]
-  - command: gotest.parse_files
-    params:
-      files: ["mongonet/mongostest.suite"]
   - command: gotest.parse_files
     params:
       files: ["mongonet/unittest.suite"]

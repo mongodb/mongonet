@@ -83,6 +83,7 @@ func (srf *SimulateRetryFixer) InterceptMongoToClient(m Message) (Message, error
 		val := BSONGetValueByNestedPathForTests(doc, "cursor.firstBatch.val", 0)
 		if v, ok := val.(int32); ok {
 			fmt.Println("SimulateRetryFixer::got ", v)
+			// trigger a retry error only if the server responds with a particular value
 			if v == util.RetryOnRemoteVal {
 				return mm, NewProxyRetryError(srf.OriginalMessage, util.RemoteRsName)
 			}
