@@ -86,6 +86,24 @@ func (ps *ProxySession) Stats() bson.D {
 	}
 }
 
+func (ps *ProxySession) doRetryLoop(retryError *ProxyRetryError) {
+	// retry the message on another rs in case of a ProxyRetryError. This function assumes that ps.mongoConn is closed or nil.
+	var err error
+	for {
+		ps.mongoConn, err = ps.doLoop(ps.mongoConn, retryError)
+		if err != nil {
+			if ps.mongoConn != nil {
+				ps.mongoConn.Close(ps)
+			}
+			if err != io.EOF {
+				ps.logger.Logf(slogger.WARN, "error doing loop during retry: %v", err)
+			}
+			return
+		}
+		return
+	}
+}
+
 func (ps *ProxySession) DoLoopTemp() {
 	defer logPanic(ps.logger)
 	var err error
@@ -100,6 +118,7 @@ func (ps *ProxySession) DoLoopTemp() {
 			retryError, shouldRetry = err.(*ProxyRetryError)
 			if shouldRetry {
 				ps.logger.Logf(slogger.WARN, "%v", retryError)
+				ps.doRetryLoop(retryError)
 				break
 			}
 			if err != io.EOF {
@@ -107,23 +126,6 @@ func (ps *ProxySession) DoLoopTemp() {
 			}
 			return
 		}
-	}
-	if !shouldRetry {
-		return
-	}
-	// retry the message on another rs in case of a ProxyRetryError. Note that ps.mongoConn is guaranteed to be closed/nil by the previous loop.
-	for {
-		ps.mongoConn, err = ps.doLoop(ps.mongoConn, retryError)
-		if err != nil {
-			if ps.mongoConn != nil {
-				ps.mongoConn.Close(ps)
-			}
-			if err != io.EOF {
-				ps.logger.Logf(slogger.WARN, "error doing loop: %v", err)
-			}
-			return
-		}
-		return
 	}
 }
 
@@ -306,7 +308,7 @@ func wrapNetworkError(err error) error {
 	return driver.Error{Message: err.Error(), Labels: labels, Wrapped: err}
 }
 
-func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, pre *ProxyRetryError) (*MongoConnectionWrapper, error) {
+func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *ProxyRetryError) (*MongoConnectionWrapper, error) {
 	var requestDurationHook, responseDurationHook, requestErrorsHook, responseErrorsHook MetricsHook
 
 	if ps.isMetricsEnabled {
@@ -332,7 +334,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, pre *ProxyRetr
 	// reading message from client
 	var err error
 	var m Message
-	if pre == nil {
+	if retryError == nil {
 		ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "reading message from client")
 		m, err = ReadMessage(ps.conn)
 		if err != nil {
@@ -349,8 +351,8 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, pre *ProxyRetr
 			return mongoConn, NewStackErrorf("got error reading from client: %v", err)
 		}
 	} else {
-		m = pre.MsgToRetry
-		ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "retrying a message from client on rs=%v", pre.RetryOnRs)
+		m = retryError.MsgToRetry
+		ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "retrying a message from client on rs=%v", retryError.RetryOnRs)
 	}
 
 	isRequestTimerStarted := false
@@ -426,8 +428,8 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, pre *ProxyRetr
 			return mongoConn, nil
 		}
 	}
-	if pre != nil && pre.RetryOnRs != "" {
-		remoteRs = pre.RetryOnRs
+	if retryError != nil && retryError.RetryOnRs != "" {
+		remoteRs = retryError.RetryOnRs
 	}
 	if mongoConn == nil || !mongoConn.expirableConn.Alive() {
 		topology := ps.proxy.topology

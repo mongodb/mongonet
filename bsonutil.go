@@ -389,5 +389,5 @@ func BSONGetValueByNestedPathForTests(doc bson.D, nestedPath string, arrIndex in
 			return tempDoc[ix].Value
 		}
 	}
-	return nil
+	return tempDoc
 }

@@ -2,6 +2,7 @@ package mongonet
 
 import (
 	"fmt"
+	"reflect"
 	"testing"
 	"time"
 
@@ -482,6 +483,11 @@ func TestBSONGetValueByNestedPathForTests(t *testing.T) {
 	v = BSONGetValueByNestedPathForTests(doc, "a.d.x", 1)
 	if v.(int) != 2 {
 		t.Fatalf("expected %v to equal 1", v)
+	}
+	v = BSONGetValueByNestedPathForTests(doc, "a.b", -1)
+	exp := bson.D{{"c", 2}}
+	if !reflect.DeepEqual(v, exp) {
+		t.Fatalf("expected %v to equal %v", v, exp)
 	}
 }
 
