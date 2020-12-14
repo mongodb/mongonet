@@ -89,8 +89,9 @@ func (ps *ProxySession) Stats() bson.D {
 func (ps *ProxySession) doRetryLoop(retryError *ProxyRetryError) {
 	// retry the message on another rs in case of a ProxyRetryError. This function assumes that ps.mongoConn is closed or nil.
 	var err error
+	retryOnRs := retryError.RetryOnRs
 	for {
-		ps.mongoConn, err = ps.doLoop(ps.mongoConn, retryError)
+		ps.mongoConn, err = ps.doLoop(ps.mongoConn, retryError, retryOnRs)
 		if err != nil {
 			if ps.mongoConn != nil {
 				ps.mongoConn.Close(ps)
@@ -100,7 +101,7 @@ func (ps *ProxySession) doRetryLoop(retryError *ProxyRetryError) {
 			}
 			return
 		}
-		return
+		retryError = nil
 	}
 }
 
@@ -110,7 +111,7 @@ func (ps *ProxySession) DoLoopTemp() {
 	var retryError *ProxyRetryError
 	var shouldRetry bool
 	for {
-		ps.mongoConn, err = ps.doLoop(ps.mongoConn, nil)
+		ps.mongoConn, err = ps.doLoop(ps.mongoConn, nil, "")
 		if err != nil {
 			if ps.mongoConn != nil {
 				ps.mongoConn.Close(ps)
@@ -308,7 +309,7 @@ func wrapNetworkError(err error) error {
 	return driver.Error{Message: err.Error(), Labels: labels, Wrapped: err}
 }
 
-func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *ProxyRetryError) (*MongoConnectionWrapper, error) {
+func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *ProxyRetryError, remoteRs string) (*MongoConnectionWrapper, error) {
 	var requestDurationHook, responseDurationHook, requestErrorsHook, responseErrorsHook MetricsHook
 
 	if ps.isMetricsEnabled {
@@ -388,7 +389,6 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 	ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "got message from client")
 	ps.logMessageTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, m)
 	var respInter ResponseInterceptor
-	var remoteRs string
 	if ps.interceptor != nil {
 		ps.interceptor.TrackRequest(m.Header())
 		m, respInter, remoteRs, err = ps.interceptor.InterceptClientToMongo(m)
