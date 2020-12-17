@@ -178,10 +178,51 @@ func (s *Session) RespondToCommand(clientMessage Message, doc SimpleBSON) error 
 		}
 		return SendMessage(rm, s.conn)
 
+	case OP_GET_MORE:
+		return errors.New("Internal error")
+
 	default:
 		return ErrUnknownOpcode
 	}
 
+}
+
+func (s *Session) RespondToGetMore(clientMessage Message, cursorFound, isQueryFailure bool, cursorID int64, docs []SimpleBSON) error {
+	if clientMessage.Header().OpCode != OP_GET_MORE {
+		return errors.New("Internal error")
+	}
+
+	flags := 0
+	if !cursorFound {
+		flags |= 1 // 1st bit set indicates cursor not found
+		cursorID = 0
+	}
+
+	var commandDoc bsoncore.Document = nil
+
+	if isQueryFailure {
+		flags |= 2
+		if len(docs) > 0 {
+			commandDoc = bsoncore.Document(docs[0])
+		}
+	}
+
+	replyMessage := &ReplyMessage{
+		MessageHeader{
+			0,
+			17, // Copying this from other places in the mongonet code
+			clientMessage.Header().RequestID,
+			OP_REPLY,
+		},
+		flags,
+		cursorID,
+		0, // unused
+		len(docs),
+		docs,
+		commandDoc,
+	}
+
+	return SendMessage(replyMessage, s.conn)
 }
 
 func (s *Session) RespondWithError(clientMessage Message, err error) error {

@@ -62,6 +62,10 @@ func stripDirectories(filepath string, toKeep int) string {
 }
 
 func extractError(rdr bsoncore.Document) error {
+	if rdr == nil {
+		return nil
+	}
+
 	var errmsg, codeName string
 	var code int32
 	var labels []string
