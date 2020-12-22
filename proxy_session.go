@@ -86,6 +86,8 @@ func (ps *ProxySession) Stats() bson.D {
 	}
 }
 
+// doRetryLoop will retry the previous message on an RS specified by ProxyRetryError. Future iterations will read new messages on the client->proxy connection and continue to send them to the new RS
+// The RS can be empty to indicate the operation should be retried on the default RS
 func (ps *ProxySession) doRetryLoop(retryError *ProxyRetryError) {
 	// retry the message on another rs in case of a ProxyRetryError. This function assumes that ps.mongoConn is closed or nil.
 	var err error
