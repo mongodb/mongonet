@@ -4,13 +4,13 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"github.com/mongodb/mongonet/util"
 	"io"
 	"net"
 	"runtime/pprof"
 	"strings"
 	"time"
 
-	"github.com/mongodb/mongonet/util"
 	"github.com/mongodb/slogger/v2/slogger"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo/readpref"
@@ -395,6 +395,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 			return mongoConn, nil
 		}
 	}
+	startServerSelection := time.Now()
 	if mongoConn == nil || !mongoConn.expirableConn.Alive() {
 		topology := ps.proxy.topology
 		if remoteRs != "" {
@@ -422,6 +423,36 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 
 	if ps.isMetricsEnabled && isRequestTimerStarted {
 		requestDurationHook.StopTimer()
+	}
+
+	serverSelectionTime := time.Now().Sub(startServerSelection).Milliseconds()
+	print(serverSelectionTime)
+
+	if ps.proxy.config.ConnectionMode == util.Cluster {
+		// only concerned about OP_MSG at this point
+		mm, ok := m.(*MessageMessage)
+		if ok {
+			msg, bodysec, err := messageMessageToBSOND(mm)
+			if err != nil {
+				ps.proxy.logger.Logf(slogger.ERROR,"error intercepting message %v", err)
+				return nil, NewStackErrorf("error intercepting message %v", err)
+			}
+
+			maxtimeMsIdx := BSONIndexOf(msg, "maxTimeMS")
+			if maxtimeMsIdx >= 0 {
+				maxtimeMs := msg[maxtimeMsIdx]
+				switch val := maxtimeMs.Value.(type) {
+				case float64:
+					maxtimeMs.Value = val - float64(serverSelectionTime)
+				}
+				msg = append(msg[:maxtimeMsIdx], msg[maxtimeMsIdx+1:]...)
+				msg = append(msg, maxtimeMs)
+				bodysec.Body, err = SimpleBSONConvert(msg)
+				if err != nil {
+					return nil, NewStackErrorf("failed to convert message after updating maxTimeMs %v", err)
+				}
+			}
+		}
 	}
 
 	// Send message to mongo
