@@ -192,7 +192,7 @@ func (s *Session) RespondToGetMore(clientMessage Message, cursorFound, isQueryFa
 		return errors.New("Internal error")
 	}
 
-	flags := 0
+	var flags int32 = 0
 	if !cursorFound {
 		flags |= 1 // 1st bit set indicates cursor not found
 		cursorID = 0
@@ -203,7 +203,7 @@ func (s *Session) RespondToGetMore(clientMessage Message, cursorFound, isQueryFa
 	if isQueryFailure {
 		flags |= 2
 		if len(docs) > 0 {
-			commandDoc = bsoncore.Document(docs[0])
+			commandDoc = bsoncore.Document(docs[0].BSON)
 		}
 	}
 
@@ -217,7 +217,7 @@ func (s *Session) RespondToGetMore(clientMessage Message, cursorFound, isQueryFa
 		flags,
 		cursorID,
 		0, // unused
-		len(docs),
+		int32(len(docs)),
 		docs,
 		commandDoc,
 	}
