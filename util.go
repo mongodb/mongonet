@@ -209,7 +209,7 @@ func extractError(rdr bsoncore.Document) error {
 	return nil
 }
 
-func messageMessageToBSOND(m *MessageMessage) (bson.D, *BodySection, error) {
+func MessageMessageToBSOND(m *MessageMessage) (bson.D, *BodySection, error) {
 	var bodySection *BodySection = nil
 	for _, section := range m.Sections {
 		if bs, ok := section.(*BodySection); ok {

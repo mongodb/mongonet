@@ -432,7 +432,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 		// only concerned about OP_MSG at this point
 		mm, ok := m.(*MessageMessage)
 		if ok {
-			msg, bodysec, err := messageMessageToBSOND(mm)
+			msg, bodysec, err := MessageMessageToBSOND(mm)
 			if err != nil {
 				ps.proxy.logger.Logf(slogger.ERROR, "error intercepting message %v", err)
 				return nil, NewStackErrorf("error intercepting message %v", err)
