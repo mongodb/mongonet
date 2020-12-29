@@ -498,7 +498,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 				mongoConn.ep.ProcessError(err, mongoConn.conn)
 			}
 		case *ReplyMessage:
-			if err := extractError(mm.CommandDoc); err != nil {
+			if err := extractError(mm.CommandDoc()); err != nil {
 				if ps.isMetricsEnabled {
 					hookErr := responseErrorsHook.IncCounterGauge()
 					if hookErr != nil {

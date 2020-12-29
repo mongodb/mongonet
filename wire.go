@@ -50,7 +50,14 @@ type ReplyMessage struct {
 	NumberReturned int32
 
 	Docs       []SimpleBSON
-	CommandDoc bsoncore.Document
+}
+
+func (rm *ReplyMessage) CommandDoc() bsoncore.Document {
+	if len(rm.Docs) == 0 {
+		return nil
+	}
+
+	return bsoncore.Document(rm.Docs[0].BSON)
 }
 
 // OP_UPDATE
@@ -146,4 +153,8 @@ type MessageMessage struct {
 	FlagBits int32
 	Sections []MessageMessageSection
 	BodyDoc  bsoncore.Document
+}
+
+func (mm *MessageMessage) BodyDoc() bsoncore.Document {
+	for _, sec := 
 }

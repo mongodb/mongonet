@@ -187,7 +187,7 @@ func (s *Session) RespondToCommand(clientMessage Message, doc SimpleBSON) error 
 
 }
 
-func (s *Session) RespondToGetMore(clientMessage Message, cursorFound, isQueryFailure bool, cursorID int64, docs []SimpleBSON) error {
+func (s *Session) RespondToGetMore(clientMessage Message, cursorFound, queryFailureErr error, cursorID int64, docs []SimpleBSON) error {
 	if clientMessage.Header().OpCode != OP_GET_MORE {
 		return errors.New("Internal error")
 	}
