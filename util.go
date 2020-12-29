@@ -13,6 +13,22 @@ import (
 
 // ---
 
+type ProxyRetryError struct {
+	MsgToRetry Message
+	RetryOnRs  string
+}
+
+func (e *ProxyRetryError) Error() string {
+	return fmt.Sprintf("ProxyRetryError - going to retry on %s", e.RetryOnRs)
+}
+
+func NewProxyRetryError(msgToRetry Message, retryOnRs string) *ProxyRetryError {
+	return &ProxyRetryError{
+		msgToRetry,
+		retryOnRs,
+	}
+}
+
 type StackError struct {
 	Message    string
 	Stacktrace []string

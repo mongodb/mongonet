@@ -169,7 +169,7 @@ func RunIntTest(mode util.MongoConnectionMode, maxPoolSize, workers int, targetA
 		proxyClientFactory util.ClientFactoryFunc,
 	) error,
 ) {
-	Iterations := 20
+	Iterations := 10
 	mongoPort, proxyPort, hostname := util.GetTestHostAndPorts()
 	t.Logf("using proxy port=%v, pool size=%v", proxyPort, maxPoolSize)
 	hostToUse := hostname
@@ -190,10 +190,10 @@ func RunIntTest(mode util.MongoConnectionMode, maxPoolSize, workers int, targetA
 	}
 
 	if mode == util.Cluster {
-		if err := proxy.AddRemoteConnection("proxytest2", "mongodb://localhost:40000,localhost:40001,localhost:40002", "testproxy", false, ServerSelectionTimeoutSecForTests, maxPoolSize, DefaultMaxPoolIdleTimeSec, DefaultConnectionPoolHeartbeatIntervalMs, nil); err != nil {
+		if err := proxy.AddRemoteConnection(util.RemoteRsName, "mongodb://localhost:40000,localhost:40001,localhost:40002", "testproxy", false, ServerSelectionTimeoutSecForTests, maxPoolSize, DefaultMaxPoolIdleTimeSec, DefaultConnectionPoolHeartbeatIntervalMs, nil); err != nil {
 			t.Fatal(err)
 		}
-		defer proxy.ClearRemoteConnection("proxytest2", 10)
+		defer proxy.ClearRemoteConnection(util.RemoteRsName, 10)
 	}
 	go proxy.Run()
 

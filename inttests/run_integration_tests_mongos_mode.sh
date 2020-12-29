@@ -9,6 +9,8 @@ HOSTNAME="localhost"
 
 pkill mongod
 sleep 5
+pkill -9 mongod
+sleep 5
 
 rm -rf dbpath || true
 mkdir -p dbpath/1 dbpath/2 dbpath/3 dbpath/4 dbpath/5 dbpath/6 || true
