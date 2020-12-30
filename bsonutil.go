@@ -362,3 +362,32 @@ func BSONWalkHelp(doc bson.D, path []string, visitor BSONWalkVisitor, inArray bo
 
 	return doc, nil
 }
+
+func BSONGetValueByNestedPathForTests(doc bson.D, nestedPath string, arrIndex int) interface{} {
+	tempDoc := doc
+	parts := strings.Split(nestedPath, ".")
+	var ix int
+	for _, p := range parts {
+		ix = BSONIndexOf(tempDoc, p)
+		if ix < 0 {
+			return nil
+		}
+		switch v := tempDoc[ix].Value.(type) {
+		case bson.D:
+			tempDoc = v
+		case primitive.A:
+			if arrIndex < 0 || len(v) <= arrIndex {
+				return v
+			}
+			switch v2 := v[arrIndex].(type) {
+			case bson.D:
+				tempDoc = v2
+			default:
+				return v2
+			}
+		default:
+			return tempDoc[ix].Value
+		}
+	}
+	return tempDoc
+}

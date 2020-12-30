@@ -11,7 +11,7 @@ func TestProxyMongosModeConnectionPerformanceFindUpdate(t *testing.T) {
 		{
 			Workers:      5,
 			AvgLatencyMs: 50,
-			MaxLatencyMs: 200,
+			MaxLatencyMs: 300,
 		},
 		{
 			Workers:      20,
@@ -20,7 +20,7 @@ func TestProxyMongosModeConnectionPerformanceFindUpdate(t *testing.T) {
 		},
 		{
 			Workers:      60,
-			AvgLatencyMs: 200,
+			AvgLatencyMs: 300,
 			MaxLatencyMs: 1500,
 		},
 	}
@@ -35,7 +35,7 @@ func TestProxyMongodModeConnectionPerformanceFindUpdate(t *testing.T) {
 		{
 			Workers:      5,
 			AvgLatencyMs: 50,
-			MaxLatencyMs: 200,
+			MaxLatencyMs: 300,
 		},
 		{
 			Workers:      20,
@@ -44,7 +44,7 @@ func TestProxyMongodModeConnectionPerformanceFindUpdate(t *testing.T) {
 		},
 		{
 			Workers:      60,
-			AvgLatencyMs: 200,
+			AvgLatencyMs: 300,
 			MaxLatencyMs: 1500,
 		},
 	}
