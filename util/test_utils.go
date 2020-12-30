@@ -15,8 +15,11 @@ import (
 )
 
 const (
-	ClientTimeoutSecForTests = 20 * time.Second
-	RemoteDbNameForTests     = "testRemote"
+	ClientTimeoutSecForTests    = 20 * time.Second
+	RemoteDbNameForTests        = "testRemote"
+	RetryOnRemoteDbNameForTests = "testRetryOnRemote"
+	RetryOnRemoteVal            = 10
+	RemoteRsName                = "proxytest2"
 )
 
 type ClientFactoryFunc func(host string, port int, mode MongoConnectionMode, secondaryReads bool, appName string, ctx context.Context) (*mongo.Client, error)

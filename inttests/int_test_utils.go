@@ -52,7 +52,49 @@ func (myf *MyFactory) NewInterceptor(ps *ProxySession) (ProxyInterceptor, error)
 	return &MyInterceptor{ps, myf.mode, myf.mongoPort, myf.proxyPort, myf.disableIsMaster}, nil
 }
 
-type MyResponseInterceptor struct {
+type SimulateRetryFixer struct {
+	OriginalMessage Message
+}
+
+func (srf *SimulateRetryFixer) InterceptMongoToClient(m Message) (Message, error) {
+	switch mm := m.(type) {
+	case *MessageMessage:
+		var err error
+		var bodySection *BodySection = nil
+		for _, section := range mm.Sections {
+			if bs, ok := section.(*BodySection); ok {
+				if bodySection != nil {
+					return mm, NewStackErrorf("OP_MSG should not have more than one body section!  Second body section: %v", bs)
+				}
+				bodySection = bs
+			} else {
+				// MongoDB 3.6 does not support anything other than body sections in replies
+				return mm, NewStackErrorf("OP_MSG replies with sections other than a body section are not supported!")
+			}
+		}
+
+		if bodySection == nil {
+			return mm, NewStackErrorf("OP_MSG should have a body section!")
+		}
+		doc, err := bodySection.Body.ToBSOND()
+		if err != nil {
+			return mm, err
+		}
+		val := BSONGetValueByNestedPathForTests(doc, "cursor.firstBatch.val", 0)
+		if v, ok := val.(int32); ok {
+			fmt.Println("SimulateRetryFixer::got ", v)
+			// trigger a retry error only if the server responds with a particular value
+			if v == util.RetryOnRemoteVal {
+				return mm, NewProxyRetryError(srf.OriginalMessage, util.RemoteRsName)
+			}
+		}
+		return mm, nil
+	default:
+		return m, nil
+	}
+}
+
+type IsMasterFixer struct {
 	mode      util.MongoConnectionMode
 	mongoPort int
 	proxyPort int
@@ -116,7 +158,7 @@ func fixIsMasterDirect(doc bson.D, mongoPort, proxyPort int) (SimpleBSON, error)
 	return SimpleBSONConvert(doc)
 }
 
-func (mri *MyResponseInterceptor) InterceptMongoToClient(m Message) (Message, error) {
+func (mri *IsMasterFixer) InterceptMongoToClient(m Message) (Message, error) {
 	switch mm := m.(type) {
 	case *ReplyMessage:
 		var err error
@@ -229,7 +271,7 @@ func (myi *MyInterceptor) InterceptClientToMongo(m Message) (Message, ResponseIn
 			panic(err)
 		}
 		mm.Query = qb
-		return mm, &MyResponseInterceptor{myi.mode, myi.mongoPort, myi.proxyPort}, "", nil
+		return mm, &IsMasterFixer{myi.mode, myi.mongoPort, myi.proxyPort}, "", nil
 	case *MessageMessage:
 		var err error
 		var bodySection *BodySection = nil
@@ -250,36 +292,45 @@ func (myi *MyInterceptor) InterceptClientToMongo(m Message) (Message, ResponseIn
 			return mm, nil, "", err
 		}
 		var rsName string
+		var db string
 		if idx := BSONIndexOf(doc, "$db"); idx >= 0 {
-			db, _, err := GetAsString(doc[idx])
+			db, _, err = GetAsString(doc[idx])
 			if err != nil {
 				panic(err)
 			}
 			if db == util.RemoteDbNameForTests {
-				rsName = "proxytest2"
+				rsName = util.RemoteRsName
 				myi.ps.Logf(slogger.DEBUG, "got a remote DB request")
 			}
 		}
 
-		if !myi.disableStreamingIsMaster {
+		switch strings.ToLower(doc[0].Key) {
+		case "ismaster":
+			// streaming isMaster is enabled. no need to fix
+			if !myi.disableStreamingIsMaster {
+				return mm, nil, rsName, nil
+			}
+			// fixing isMaster request when streamingIsMaster is disabled
+			if idx := BSONIndexOf(doc, "maxAwaitTimeMS"); idx >= 0 {
+				doc = append(doc[:idx], doc[idx+1:]...)
+			}
+			if idx := BSONIndexOf(doc, "topologyVersion"); idx >= 0 {
+				doc = append(doc[:idx], doc[idx+1:]...)
+			}
+			n, err := SimpleBSONConvert(doc)
+			if err != nil {
+				panic(err)
+			}
+			bodySection.Body = n
+			return mm, &IsMasterFixer{myi.mode, myi.mongoPort, myi.proxyPort}, rsName, nil
+		case "find":
+			if db == util.RetryOnRemoteDbNameForTests {
+				return mm, &SimulateRetryFixer{mm}, "", nil
+			}
+			return mm, nil, rsName, nil
+		default:
 			return mm, nil, rsName, nil
 		}
-		if strings.ToLower(doc[0].Key) != "ismaster" {
-			return mm, nil, "", nil
-		}
-		if idx := BSONIndexOf(doc, "maxAwaitTimeMS"); idx >= 0 {
-			doc = append(doc[:idx], doc[idx+1:]...)
-		}
-		if idx := BSONIndexOf(doc, "topologyVersion"); idx >= 0 {
-			doc = append(doc[:idx], doc[idx+1:]...)
-		}
-		n, err := SimpleBSONConvert(doc)
-		if err != nil {
-			panic(err)
-		}
-		bodySection.Body = n
-
-		return mm, &MyResponseInterceptor{myi.mode, myi.mongoPort, myi.proxyPort}, rsName, nil
 	}
 
 	return m, nil, "", nil
