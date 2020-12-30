@@ -152,9 +152,16 @@ type MessageMessage struct {
 
 	FlagBits int32
 	Sections []MessageMessageSection
-	BodyDoc  bsoncore.Document
 }
 
 func (mm *MessageMessage) BodyDoc() bsoncore.Document {
-	for _, sec := 
+	// when parsed in in parseMessageMessage we checked that there was exactly one BodySection
+	// as such we can stop as soon as we find it
+	for _, sec := range mm.Sections {
+		if bodySection, ok := sec.(*BodySection); ok && bodySection != nil {
+			return bsoncore.Document(bodySection.Body.BSON)
+		}
+	}
+
+	panic(fmt.Errorf("unreachable"))
 }

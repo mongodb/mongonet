@@ -137,7 +137,6 @@ func (ps *ProxySession) respondWithError(clientMessage Message, err error) error
 			0, // StartingFrom
 			1, // NumberReturned
 			[]SimpleBSON{doc},
-			bsoncore.Document(doc.BSON),
 		}
 		return SendMessage(rm, ps.conn)
 
@@ -167,7 +166,6 @@ func (ps *ProxySession) respondWithError(clientMessage Message, err error) error
 					doc,
 				},
 			},
-			bsoncore.Document(doc.BSON),
 		}
 		return SendMessage(rm, ps.conn)
 
@@ -193,7 +191,7 @@ func logPanic(logger *slogger.Logger) {
 }
 
 func getReadPrefFromOpMsg(mm *MessageMessage, logger *slogger.Logger, defaultRp *readpref.ReadPref) (rp *readpref.ReadPref, err error) {
-	rpVal, err2 := mm.BodyDoc.LookupErr("$readPreference")
+	rpVal, err2 := mm.BodyDoc().LookupErr("$readPreference")
 	if err2 != nil {
 		if err2 == bsoncore.ErrElementNotFound {
 			return defaultRp, nil
@@ -487,7 +485,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper) (*MongoConnect
 		}
 		switch mm := resp.(type) {
 		case *MessageMessage:
-			if err := extractError(mm.BodyDoc); err != nil {
+			if err := extractError(mm.BodyDoc()); err != nil {
 				if ps.isMetricsEnabled {
 					hookErr := responseErrorsHook.IncCounterGauge()
 					if hookErr != nil {
