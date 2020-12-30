@@ -13,6 +13,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/x/mongo/driver/address"
 )
 
 const (
@@ -56,7 +57,7 @@ type SimulateRetryFixer struct {
 	OriginalMessage Message
 }
 
-func (srf *SimulateRetryFixer) InterceptMongoToClient(m Message) (Message, error) {
+func (srf *SimulateRetryFixer) InterceptMongoToClient(m Message, _ address.Address) (Message, error) {
 	switch mm := m.(type) {
 	case *MessageMessage:
 		var err error
@@ -158,7 +159,7 @@ func fixIsMasterDirect(doc bson.D, mongoPort, proxyPort int) (SimpleBSON, error)
 	return SimpleBSONConvert(doc)
 }
 
-func (mri *IsMasterFixer) InterceptMongoToClient(m Message) (Message, error) {
+func (mri *IsMasterFixer) InterceptMongoToClient(m Message, _ address.Address) (Message, error) {
 	switch mm := m.(type) {
 	case *ReplyMessage:
 		var err error
