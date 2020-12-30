@@ -1,6 +1,10 @@
 package mongonet
 
-import "go.mongodb.org/mongo-driver/x/bsonx/bsoncore"
+import (
+	"go.mongodb.org/mongo-driver/x/bsonx/bsoncore"
+
+	"fmt"
+)
 
 const (
 	OP_REPLY         = 1

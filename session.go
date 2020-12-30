@@ -10,7 +10,6 @@ import (
 
 	"github.com/mongodb/slogger/v2/slogger"
 	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/x/bsonx/bsoncore"
 )
 
 type Session struct {
@@ -196,12 +195,14 @@ func (s *Session) RespondToGetMore(clientMessage Message, cursorFound bool, quer
 		cursorID = 0
 	}
 
-	var commandDoc bsoncore.Document = nil
-
-	if isQueryFailure {
+	if queryFailureErr != nil {
 		flags |= 2
-		if len(docs) > 0 {
-			commandDoc = bsoncore.Document(docs[0].BSON)
+		if docs == nil || len(docs) == 0 {
+			doc, err := SimpleBSONConvert(bson.D{{"$err", queryFailureErr.Error()}})
+			if err != nil {
+				return errors.New("Internal error")
+			}
+			docs = []SimpleBSON{doc}
 		}
 	}
 
@@ -217,7 +218,6 @@ func (s *Session) RespondToGetMore(clientMessage Message, cursorFound bool, quer
 		0, // unused
 		int32(len(docs)),
 		docs,
-		commandDoc,
 	}
 
 	return SendMessage(replyMessage, s.conn)
@@ -256,7 +256,6 @@ func (s *Session) RespondWithError(clientMessage Message, err error) error {
 			0, // StartingFrom
 			1, // NumberReturned
 			[]SimpleBSON{doc},
-			bsoncore.Document(doc.BSON),
 		}
 		return SendMessage(rm, s.conn)
 
@@ -290,7 +289,6 @@ func (s *Session) RespondWithError(clientMessage Message, err error) error {
 					doc,
 				},
 			},
-			bsoncore.Document(doc.BSON),
 		}
 		return SendMessage(rm, s.conn)
 
