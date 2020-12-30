@@ -193,10 +193,11 @@ func (s *Session) RespondToGetMore(clientMessage Message, cursorFound bool, quer
 	if !cursorFound {
 		flags |= 1 // 1st bit set indicates cursor not found
 		cursorID = 0
+		docs = []SimpleBSON{}
 	}
 
 	if queryFailureErr != nil {
-		flags |= 2
+		flags |= 2 // 2nd bit indicates query failure
 		if docs == nil || len(docs) == 0 {
 			doc, err := SimpleBSONConvert(bson.D{{"$err", queryFailureErr.Error()}})
 			if err != nil {
