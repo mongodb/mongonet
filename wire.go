@@ -53,7 +53,7 @@ type ReplyMessage struct {
 	StartingFrom   int32
 	NumberReturned int32
 
-	Docs       []SimpleBSON
+	Docs []SimpleBSON
 }
 
 func (rm *ReplyMessage) CommandDoc() bsoncore.Document {
