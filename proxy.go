@@ -184,9 +184,13 @@ func (p *Proxy) ClearRemoteConnection(rsName string, additionalGracePeriodSec in
 	defer cancelFn()
 	// remote connections only has *mongo.Client, so no need for type check here. being extra safe about null clients just in case.
 	if rc.(*RemoteConnection).client != nil {
-		return rc.(*RemoteConnection).client.Disconnect(ctx2)
+		err := rc.(*RemoteConnection).client.Disconnect(ctx2)
+		if err != nil {
+			return err
+		}
 	}
-	p.logger.Logf(slogger.DEBUG, "remote connection client is nil")
+	p.remoteConnections.Delete(rsName)
+	p.logger.Logf(slogger.DEBUG, "remote connection %s cleared", rsName)
 	return nil
 }
 
