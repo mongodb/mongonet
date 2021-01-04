@@ -488,8 +488,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 					return nil, NewStackErrorf("operation exceeded time limit")
 				}
 				maxtimeMs.Value = newMaxTime
-				msg = append(msg[:maxtimeMsIdx], msg[maxtimeMsIdx+1:]...)
-				msg = append(msg, maxtimeMs)
+				msg[maxtimeMsIdx] = maxtimeMs
 				bodysec.Body, err = SimpleBSONConvert(msg)
 				if err != nil {
 					return nil, NewStackErrorf("failed to convert message after updating maxTimeMs %v", err)
