@@ -466,7 +466,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 	serverSelectionTime := time.Now().Sub(startServerSelection).Milliseconds()
 	print(serverSelectionTime)
 
-	if ps.proxy.config.ConnectionMode == util.Cluster {
+	if ps.proxy.Config.ConnectionMode == util.Cluster {
 		// only concerned about OP_MSG at this point
 		mm, ok := m.(*MessageMessage)
 		if ok {
@@ -479,10 +479,15 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 			maxtimeMsIdx := BSONIndexOf(msg, "maxTimeMS")
 			if maxtimeMsIdx >= 0 {
 				maxtimeMs := msg[maxtimeMsIdx]
+				newMaxTime := 0.0
 				switch val := maxtimeMs.Value.(type) {
 				case float64:
-					maxtimeMs.Value = val - float64(serverSelectionTime)
+					newMaxTime = val - float64(serverSelectionTime)
 				}
+				if newMaxTime < 0 {
+					return nil, NewStackErrorf("operation exceeded time limit")
+				}
+				maxtimeMs.Value = newMaxTime
 				msg = append(msg[:maxtimeMsIdx], msg[maxtimeMsIdx+1:]...)
 				msg = append(msg, maxtimeMs)
 				bodysec.Body, err = SimpleBSONConvert(msg)
