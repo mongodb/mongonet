@@ -52,3 +52,12 @@ func TestProxyMongodModeConnectionPerformanceFindOne(t *testing.T) {
 		RunIntTest(util.Direct, 0, goal.Workers, goal.AvgLatencyMs, goal.MaxLatencyMs, t, runProxyConnectionPerformanceFindOne)
 	}
 }
+
+func TestFindWithMaxTimeMS(t *testing.T)  {
+	goal := ConnectionPerformanceTestGoal{
+		Workers:      5,
+		AvgLatencyMs: 50,
+		MaxLatencyMs: 200,
+	}
+	RunIntTest(util.Cluster, 0, goal.Workers, goal.AvgLatencyMs, goal.MaxLatencyMs, t, runProxyConnectionFindOneWithMaxTimeMs)
+}
