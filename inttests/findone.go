@@ -92,7 +92,7 @@ func runProxyConnectionFindOneWithMaxTimeMs(iterations, mongoPort, proxyPort int
 	proxyClientFactory util.ClientFactoryFunc,
 ) error {
 
-	util.EnableFailPointForCommand(mongoPort, []string{"find"},50)
+	util.EnableFailPointForCommand(mongoPort, []string{"find"}, 50)
 	var client *mongo.Client
 	ctx, cancelFunc := context.WithTimeout(context.Background(), util.ClientTimeoutSecForTests)
 	defer cancelFunc()
@@ -103,7 +103,7 @@ func runProxyConnectionFindOneWithMaxTimeMs(iterations, mongoPort, proxyPort int
 	}
 	defer client.Disconnect(ctx)
 	_, _, err = runFind(logger, client, 1, ctx)
-	if err != nil && strings.Contains(err.Error(), "MaxTimeMSExpired"){
+	if err != nil && strings.Contains(err.Error(), "MaxTimeMSExpired") {
 		return fmt.Errorf("expected maxtimeMS error but got %v", err)
 	}
 	return nil
