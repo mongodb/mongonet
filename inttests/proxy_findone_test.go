@@ -53,7 +53,7 @@ func TestProxyMongodModeConnectionPerformanceFindOne(t *testing.T) {
 	}
 }
 
-func TestFindWithMaxTimeMS(t *testing.T)  {
+func TestFindWithMaxTimeMS(t *testing.T) {
 	goal := ConnectionPerformanceTestGoal{
 		Workers:      5,
 		AvgLatencyMs: 50,
