@@ -137,3 +137,22 @@ func EnableFailPointErrorCode(mongoPort, errorCode int) error {
 	}
 	return client.Database("admin").RunCommand(ctx, cmd).Err()
 }
+
+func EnableFailPointForCommand(mongoPort int, failCommands interface{}, errorCode int) error {
+	ctx, cancelFunc := context.WithTimeout(context.Background(), ClientTimeoutSecForTests)
+	defer cancelFunc()
+	client, err := GetTestClient("localhost", mongoPort, Direct, false, "enableFailPointErrorCode", ctx)
+	if err != nil {
+		return err
+	}
+	defer client.Disconnect(ctx)
+	cmd := bson.D{
+		{"configureFailPoint", "failCommand"},
+		{"mode", "alwaysOn"},
+		{"data", bson.D{
+			{"failCommands", failCommands},
+			{"errorCode", errorCode},
+		}},
+	}
+	return client.Database("admin").RunCommand(ctx, cmd).Err()
+}
