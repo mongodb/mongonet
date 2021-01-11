@@ -3,6 +3,7 @@ package inttests
 import (
 	"context"
 	"fmt"
+	"go.mongodb.org/mongo-driver/mongo/options"
 	"strings"
 	"time"
 
@@ -25,13 +26,13 @@ func RunProxyConnectionPerformanceFindOne(iterations, mongoPort, proxyPort int, 
 	return nil
 }
 
-func runFind(logger *slogger.Logger, client *mongo.Client, workerNum int, ctx context.Context) (time.Duration, bool, error) {
+func runFind(logger *slogger.Logger, client *mongo.Client, workerNum int, ctx context.Context, opts *options.FindOptions) (time.Duration, bool, error) {
 	start := time.Now()
 	dbName, collName := "test2", "foo"
 	doc := bson.D{}
 	coll := client.Database(dbName).Collection(collName)
 
-	cur, err := coll.Find(ctx, bson.D{{"x", workerNum}})
+	cur, err := coll.Find(ctx, bson.D{{"x", workerNum}}, opts)
 	if err != nil {
 		return 0, false, fmt.Errorf("failed to run find. err=%v", err)
 	}
@@ -67,7 +68,7 @@ func runProxyConnectionPerformanceFindOne(iterations, mongoPort, proxyPort int, 
 	}
 
 	testFunc := func(logger *slogger.Logger, client *mongo.Client, workerNum, iteration int, ctx context.Context) (elapsed time.Duration, success bool, err error) {
-		return runFind(logger, client, workerNum, ctx)
+		return runFind(logger, client, workerNum, ctx, nil)
 	}
 
 	cleanupFunc := func(logger *slogger.Logger, client *mongo.Client, ctx context.Context) error {
@@ -92,7 +93,7 @@ func runProxyConnectionFindOneWithMaxTimeMs(iterations, mongoPort, proxyPort int
 	proxyClientFactory util.ClientFactoryFunc,
 ) error {
 
-	util.EnableFailPointForCommand(mongoPort, []string{"find"}, 50)
+	util.EnableFailPointForCommand(mongoPort, []string{"find"}, 50, 1000)
 	var client *mongo.Client
 	ctx, cancelFunc := context.WithTimeout(context.Background(), util.ClientTimeoutSecForTests)
 	defer cancelFunc()
@@ -102,7 +103,24 @@ func runProxyConnectionFindOneWithMaxTimeMs(iterations, mongoPort, proxyPort int
 		return err
 	}
 	defer client.Disconnect(ctx)
-	_, _, err = runFind(logger, client, 1, ctx)
+	maxtime  := time.Millisecond * 100
+	opts := options.FindOptions{MaxAwaitTime: &maxtime}
+	_, _, err = runFind(logger, client, 1, ctx, &opts)
+	if err == nil || !strings.Contains(err.Error(), "MaxTimeMSExpired") {
+		return fmt.Errorf("expected maxtimeMS error but got %v", err)
+	}
+	util.DisableFailPoint(client, ctx)
+	util.EnableFailPointForCommand(mongoPort, []string{"isMaster"}, 10, 10)
+	maxtime  = time.Millisecond * 9
+	opts = options.FindOptions{MaxAwaitTime: &maxtime}
+	_, _, err = runFind(logger, client, 1, ctx, &opts)
+	if err != nil && strings.Contains(err.Error(), "MaxTimeMSExpired") {
+		return fmt.Errorf("expected maxtimeMS error but got %v", err)
+	}
+
+	maxtime  = time.Millisecond * 10000
+	opts = options.FindOptions{MaxAwaitTime: &maxtime}
+	_, _, err = runFind(logger, client, 1, ctx, &opts)
 	if err != nil && strings.Contains(err.Error(), "MaxTimeMSExpired") {
 		return fmt.Errorf("expected maxtimeMS error but got %v", err)
 	}

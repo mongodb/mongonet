@@ -335,7 +335,6 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 	}
 
 	// reading message from client
-	startServerSelection := time.Now()
 	var err error
 	var m Message
 	if retryError == nil {
@@ -360,6 +359,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 	}
 
 	isRequestTimerStarted := false
+	startServerSelection := time.Now()
 	if ps.isMetricsEnabled {
 		hookErr := requestDurationHook.StartTimer()
 		if hookErr != nil {
@@ -464,12 +464,10 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 	}
 
 	serverSelectionTime := time.Now().Sub(startServerSelection).Milliseconds()
-	print(serverSelectionTime)
 
 	if ps.proxy.Config.ConnectionMode == util.Cluster {
 		// only concerned about OP_MSG at this point
-		mm, ok := m.(*MessageMessage)
-		if ok {
+		if mm, ok := m.(*MessageMessage); ok {
 			msg, bodysec, err := MessageMessageToBSOND(mm)
 			if err != nil {
 				ps.proxy.logger.Logf(slogger.ERROR, "error intercepting message %v", err)
