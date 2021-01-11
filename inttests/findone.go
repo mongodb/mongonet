@@ -93,7 +93,7 @@ func runProxyConnectionFindOneWithMaxTimeMs(iterations, mongoPort, proxyPort int
 	proxyClientFactory util.ClientFactoryFunc,
 ) error {
 
-	util.EnableFailPointForCommand(mongoPort, []string{"find"}, 50, 1000)
+	util.EnableFailPointForCommand(mongoPort, []string{"find"}, 50, 15)
 	var client *mongo.Client
 	ctx, cancelFunc := context.WithTimeout(context.Background(), util.ClientTimeoutSecForTests)
 	defer cancelFunc()
@@ -103,26 +103,29 @@ func runProxyConnectionFindOneWithMaxTimeMs(iterations, mongoPort, proxyPort int
 		return err
 	}
 	defer client.Disconnect(ctx)
-	maxtime  := time.Millisecond * 100
+	maxtime  := time.Millisecond * 10
 	opts := options.FindOptions{MaxAwaitTime: &maxtime}
 	_, _, err = runFind(logger, client, 1, ctx, &opts)
+	util.DisableFailPoint(client, ctx)
 	if err == nil || !strings.Contains(err.Error(), "MaxTimeMSExpired") {
 		return fmt.Errorf("expected maxtimeMS error but got %v", err)
 	}
-	util.DisableFailPoint(client, ctx)
-	util.EnableFailPointForCommand(mongoPort, []string{"isMaster"}, 10, 10)
-	maxtime  = time.Millisecond * 9
-	opts = options.FindOptions{MaxAwaitTime: &maxtime}
-	_, _, err = runFind(logger, client, 1, ctx, &opts)
-	if err != nil && strings.Contains(err.Error(), "MaxTimeMSExpired") {
-		return fmt.Errorf("expected maxtimeMS error but got %v", err)
-	}
-
+	util.EnableFailPointForCommand(mongoPort, []string{"isMaster"}, 0, 1)
 	maxtime  = time.Millisecond * 10000
 	opts = options.FindOptions{MaxAwaitTime: &maxtime}
 	_, _, err = runFind(logger, client, 1, ctx, &opts)
 	if err != nil && strings.Contains(err.Error(), "MaxTimeMSExpired") {
+		util.DisableFailPoint(client, ctx)
 		return fmt.Errorf("expected maxtimeMS error but got %v", err)
 	}
+	maxtime  = time.Millisecond * 9
+	opts = options.FindOptions{MaxAwaitTime: &maxtime}
+	_, _, err = runFind(logger, client, 1, ctx, &opts)
+	util.DisableFailPoint(client, ctx)
+	if err != nil && strings.Contains(err.Error(), "MaxTimeMSExpired") {
+		return fmt.Errorf("expected maxtimeMS error but got %v", err)
+	}
+
+
 	return nil
 }

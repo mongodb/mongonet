@@ -153,6 +153,7 @@ func EnableFailPointForCommand(mongoPort int, failCommands interface{}, errorCod
 			{"failCommands", failCommands},
 			{"errorCode", errorCode},
 			{"blockTimeMS", blockTimeMs},
+			{"blockConnection", true},
 		}},
 	}
 	return client.Database("admin").RunCommand(ctx, cmd).Err()
