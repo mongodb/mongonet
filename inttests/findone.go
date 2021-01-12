@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"go.mongodb.org/mongo-driver/mongo/options"
-	"strings"
 	"time"
 
 	. "github.com/mongodb/mongonet"
@@ -112,8 +111,8 @@ func runProxyConnectionFindOneWithMaxTimeMs(iterations, mongoPort, proxyPort int
 	maxtime = time.Millisecond * 9
 	opts = options.FindOptions{MaxTime: &maxtime}
 	_, _, err = runFind(logger, client, 1, ctx, &opts)
-	if err != nil && !strings.Contains(err.Error(), "MaxTimeMSExpired") {
-		return fmt.Errorf("expected maxtimeMS error but got %v", err)
+	if err == nil {
+		return fmt.Errorf("expected maxtimeMS error but the test passed withoout error ")
 	}
 
 	return nil
