@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	ClientTimeoutSecForTests    = 50 * time.Second
+	ClientTimeoutSecForTests    = 20 * time.Second
 	RemoteDbNameForTests        = "testRemote"
 	RetryOnRemoteDbNameForTests = "testRetryOnRemote"
 	RetryOnRemoteVal            = 10
@@ -133,26 +133,6 @@ func EnableFailPointErrorCode(mongoPort, errorCode int) error {
 		{"data", bson.D{
 			{"failCommands", []string{"update"}},
 			{"errorCode", errorCode},
-		}},
-	}
-	return client.Database("admin").RunCommand(ctx, cmd).Err()
-}
-
-func EnableFailPointForCommand(mongoPort int, failCommands interface{}, errorCode int, blockTimeMs int) error {
-	ctx, cancelFunc := context.WithTimeout(context.Background(), ClientTimeoutSecForTests)
-	defer cancelFunc()
-	client, err := GetTestClient("localhost", mongoPort, Direct, false, "enableFailPointErrorCode", ctx)
-	if err != nil {
-		return err
-	}
-	defer client.Disconnect(ctx)
-	cmd := bson.D{
-		{"configureFailPoint", "failCommand"},
-		{"mode", "alwaysOn"},
-		{"data", bson.D{
-			{"failCommands", failCommands},
-			{"blockTimeMS", blockTimeMs},
-			{"blockConnection", true},
 		}},
 	}
 	return client.Database("admin").RunCommand(ctx, cmd).Err()
