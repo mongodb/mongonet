@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	ClientTimeoutSecForTests    = 20 * time.Second
+	ClientTimeoutSecForTests    = 50 * time.Second
 	RemoteDbNameForTests        = "testRemote"
 	RetryOnRemoteDbNameForTests = "testRetryOnRemote"
 	RetryOnRemoteVal            = 10
@@ -151,7 +151,6 @@ func EnableFailPointForCommand(mongoPort int, failCommands interface{}, errorCod
 		{"mode", "alwaysOn"},
 		{"data", bson.D{
 			{"failCommands", failCommands},
-			{"errorCode", errorCode},
 			{"blockTimeMS", blockTimeMs},
 			{"blockConnection", true},
 		}},
