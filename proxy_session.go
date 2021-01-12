@@ -487,7 +487,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 					return nil, NewStackErrorf("unable to parse maxTimeMs value %v to float64 or int64", maxtimeMs)
 				}
 				if newMaxTime < 0 {
-					return nil, NewMongoError(fmt.Errorf("operation took longer than %v", maxtimeMs.Value), 50, "MaxTimeMSExpired")
+					return nil, ps.RespondWithError(m, NewMongoError(fmt.Errorf("operation took longer than %v", maxtimeMs.Value), 50, "MaxTimeMSExpired"))
 				}
 				maxtimeMs.Value = newMaxTime
 				msg[maxtimeMsIdx] = maxtimeMs
