@@ -483,6 +483,8 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 					newMaxTime = val - float64(serverSelectionTime)
 				case int64:
 					newMaxTime = float64(val - serverSelectionTime)
+				case int32:
+					newMaxTime = float64(val - int32(serverSelectionTime))
 				default:
 					return nil, NewStackErrorf("unable to parse maxTimeMs value %v to float64 or int64", maxtimeMs)
 				}
