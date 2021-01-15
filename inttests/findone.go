@@ -3,7 +3,6 @@ package inttests
 import (
 	"context"
 	"fmt"
-	"go.mongodb.org/mongo-driver/mongo/options"
 	"strings"
 	"time"
 
@@ -12,6 +11,7 @@ import (
 	"github.com/mongodb/slogger/v2/slogger"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 func RunProxyConnectionPerformanceFindOne(iterations, mongoPort, proxyPort int, hostname string, logger *slogger.Logger, mode util.MongoConnectionMode, goals []ConnectionPerformanceTestGoal,
@@ -98,11 +98,15 @@ func runProxyConnectionFindOneWithMaxTimeMs(iterations, mongoPort, proxyPort int
 	defer cancelFunc()
 	client, err := proxyClientFactory(hostname, proxyPort, mode, false, fmt.Sprintf("Test maxTimeMS"), ctx)
 	if err != nil {
-		logger.Logf(slogger.ERROR, "failed to init connection for cleanup. err=%v", err)
+		logger.Logf(slogger.ERROR, "failed to init connection. err=%v", err)
 		return err
 	}
 	defer client.Disconnect(ctx)
-	insertDummyDocs(client, 10, ctx)
+	err = insertDummyDocs(client, 10, ctx)
+	if err != nil {
+		logger.Logf(slogger.ERROR, "failed to insert dummy docs. err=%v", err)
+		return err
+	}
 	maxtime := time.Millisecond * 10000
 	opts := options.FindOptions{MaxTime: &maxtime}
 	_, _, err = runFind(logger, client, 1, ctx, &opts)

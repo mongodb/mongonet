@@ -470,8 +470,8 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 		if mm, ok := m.(*MessageMessage); ok {
 			msg, bodysec, err := MessageMessageToBSOND(mm)
 			if err != nil {
-				ps.proxy.logger.Logf(slogger.ERROR, "error intercepting message %v", err)
-				return nil, NewStackErrorf("error intercepting message %v", err)
+				ps.proxy.logger.Logf(slogger.ERROR, "error converting OP_MSG to bson.D. err=%v", err)
+				return nil, NewStackErrorf("error converting OP_MSG to bson.D. err=%v", err)
 			}
 
 			maxtimeMsIdx := BSONIndexOf(msg, "maxTimeMS")
@@ -485,8 +485,10 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 					newMaxTime = float64(val - serverSelectionTime)
 				case int32:
 					newMaxTime = float64(val - int32(serverSelectionTime))
+				case int:
+					newMaxTime = float64(val - int(serverSelectionTime))
 				default:
-					return nil, ps.RespondWithError(m, NewMongoError(fmt.Errorf("unable to parse maxTimeMs value %v", maxtimeMs), 50, "MaxTimeMSExpired"))
+					return nil, ps.RespondWithError(m, NewMongoError(fmt.Errorf("unable to parse maxTimeMs value %v and type %T", val, val), 50, "MaxTimeMSExpired"))
 				}
 				if newMaxTime < 0 {
 					return nil, ps.RespondWithError(m, NewMongoError(fmt.Errorf("operation took longer than %v", maxtimeMs.Value), 50, "MaxTimeMSExpired"))
