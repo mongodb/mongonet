@@ -126,7 +126,7 @@ func privateSanityTestMongodMode(secondaryMode bool, t *testing.T) {
 		t.Fatalf("failed to disable failpoint. err=%v", err)
 		return
 	}
-	pc := getProxyConfig("localhost", mongoPort, proxyPort, DefaultMaxPoolSize, DefaultMaxPoolIdleTimeSec, util.Direct, false)
+	pc := getProxyConfig("localhost", mongoPort, proxyPort, DefaultMaxPoolSize, DefaultMaxPoolIdleTimeSec, util.Direct, false, nil)
 	privateSanityTester(t, pc, "localhost", proxyPort, mongoPort, ParallelClients, util.Direct, secondaryMode)
 }
 
@@ -137,7 +137,7 @@ func privateSanityTestMongosMode(secondaryMode bool, t *testing.T) {
 		t.Fatalf("failed to disable failpoint. err=%v", err)
 		return
 	}
-	pc := getProxyConfig(hostname, mongoPort, proxyPort, DefaultMaxPoolSize, DefaultMaxPoolIdleTimeSec, util.Cluster, false)
+	pc := getProxyConfig(hostname, mongoPort, proxyPort, DefaultMaxPoolSize, DefaultMaxPoolIdleTimeSec, util.Cluster, false, nil)
 	privateSanityTester(t, pc, hostname, proxyPort, mongoPort, 5, util.Cluster, secondaryMode)
 }
 

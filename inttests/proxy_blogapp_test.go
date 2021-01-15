@@ -25,7 +25,7 @@ func TestProxyMongosModeConnectionPerformanceBlogApp(t *testing.T) {
 		},
 	}
 	for _, goal := range goals {
-		RunIntTest(util.Cluster, 0, goal.Workers, goal.AvgLatencyMs, goal.MaxLatencyMs, t, runProxyConnectionPerformanceBlogApp)
+		RunIntTest(util.Cluster, 0, goal.Workers, goal.AvgLatencyMs, goal.MaxLatencyMs, t, runProxyConnectionPerformanceBlogApp, nil)
 	}
 
 }
@@ -49,6 +49,6 @@ func TestProxyMongodModeConnectionPerformanceBlogApp(t *testing.T) {
 		},
 	}
 	for _, goal := range goals {
-		RunIntTest(util.Direct, 0, goal.Workers, goal.AvgLatencyMs, goal.MaxLatencyMs, t, runProxyConnectionPerformanceBlogApp)
+		RunIntTest(util.Direct, 0, goal.Workers, goal.AvgLatencyMs, goal.MaxLatencyMs, t, runProxyConnectionPerformanceBlogApp, nil)
 	}
 }

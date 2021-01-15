@@ -168,6 +168,7 @@ func RunIntTest(mode util.MongoConnectionMode, maxPoolSize, workers int, targetA
 		mongoClientFactory util.ClientFactoryFunc,
 		proxyClientFactory util.ClientFactoryFunc,
 	) error,
+	blockCommands map[string]time.Duration,
 ) {
 	Iterations := 10
 	mongoPort, proxyPort, hostname := util.GetTestHostAndPorts()
@@ -177,7 +178,7 @@ func RunIntTest(mode util.MongoConnectionMode, maxPoolSize, workers int, targetA
 		hostToUse = "localhost"
 	}
 
-	pc := getProxyConfig(hostToUse, mongoPort, proxyPort, maxPoolSize, DefaultMaxPoolIdleTimeSec, mode, false)
+	pc := getProxyConfig(hostToUse, mongoPort, proxyPort, maxPoolSize, DefaultMaxPoolIdleTimeSec, mode, false, blockCommands)
 	pc.LogLevel = slogger.DEBUG
 	proxy, err := NewProxy(pc)
 	if err != nil {
