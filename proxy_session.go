@@ -74,7 +74,7 @@ func (ps *ProxySession) GetLogger() *slogger.Logger {
 }
 
 func (ps *ProxySession) ServerPort() int {
-	return ps.proxy.config.BindPort
+	return ps.proxy.Config.BindPort
 }
 
 func (ps *ProxySession) Stats() bson.D {
@@ -275,19 +275,19 @@ func PinnedServerSelector(addr address.Address) description.ServerSelector {
 }
 
 func (ps *ProxySession) getMongoConnection(rp *readpref.ReadPref, topology *topology.Topology) (*MongoConnectionWrapper, error) {
-	ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "finding a server")
+	ps.logTrace(ps.proxy.logger, ps.proxy.Config.TraceConnPool, "finding a server")
 	var srvSelector description.ServerSelector
-	if ps.proxy.config.ConnectionMode == util.Cluster {
+	if ps.proxy.Config.ConnectionMode == util.Cluster {
 		srvSelector = description.ReadPrefSelector(rp)
 	} else {
 		// Direct
-		srvSelector = PinnedServerSelector(address.Address(ps.proxy.config.MongoAddress()))
+		srvSelector = PinnedServerSelector(address.Address(ps.proxy.Config.MongoAddress()))
 	}
 	srv, err := topology.SelectServer(ps.proxy.Context, srvSelector)
 	if err != nil {
 		return nil, err
 	}
-	ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "found a server. connecting")
+	ps.logTrace(ps.proxy.logger, ps.proxy.Config.TraceConnPool, "found a server. connecting")
 	ep, ok := srv.(driver.ErrorProcessor)
 	if !ok {
 		return nil, fmt.Errorf("server ErrorProcessor type assertion failed")
@@ -296,12 +296,12 @@ func (ps *ProxySession) getMongoConnection(rp *readpref.ReadPref, topology *topo
 	if err != nil {
 		return nil, err
 	}
-	ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "connected to %v", conn.Address())
+	ps.logTrace(ps.proxy.logger, ps.proxy.Config.TraceConnPool, "connected to %v", conn.Address())
 	ec, ok := conn.(driver.Expirable)
 	if !ok {
 		return nil, fmt.Errorf("bad connection type %T", conn)
 	}
-	return &MongoConnectionWrapper{conn, ep, ec, false, ps.proxy.logger, ps.proxy.config.TraceConnPool}, nil
+	return &MongoConnectionWrapper{conn, ep, ec, false, ps.proxy.logger, ps.proxy.Config.TraceConnPool}, nil
 }
 
 func wrapNetworkError(err error) error {
@@ -336,10 +336,10 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 	var err error
 	var m Message
 	if retryError == nil {
-		ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "reading message from client")
+		ps.logTrace(ps.proxy.logger, ps.proxy.Config.TraceConnPool, "reading message from client")
 		m, err = ReadMessage(ps.conn)
 		if err != nil {
-			ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "reading message from client fail %v", err)
+			ps.logTrace(ps.proxy.logger, ps.proxy.Config.TraceConnPool, "reading message from client fail %v", err)
 			if ps.isMetricsEnabled {
 				hookErr := requestErrorsHook.IncCounterGauge()
 				if hookErr != nil {
@@ -353,7 +353,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 		}
 	} else {
 		m = retryError.MsgToRetry
-		ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "retrying a message from client on rs=%v", retryError.RetryOnRs)
+		ps.logTrace(ps.proxy.logger, ps.proxy.Config.TraceConnPool, "retrying a message from client on rs=%v", retryError.RetryOnRs)
 	}
 
 	isRequestTimerStarted := false
@@ -367,7 +367,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 	}
 
 	var rp *readpref.ReadPref = ps.proxy.defaultReadPref
-	if ps.proxy.config.ConnectionMode == util.Cluster {
+	if ps.proxy.Config.ConnectionMode == util.Cluster {
 		// only concerned about OP_MSG at this point
 		mm, ok := m.(*MessageMessage)
 		if ok {
@@ -386,8 +386,8 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 			}
 		}
 	}
-	ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "got message from client")
-	ps.logMessageTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, m)
+	ps.logTrace(ps.proxy.logger, ps.proxy.Config.TraceConnPool, "got message from client")
+	ps.logMessageTrace(ps.proxy.logger, ps.proxy.Config.TraceConnPool, m)
 	var respInter ResponseInterceptor
 	if ps.interceptor != nil {
 		ps.interceptor.TrackRequest(m.Header())
@@ -434,10 +434,10 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 	if mongoConn == nil || !mongoConn.expirableConn.Alive() {
 		topology := ps.proxy.topology
 		if remoteRs != "" {
-			ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "getting remote connection for %s", remoteRs)
+			ps.logTrace(ps.proxy.logger, ps.proxy.Config.TraceConnPool, "getting remote connection for %s", remoteRs)
 			rc, ok := ps.proxy.remoteConnections.Load(remoteRs)
 			if !ok {
-				ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "failed to get a new remote connection to %s as it wasn't initialized", remoteRs)
+				ps.logTrace(ps.proxy.logger, ps.proxy.Config.TraceConnPool, "failed to get a new remote connection to %s as it wasn't initialized", remoteRs)
 				return nil, NewStackErrorf("failed to get a new remote connection to %s as it wasn't initialized", remoteRs)
 			}
 			topology = rc.(*RemoteConnection).topology
@@ -450,10 +450,10 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 					ps.proxy.logger.Logf(slogger.WARN, "failed to increment requestErrorsHook %v", hookErr)
 				}
 			}
-			ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "failed to get a new connection. err=%v", err)
-			return nil, NewStackErrorf("cannot get connection to mongo %v using connection mode=%v readpref=%v remoteRs=%s", err, ps.proxy.config.ConnectionMode, rp, remoteRs)
+			ps.logTrace(ps.proxy.logger, ps.proxy.Config.TraceConnPool, "failed to get a new connection. err=%v", err)
+			return nil, NewStackErrorf("cannot get connection to mongo %v using connection mode=%v readpref=%v remoteRs=%s", err, ps.proxy.Config.ConnectionMode, rp, remoteRs)
 		}
-		ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "got new connection %v using connection mode=%v readpref=%v remoteRs=%s", mongoConn.conn.ID(), ps.proxy.config.ConnectionMode, rp, remoteRs)
+		ps.logTrace(ps.proxy.logger, ps.proxy.Config.TraceConnPool, "got new connection %v using connection mode=%v readpref=%v remoteRs=%s", mongoConn.conn.ID(), ps.proxy.Config.ConnectionMode, rp, remoteRs)
 	}
 
 	if ps.isMetricsEnabled && isRequestTimerStarted {
@@ -482,10 +482,10 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 
 	for {
 		// Read message back from mongo
-		ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "reading data from mongo conn id=%v remoteRs=%s", mongoConn.conn.ID(), remoteRs)
+		ps.logTrace(ps.proxy.logger, ps.proxy.Config.TraceConnPool, "reading data from mongo conn id=%v remoteRs=%s", mongoConn.conn.ID(), remoteRs)
 		ret, err := mongoConn.conn.ReadWireMessage(ps.proxy.Context, nil)
 		if err != nil {
-			ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "error reading wire message mongo conn id=%v remoteRs=%s. err=%v", mongoConn.conn.ID(), remoteRs, err)
+			ps.logTrace(ps.proxy.logger, ps.proxy.Config.TraceConnPool, "error reading wire message mongo conn id=%v remoteRs=%s. err=%v", mongoConn.conn.ID(), remoteRs, err)
 			if ps.isMetricsEnabled {
 				hookErr := responseErrorsHook.IncCounterGauge()
 				if hookErr != nil {
@@ -506,10 +506,10 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 			}
 		}
 
-		ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "read data from mongo conn %v", mongoConn.conn.ID())
+		ps.logTrace(ps.proxy.logger, ps.proxy.Config.TraceConnPool, "read data from mongo conn %v", mongoConn.conn.ID())
 		resp, err := ReadMessageFromBytes(ret)
 		if err != nil {
-			ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "error reading message from bytes on mongo conn id=%v remoteRs=%s. err=%v", mongoConn.conn.ID(), remoteRs, err)
+			ps.logTrace(ps.proxy.logger, ps.proxy.Config.TraceConnPool, "error reading message from bytes on mongo conn id=%v remoteRs=%s. err=%v", mongoConn.conn.ID(), remoteRs, err)
 			if ps.isMetricsEnabled {
 				hookErr := responseErrorsHook.IncCounterGauge()
 				if hookErr != nil {
@@ -530,7 +530,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 						ps.proxy.logger.Logf(slogger.WARN, "failed to increment responseErrorsHook %v", hookErr)
 					}
 				}
-				ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "processing error %v on mongo conn id=%v remoteRs=%s", err, mongoConn.conn.ID(), remoteRs)
+				ps.logTrace(ps.proxy.logger, ps.proxy.Config.TraceConnPool, "processing error %v on mongo conn id=%v remoteRs=%s", err, mongoConn.conn.ID(), remoteRs)
 				mongoConn.ep.ProcessError(err, mongoConn.conn)
 			}
 		case *ReplyMessage:
@@ -541,7 +541,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 						ps.proxy.logger.Logf(slogger.WARN, "failed to increment responseErrorsHook %v", hookErr)
 					}
 				}
-				ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "processing error %v on mongo conn id=%v remoteRs=%s", err, mongoConn.conn.ID(), remoteRs)
+				ps.logTrace(ps.proxy.logger, ps.proxy.Config.TraceConnPool, "processing error %v on mongo conn id=%v remoteRs=%s", err, mongoConn.conn.ID(), remoteRs)
 				mongoConn.ep.ProcessError(err, mongoConn.conn)
 			}
 		}
@@ -561,13 +561,13 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 			}
 		}
 
-		ps.logMessageTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, resp)
+		ps.logMessageTrace(ps.proxy.logger, ps.proxy.Config.TraceConnPool, resp)
 		if ps.isMetricsEnabled && isResponseTimerStarted {
 			responseDurationHook.StopTimer()
 		}
 
 		// Send message back to user
-		ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "sending back data to user from mongo conn id=%v remoteRs=%s", mongoConn.conn.ID(), remoteRs)
+		ps.logTrace(ps.proxy.logger, ps.proxy.Config.TraceConnPool, "sending back data to user from mongo conn id=%v remoteRs=%s", mongoConn.conn.ID(), remoteRs)
 		err = SendMessage(resp, ps.conn)
 		if err != nil {
 			if ps.isMetricsEnabled {
@@ -577,10 +577,10 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 				}
 			}
 			mongoConn.bad = true
-			ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "got error sending response to client from conn id=%v remoteRs=%s. err=%v", mongoConn.conn.ID(), remoteRs, err)
+			ps.logTrace(ps.proxy.logger, ps.proxy.Config.TraceConnPool, "got error sending response to client from conn id=%v remoteRs=%s. err=%v", mongoConn.conn.ID(), remoteRs, err)
 			return nil, NewStackErrorf("got error sending response to client from conn %v: %v", mongoConn.conn.ID(), err)
 		}
-		ps.logTrace(ps.proxy.logger, ps.proxy.config.TraceConnPool, "sent back data to user from mongo conn id=%v remoteRs=%s", mongoConn.conn.ID(), remoteRs)
+		ps.logTrace(ps.proxy.logger, ps.proxy.Config.TraceConnPool, "sent back data to user from mongo conn id=%v remoteRs=%s", mongoConn.conn.ID(), remoteRs)
 		if ps.interceptor != nil {
 			ps.interceptor.TrackResponse(resp.Header())
 		}

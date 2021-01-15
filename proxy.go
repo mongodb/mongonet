@@ -23,7 +23,7 @@ import (
 )
 
 type Proxy struct {
-	config ProxyConfig
+	Config ProxyConfig
 	server *Server
 
 	logger          *slogger.Logger
@@ -138,7 +138,7 @@ func getMongoClientFromProxyConfig(p *Proxy, pc ProxyConfig, ctx context.Context
 	} else {
 		uri = pc.MongoURI
 	}
-	opts := getBaseClientOptions(p, uri, pc.AppName, p.config.TraceConnPool, pc.ServerSelectionTimeoutSec, pc.MaxPoolSize, pc.MaxPoolIdleTimeSec, pc.ConnectionPoolHeartbeatIntervalMs)
+	opts := getBaseClientOptions(p, uri, pc.AppName, p.Config.TraceConnPool, pc.ServerSelectionTimeoutSec, pc.MaxPoolSize, pc.MaxPoolIdleTimeSec, pc.ConnectionPoolHeartbeatIntervalMs)
 	opts.
 		SetDirect(pc.ConnectionMode == util.Direct)
 
@@ -184,15 +184,19 @@ func (p *Proxy) ClearRemoteConnection(rsName string, additionalGracePeriodSec in
 	defer cancelFn()
 	// remote connections only has *mongo.Client, so no need for type check here. being extra safe about null clients just in case.
 	if rc.(*RemoteConnection).client != nil {
-		return rc.(*RemoteConnection).client.Disconnect(ctx2)
+		err := rc.(*RemoteConnection).client.Disconnect(ctx2)
+		if err != nil {
+			return err
+		}
 	}
-	p.logger.Logf(slogger.DEBUG, "remote connection client is nil")
+	p.remoteConnections.Delete(rsName)
+	p.logger.Logf(slogger.DEBUG, "remote connection %s cleared", rsName)
 	return nil
 }
 
 func (p *Proxy) InitializeServer() {
 	server := Server{
-		p.config.ServerConfig,
+		p.Config.ServerConfig,
 		p.logger,
 		p,
 		make(chan struct{}),
@@ -214,9 +218,9 @@ func (p *Proxy) OnSSLConfig(sslPairs []*SSLPair) (ok bool, names []string, errs 
 }
 
 func (p *Proxy) NewLogger(prefix string) *slogger.Logger {
-	filters := []slogger.TurboFilter{slogger.TurboLevelFilter(p.config.LogLevel)}
+	filters := []slogger.TurboFilter{slogger.TurboLevelFilter(p.Config.LogLevel)}
 
-	appenders := p.config.Appenders
+	appenders := p.Config.Appenders
 	if appenders == nil {
 		appenders = []slogger.Appender{slogger.StdOutAppender()}
 	}
@@ -244,29 +248,29 @@ func (p *Proxy) CreateWorker(session *Session) (ServerWorker, error) {
 	var err error
 
 	ps := &ProxySession{session, p, nil, nil, nil, false}
-	if p.config.InterceptorFactory != nil {
-		ps.interceptor, err = ps.proxy.config.InterceptorFactory.NewInterceptor(ps)
+	if p.Config.InterceptorFactory != nil {
+		ps.interceptor, err = ps.proxy.Config.InterceptorFactory.NewInterceptor(ps)
 		if err != nil {
 			return nil, err
 		}
 
-		if ps.proxy.config.CollectorHookFactory != nil {
-			requestDurationHook, err := ps.proxy.config.CollectorHookFactory.NewHook("processingDuration", "type", "request_total")
+		if ps.proxy.Config.CollectorHookFactory != nil {
+			requestDurationHook, err := ps.proxy.Config.CollectorHookFactory.NewHook("processingDuration", "type", "request_total")
 			if err != nil {
 				return nil, err
 			}
 
-			responseDurationHook, err := ps.proxy.config.CollectorHookFactory.NewHook("processingDuration", "type", "response_total")
+			responseDurationHook, err := ps.proxy.Config.CollectorHookFactory.NewHook("processingDuration", "type", "response_total")
 			if err != nil {
 				return nil, err
 			}
 
-			requestErrorsHook, err := ps.proxy.config.CollectorHookFactory.NewHook("processingErrors", "type", "request")
+			requestErrorsHook, err := ps.proxy.Config.CollectorHookFactory.NewHook("processingErrors", "type", "request")
 			if err != nil {
 				return nil, err
 			}
 
-			responseErrorsHook, err := ps.proxy.config.CollectorHookFactory.NewHook("processingErrors", "type", "response")
+			responseErrorsHook, err := ps.proxy.Config.CollectorHookFactory.NewHook("processingErrors", "type", "response")
 			if err != nil {
 				return nil, err
 			}
