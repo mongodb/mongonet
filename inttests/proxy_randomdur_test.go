@@ -25,7 +25,7 @@ func TestProxyMongosModeConnectionPerformanceFindUpdateRandomDur(t *testing.T) {
 		},
 	}
 	for _, goal := range goals {
-		RunIntTest(util.Cluster, 0, goal.Workers, goal.AvgLatencyMs, goal.MaxLatencyMs, t, runProxyConnectionPerformanceFindUpdateRandomDur)
+		RunIntTest(util.Cluster, 0, goal.Workers, goal.AvgLatencyMs, goal.MaxLatencyMs, t, runProxyConnectionPerformanceFindUpdateRandomDur, nil)
 	}
 
 }
@@ -49,6 +49,6 @@ func TestProxyMongodModeConnectionPerformanceFindUpdateRandomDur(t *testing.T) {
 		},
 	}
 	for _, goal := range goals {
-		RunIntTest(util.Direct, 0, goal.Workers, goal.AvgLatencyMs, goal.MaxLatencyMs, t, runProxyConnectionPerformanceFindUpdateRandomDur)
+		RunIntTest(util.Direct, 0, goal.Workers, goal.AvgLatencyMs, goal.MaxLatencyMs, t, runProxyConnectionPerformanceFindUpdateRandomDur, nil)
 	}
 }

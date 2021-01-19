@@ -228,3 +228,23 @@ func extractError(rdr bsoncore.Document) error {
 
 	return nil
 }
+
+func MessageMessageToBSOND(m *MessageMessage) (bson.D, *BodySection, error) {
+	var bodySection *BodySection = nil
+	for _, section := range m.Sections {
+		if bs, ok := section.(*BodySection); ok {
+			if bodySection != nil {
+				return nil, nil, fmt.Errorf("OP_MSG should have only one body section!")
+			}
+			bodySection = bs
+		}
+	}
+	if bodySection == nil {
+		return nil, nil, fmt.Errorf("OP_MSG should have a body section!")
+	}
+	cmd, err := bodySection.Body.ToBSOND()
+	if err != nil {
+		return nil, nil, fmt.Errorf("Unable to parse body section as bson: %v", err)
+	}
+	return cmd, bodySection, nil
+}

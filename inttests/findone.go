@@ -3,6 +3,7 @@ package inttests
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	. "github.com/mongodb/mongonet"
@@ -10,6 +11,7 @@ import (
 	"github.com/mongodb/slogger/v2/slogger"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 func RunProxyConnectionPerformanceFindOne(iterations, mongoPort, proxyPort int, hostname string, logger *slogger.Logger, mode util.MongoConnectionMode, goals []ConnectionPerformanceTestGoal,
@@ -24,13 +26,13 @@ func RunProxyConnectionPerformanceFindOne(iterations, mongoPort, proxyPort int, 
 	return nil
 }
 
-func runFind(logger *slogger.Logger, client *mongo.Client, workerNum int, ctx context.Context) (time.Duration, bool, error) {
+func runFind(logger *slogger.Logger, client *mongo.Client, workerNum int, ctx context.Context, opts *options.FindOptions) (time.Duration, bool, error) {
 	start := time.Now()
 	dbName, collName := "test2", "foo"
 	doc := bson.D{}
 	coll := client.Database(dbName).Collection(collName)
 
-	cur, err := coll.Find(ctx, bson.D{{"x", workerNum}})
+	cur, err := coll.Find(ctx, bson.D{{"x", workerNum}}, opts)
 	if err != nil {
 		return 0, false, fmt.Errorf("failed to run find. err=%v", err)
 	}
@@ -66,7 +68,7 @@ func runProxyConnectionPerformanceFindOne(iterations, mongoPort, proxyPort int, 
 	}
 
 	testFunc := func(logger *slogger.Logger, client *mongo.Client, workerNum, iteration int, ctx context.Context) (elapsed time.Duration, success bool, err error) {
-		return runFind(logger, client, workerNum, ctx)
+		return runFind(logger, client, workerNum, ctx, nil)
 	}
 
 	cleanupFunc := func(logger *slogger.Logger, client *mongo.Client, ctx context.Context) error {
@@ -84,4 +86,39 @@ func runProxyConnectionPerformanceFindOne(iterations, mongoPort, proxyPort int, 
 	)
 
 	return analyzeResults(err, workers, failedCount, avgLatencyMs, targetAvgLatencyMs, maxLatencyMs, targetMaxLatencyMs, results, percentiles, logger)
+}
+
+func runProxyConnectionFindOneWithMaxTimeMs(iterations, mongoPort, proxyPort int, hostname string, logger *slogger.Logger, workers int, targetAvgLatencyMs, targetMaxLatencyMs int64, mode util.MongoConnectionMode,
+	mongoClientFactory util.ClientFactoryFunc,
+	proxyClientFactory util.ClientFactoryFunc,
+) error {
+
+	var client *mongo.Client
+	ctx, cancelFunc := context.WithTimeout(context.Background(), util.ClientTimeoutSecForTests)
+	defer cancelFunc()
+	client, err := proxyClientFactory(hostname, proxyPort, mode, false, fmt.Sprintf("Test maxTimeMS"), ctx)
+	if err != nil {
+		logger.Logf(slogger.ERROR, "failed to init connection. err=%v", err)
+		return err
+	}
+	defer client.Disconnect(ctx)
+	err = insertDummyDocs(client, 10, ctx)
+	if err != nil {
+		logger.Logf(slogger.ERROR, "failed to insert dummy docs. err=%v", err)
+		return err
+	}
+	maxtime := time.Millisecond * 10000
+	opts := options.FindOptions{MaxTime: &maxtime}
+	_, _, err = runFind(logger, client, 1, ctx, &opts)
+	if err != nil {
+		return fmt.Errorf("test failed with error %v", err)
+	}
+	maxtime = time.Millisecond * 9
+	opts = options.FindOptions{MaxTime: &maxtime}
+	_, _, err = runFind(logger, client, 1, ctx, &opts)
+	if err == nil || !strings.Contains(err.Error(), "MaxTimeMSExpired") {
+		return fmt.Errorf("expected maxtimeMS error but got error %v", err)
+	}
+
+	return nil
 }

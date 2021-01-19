@@ -56,6 +56,8 @@ type ProxyInterceptor interface {
 	TrackResponse(MessageHeader)
 	CheckConnection() error
 	CheckConnectionInterval() time.Duration
+	SetClientMessage(message Message)
+	GetClientMessage() Message
 }
 
 type ProxyInterceptorFactory interface {
@@ -357,6 +359,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 	}
 
 	isRequestTimerStarted := false
+	startServerSelection := time.Now()
 	if ps.isMetricsEnabled {
 		hookErr := requestDurationHook.StartTimer()
 		if hookErr != nil {
@@ -458,6 +461,46 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 
 	if ps.isMetricsEnabled && isRequestTimerStarted {
 		requestDurationHook.StopTimer()
+	}
+
+	serverSelectionTime := time.Now().Sub(startServerSelection).Milliseconds()
+
+	if ps.proxy.Config.ConnectionMode == util.Cluster {
+		// only concerned about OP_MSG at this point
+		if mm, ok := m.(*MessageMessage); ok {
+			msg, bodysec, err := MessageMessageToBSOND(mm)
+			if err != nil {
+				ps.proxy.logger.Logf(slogger.ERROR, "error converting OP_MSG to bson.D. err=%v", err)
+				return nil, NewStackErrorf("error converting OP_MSG to bson.D. err=%v", err)
+			}
+
+			maxtimeMsIdx := BSONIndexOf(msg, "maxTimeMS")
+			if maxtimeMsIdx >= 0 {
+				maxtimeMs := msg[maxtimeMsIdx]
+				newMaxTime := 0.0
+				switch val := maxtimeMs.Value.(type) {
+				case float64:
+					newMaxTime = val - float64(serverSelectionTime)
+				case int64:
+					newMaxTime = float64(val - serverSelectionTime)
+				case int32:
+					newMaxTime = float64(val - int32(serverSelectionTime))
+				case int:
+					newMaxTime = float64(val - int(serverSelectionTime))
+				default:
+					return nil, ps.RespondWithError(m, NewMongoError(fmt.Errorf("unable to parse maxTimeMs value %v and type %T", val, val), 50, "MaxTimeMSExpired"))
+				}
+				if newMaxTime < 0 {
+					return nil, ps.RespondWithError(m, NewMongoError(fmt.Errorf("operation took longer than %v", maxtimeMs.Value), 50, "MaxTimeMSExpired"))
+				}
+				maxtimeMs.Value = newMaxTime
+				msg[maxtimeMsIdx] = maxtimeMs
+				bodysec.Body, err = SimpleBSONConvert(msg)
+				if err != nil {
+					return nil, NewStackErrorf("failed to convert message after updating maxTimeMs %v", err)
+				}
+			}
+		}
 	}
 
 	// Send message to mongo

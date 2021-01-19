@@ -47,10 +47,11 @@ type MyFactory struct {
 	mongoPort       int
 	proxyPort       int
 	disableIsMaster bool
+	blockCommands   map[string]time.Duration
 }
 
 func (myf *MyFactory) NewInterceptor(ps *ProxySession) (ProxyInterceptor, error) {
-	return &MyInterceptor{ps, myf.mode, myf.mongoPort, myf.proxyPort, myf.disableIsMaster}, nil
+	return &MyInterceptor{ps, myf.mode, myf.mongoPort, myf.proxyPort, myf.disableIsMaster, myf.blockCommands}, nil
 }
 
 type SimulateRetryFixer struct {
@@ -221,6 +222,11 @@ type MyInterceptor struct {
 	mongoPort                int
 	proxyPort                int
 	disableStreamingIsMaster bool
+	blockCommands            map[string]time.Duration
+}
+
+func (myi *MyInterceptor) GetClientMessage() Message {
+	return nil
 }
 
 func (myi *MyInterceptor) Close() {
@@ -228,6 +234,10 @@ func (myi *MyInterceptor) Close() {
 func (myi *MyInterceptor) TrackRequest(MessageHeader) {
 }
 func (myi *MyInterceptor) TrackResponse(MessageHeader) {
+}
+
+func (myi *MyInterceptor) SetClientMessage(message Message) {
+	return
 }
 
 func (myi *MyInterceptor) CheckConnection() error {
@@ -305,7 +315,16 @@ func (myi *MyInterceptor) InterceptClientToMongo(m Message) (Message, ResponseIn
 			}
 		}
 
-		switch strings.ToLower(doc[0].Key) {
+		cmd := strings.ToLower(doc[0].Key)
+
+		if myi.blockCommands != nil {
+			blockTime, ok := myi.blockCommands[cmd]
+			if ok {
+				time.Sleep(blockTime)
+			}
+		}
+
+		switch cmd {
 		case "ismaster":
 			// streaming isMaster is enabled. no need to fix
 			if !myi.disableStreamingIsMaster {
@@ -373,13 +392,13 @@ func getRandStringArray(maxArrLen, strLen int) []string {
 	return arr
 }
 
-func getProxyConfig(hostname string, mongoPort, proxyPort, maxPoolSize, maxPoolIdleTimeSec int, mode util.MongoConnectionMode, enableTracing bool) ProxyConfig {
+func getProxyConfig(hostname string, mongoPort, proxyPort, maxPoolSize, maxPoolIdleTimeSec int, mode util.MongoConnectionMode, enableTracing bool, blockCommands map[string]time.Duration) ProxyConfig {
 	var uri string
 	if mode == util.Cluster {
 		uri = fmt.Sprintf("mongodb://%s:%v,%s:%v,%s:%v/?replSet=proxytest", hostname, mongoPort, hostname, mongoPort+1, hostname, mongoPort+2)
 	}
 	pc := NewProxyConfig("localhost", proxyPort, uri, hostname, mongoPort, "", "", "test proxy", enableTracing, mode, ServerSelectionTimeoutSecForTests, maxPoolSize, maxPoolIdleTimeSec, 500)
 	pc.MongoSSLSkipVerify = true
-	pc.InterceptorFactory = &MyFactory{mode, mongoPort, proxyPort, false}
+	pc.InterceptorFactory = &MyFactory{mode, mongoPort, proxyPort, false, blockCommands}
 	return pc
 }

@@ -2,6 +2,7 @@ package inttests
 
 import (
 	"testing"
+	"time"
 
 	"github.com/mongodb/mongonet/util"
 )
@@ -25,7 +26,7 @@ func TestProxyMongosModeConnectionPerformanceFindOne(t *testing.T) {
 		},
 	}
 	for _, goal := range goals {
-		RunIntTest(util.Cluster, 0, goal.Workers, goal.AvgLatencyMs, goal.MaxLatencyMs, t, runProxyConnectionPerformanceFindOne)
+		RunIntTest(util.Cluster, 0, goal.Workers, goal.AvgLatencyMs, goal.MaxLatencyMs, t, runProxyConnectionPerformanceFindOne, nil)
 	}
 
 }
@@ -49,6 +50,16 @@ func TestProxyMongodModeConnectionPerformanceFindOne(t *testing.T) {
 		},
 	}
 	for _, goal := range goals {
-		RunIntTest(util.Direct, 0, goal.Workers, goal.AvgLatencyMs, goal.MaxLatencyMs, t, runProxyConnectionPerformanceFindOne)
+		RunIntTest(util.Direct, 0, goal.Workers, goal.AvgLatencyMs, goal.MaxLatencyMs, t, runProxyConnectionPerformanceFindOne, nil)
 	}
+}
+
+func TestFindWithMaxTimeMS(t *testing.T) {
+	goal := ConnectionPerformanceTestGoal{
+		Workers:      5,
+		AvgLatencyMs: 50,
+		MaxLatencyMs: 200,
+	}
+	blockFind := map[string]time.Duration{"find": 10 * time.Millisecond}
+	RunIntTest(util.Cluster, 0, goal.Workers, goal.AvgLatencyMs, goal.MaxLatencyMs, t, runProxyConnectionFindOneWithMaxTimeMs, blockFind)
 }
