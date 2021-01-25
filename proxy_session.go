@@ -50,7 +50,13 @@ type ResponseInterceptor interface {
 }
 
 type ProxyInterceptor interface {
-	InterceptClientToMongo(m Message) (newMsg Message, ri ResponseInterceptor, remoteRs string, err error)
+	InterceptClientToMongo(m Message) (
+		newMsg Message,
+		ri ResponseInterceptor,
+		remoteRs string,
+		pinnedAddress address.Address,
+		err error,
+	)
 	Close()
 	TrackRequest(MessageHeader)
 	TrackResponse(MessageHeader)
@@ -276,15 +282,27 @@ func PinnedServerSelector(addr address.Address) description.ServerSelector {
 	})
 }
 
-func (ps *ProxySession) getMongoConnection(rp *readpref.ReadPref, topology *topology.Topology) (*MongoConnectionWrapper, error) {
+func (ps *ProxySession) getMongoConnection(
+	rp *readpref.ReadPref,
+	topology *topology.Topology,
+	pinnedAddress address.Address,
+	) (*MongoConnectionWrapper, error) {
 	ps.logTrace(ps.proxy.logger, ps.proxy.Config.TraceConnPool, "finding a server")
 	var srvSelector description.ServerSelector
-	if ps.proxy.Config.ConnectionMode == util.Cluster {
+
+	switch {
+
+	case len(pinnedAddress.String()) > 0:
+		srvSelector = PinnedServerSelector(pinnedAddress)
+
+	case ps.proxy.Config.ConnectionMode == util.Cluster:
 		srvSelector = description.ReadPrefSelector(rp)
-	} else {
+
+	default:
 		// Direct
 		srvSelector = PinnedServerSelector(address.Address(ps.proxy.Config.MongoAddress()))
 	}
+
 	srv, err := topology.SelectServer(ps.proxy.Context, srvSelector)
 	if err != nil {
 		return nil, err
@@ -392,9 +410,10 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 	ps.logTrace(ps.proxy.logger, ps.proxy.Config.TraceConnPool, "got message from client")
 	ps.logMessageTrace(ps.proxy.logger, ps.proxy.Config.TraceConnPool, m)
 	var respInter ResponseInterceptor
+	var pinnedAddress address.Address
 	if ps.interceptor != nil {
 		ps.interceptor.TrackRequest(m.Header())
-		m, respInter, remoteRs, err = ps.interceptor.InterceptClientToMongo(m)
+		m, respInter, remoteRs, pinnedAddress, err = ps.interceptor.InterceptClientToMongo(m)
 		if err != nil {
 			if m == nil {
 				if ps.isMetricsEnabled {
@@ -445,7 +464,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 			}
 			topology = rc.(*RemoteConnection).topology
 		}
-		mongoConn, err = ps.getMongoConnection(rp, topology)
+		mongoConn, err = ps.getMongoConnection(rp, topology, pinnedAddress)
 		if err != nil {
 			if ps.isMetricsEnabled {
 				hookErr := requestErrorsHook.IncCounterGauge()

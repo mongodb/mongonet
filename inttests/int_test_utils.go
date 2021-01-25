@@ -248,22 +248,22 @@ func (myi *MyInterceptor) CheckConnectionInterval() time.Duration {
 	return 0
 }
 
-func (myi *MyInterceptor) InterceptClientToMongo(m Message) (Message, ResponseInterceptor, string, error) {
+func (myi *MyInterceptor) InterceptClientToMongo(m Message) (Message, ResponseInterceptor, string, string, error) {
 	switch mm := m.(type) {
 	case *QueryMessage:
 		if !NamespaceIsCommand(mm.Namespace) {
-			return m, nil, "", nil
+			return m, nil, "", "", nil
 		}
 
 		query, err := mm.Query.ToBSOND()
 		if err != nil || len(query) == 0 {
 			// let mongod handle error message
-			return m, nil, "", nil
+			return m, nil, "", "", nil
 		}
 
 		cmdName := strings.ToLower(query[0].Key)
 		if cmdName != "ismaster" {
-			return m, nil, "", nil
+			return m, nil, "", "", nil
 		}
 		// remove client
 		if idx := BSONIndexOf(query, "client"); idx >= 0 {
@@ -289,18 +289,18 @@ func (myi *MyInterceptor) InterceptClientToMongo(m Message) (Message, ResponseIn
 		for _, section := range mm.Sections {
 			if bs, ok := section.(*BodySection); ok {
 				if bodySection != nil {
-					return mm, nil, "", NewStackErrorf("OP_MSG should not have more than one body section!  Second body section: %v", bs)
+					return mm, nil, "", "", NewStackErrorf("OP_MSG should not have more than one body section!  Second body section: %v", bs)
 				}
 				bodySection = bs
 			}
 		}
 
 		if bodySection == nil {
-			return mm, nil, "", NewStackErrorf("OP_MSG should have a body section!")
+			return mm, nil, "", "", NewStackErrorf("OP_MSG should have a body section!")
 		}
 		doc, err := bodySection.Body.ToBSOND()
 		if err != nil {
-			return mm, nil, "", err
+			return mm, nil, "", "", err
 		}
 		var rsName string
 		var db string
@@ -328,7 +328,7 @@ func (myi *MyInterceptor) InterceptClientToMongo(m Message) (Message, ResponseIn
 		case "ismaster":
 			// streaming isMaster is enabled. no need to fix
 			if !myi.disableStreamingIsMaster {
-				return mm, nil, rsName, nil
+				return mm, nil, rsName, "", nil
 			}
 			// fixing isMaster request when streamingIsMaster is disabled
 			if idx := BSONIndexOf(doc, "maxAwaitTimeMS"); idx >= 0 {
@@ -342,18 +342,18 @@ func (myi *MyInterceptor) InterceptClientToMongo(m Message) (Message, ResponseIn
 				panic(err)
 			}
 			bodySection.Body = n
-			return mm, &IsMasterFixer{myi.mode, myi.mongoPort, myi.proxyPort}, rsName, nil
+			return mm, &IsMasterFixer{myi.mode, myi.mongoPort, myi.proxyPort}, rsName, "", nil
 		case "find":
 			if db == util.RetryOnRemoteDbNameForTests {
-				return mm, &SimulateRetryFixer{mm}, "", nil
+				return mm, &SimulateRetryFixer{mm}, "", "", nil
 			}
-			return mm, nil, rsName, nil
+			return mm, nil, rsName, "", nil
 		default:
-			return mm, nil, rsName, nil
+			return mm, nil, rsName, "", nil
 		}
 	}
 
-	return m, nil, "", nil
+	return m, nil, "", "", nil
 }
 
 const charset = "abcdefghijklmnopqrstuvwxyz" +
