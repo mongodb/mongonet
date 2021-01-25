@@ -184,46 +184,6 @@ func (s *Session) RespondToCommand(clientMessage Message, doc SimpleBSON) error 
 
 }
 
-func (s *Session) RespondToGetMore(clientMessage Message, cursorFound bool, queryFailureErr error, cursorID int64, docs []SimpleBSON) error {
-	if clientMessage.Header().OpCode != OP_GET_MORE {
-		return errors.New("Internal error")
-	}
-
-	var flags int32 = 0
-	if !cursorFound {
-		flags |= 1 // 1st bit set indicates cursor not found
-		cursorID = 0
-		docs = []SimpleBSON{}
-	}
-
-	if queryFailureErr != nil {
-		flags |= 2 // 2nd bit indicates query failure
-		if docs == nil || len(docs) == 0 {
-			doc, err := SimpleBSONConvert(bson.D{{"$err", queryFailureErr.Error()}})
-			if err != nil {
-				return errors.New("Internal error")
-			}
-			docs = []SimpleBSON{doc}
-		}
-	}
-
-	replyMessage := &ReplyMessage{
-		MessageHeader{
-			0,
-			17, // Copying this from other places in the mongonet code
-			clientMessage.Header().RequestID,
-			OP_REPLY,
-		},
-		flags,
-		cursorID,
-		0, // unused
-		int32(len(docs)),
-		docs,
-	}
-
-	return SendMessage(replyMessage, s.conn)
-}
-
 func (s *Session) RespondWithError(clientMessage Message, err error) error {
 	s.logger.Logf(slogger.INFO, "RespondWithError %v", err)
 	var errBSON bson.D
