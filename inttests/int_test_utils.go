@@ -248,7 +248,13 @@ func (myi *MyInterceptor) CheckConnectionInterval() time.Duration {
 	return 0
 }
 
-func (myi *MyInterceptor) InterceptClientToMongo(m Message) (Message, ResponseInterceptor, string, string, error) {
+func (myi *MyInterceptor) InterceptClientToMongo(m Message) (
+	Message,
+	ResponseInterceptor,
+	string,
+	address.Address,
+	error,
+	) {
 	switch mm := m.(type) {
 	case *QueryMessage:
 		if !NamespaceIsCommand(mm.Namespace) {
