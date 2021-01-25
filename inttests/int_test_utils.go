@@ -254,7 +254,7 @@ func (myi *MyInterceptor) InterceptClientToMongo(m Message) (
 	string,
 	address.Address,
 	error,
-	) {
+) {
 	switch mm := m.(type) {
 	case *QueryMessage:
 		if !NamespaceIsCommand(mm.Namespace) {
