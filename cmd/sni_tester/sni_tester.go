@@ -50,7 +50,7 @@ func (myi *MyInterceptor) InterceptClientToMongo(m mongonet.Message) (
 	string,
 	address.Address,
 	error,
-	) {
+) {
 	switch mm := m.(type) {
 	case *mongonet.QueryMessage:
 		if !mongonet.NamespaceIsCommand(mm.Namespace) {
