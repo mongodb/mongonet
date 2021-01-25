@@ -288,7 +288,7 @@ func (myi *MyInterceptor) InterceptClientToMongo(m Message) (
 			panic(err)
 		}
 		mm.Query = qb
-		return mm, &IsMasterFixer{myi.mode, myi.mongoPort, myi.proxyPort}, "", nil
+		return mm, &IsMasterFixer{myi.mode, myi.mongoPort, myi.proxyPort}, "", "", nil
 	case *MessageMessage:
 		var err error
 		var bodySection *BodySection = nil

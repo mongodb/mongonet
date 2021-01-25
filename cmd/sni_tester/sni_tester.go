@@ -69,7 +69,7 @@ func (myi *MyInterceptor) InterceptClientToMongo(m mongonet.Message) (
 			return m, nil, "", "", nil
 		}
 
-		return nil, nil, "", newSNIError(myi.ps.RespondToCommand(mm, myi.sniResponse()))
+		return nil, nil, "", "", newSNIError(myi.ps.RespondToCommand(mm, myi.sniResponse()))
 	case *mongonet.CommandMessage:
 		if mm.CmdName != "sni" {
 			return mm, nil, "", "", nil
