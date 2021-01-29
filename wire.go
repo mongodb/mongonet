@@ -158,14 +158,14 @@ type MessageMessage struct {
 	Sections []MessageMessageSection
 }
 
-func (mm *MessageMessage) BodyDoc() bsoncore.Document {
+func (mm *MessageMessage) BodyDoc() (bsoncore.Document, error) {
 	// when parsed in in parseMessageMessage we checked that there was exactly one BodySection
 	// as such we can stop as soon as we find it
 	for _, sec := range mm.Sections {
 		if bodySection, ok := sec.(*BodySection); ok && bodySection != nil {
-			return bsoncore.Document(bodySection.Body.BSON)
+			return bsoncore.Document(bodySection.Body.BSON), nil
 		}
 	}
 
-	panic(fmt.Errorf("unreachable"))
+	return nil, fmt.Errorf("no body section found for OP_MSG")
 }

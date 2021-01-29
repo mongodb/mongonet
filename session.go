@@ -124,6 +124,7 @@ func (s *Session) RespondToCommandMakeBSON(clientMessage Message, args ...interf
 	return s.RespondToCommand(clientMessage, doc2)
 }
 
+// do not call with OP_GET_MORE
 func (s *Session) RespondToCommand(clientMessage Message, doc SimpleBSON) error {
 	switch clientMessage.Header().OpCode {
 
@@ -176,7 +177,7 @@ func (s *Session) RespondToCommand(clientMessage Message, doc SimpleBSON) error 
 		return SendMessage(rm, s.conn)
 
 	case OP_GET_MORE:
-		return errors.New("Internal error")
+		return errors.New("Internal error.  Should not be passing a GET_MORE message here.")
 
 	default:
 		return ErrUnknownOpcode

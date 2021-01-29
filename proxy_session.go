@@ -228,7 +228,12 @@ func logPanic(logger *slogger.Logger) {
 }
 
 func getReadPrefFromOpMsg(mm *MessageMessage, logger *slogger.Logger, defaultRp *readpref.ReadPref) (rp *readpref.ReadPref, err error) {
-	rpVal, err2 := mm.BodyDoc().LookupErr("$readPreference")
+	bodyDoc, err2 := mm.BodyDoc()
+	if err != nil {
+		return nil, fmt.Errorf("Error getting body of document: %v", err2)
+	}
+
+	rpVal, err2 := bodyDoc.LookupErr("$readPreference")
 	if err2 != nil {
 		if err2 == bsoncore.ErrElementNotFound {
 			return defaultRp, nil
@@ -585,7 +590,11 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 		}
 		switch mm := resp.(type) {
 		case *MessageMessage:
-			if err := extractError(mm.BodyDoc()); err != nil {
+			bodyDoc, err := mm.BodyDoc()
+			if err != nil {
+				return nil, fmt.Errorf("Error getting body doc: %v", err)
+			}
+			if err := extractError(bodyDoc); err != nil {
 				if ps.isMetricsEnabled {
 					hookErr := responseErrorsHook.IncCounterGauge()
 					if hookErr != nil {
