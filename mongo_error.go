@@ -10,10 +10,19 @@ type MongoError struct {
 	err      error
 	code     int
 	codeName string
+	errInfo string
 }
 
 func NewMongoError(err error, code int, codeName string) MongoError {
-	return MongoError{err, code, codeName}
+	return MongoError{err, code, codeName, ""}
+}
+
+func NewMongoErrorWithInfo(err error, code int, codeName string, errInfo string) MongoError {
+	return MongoError{err, code, codeName, errInfo}
+}
+
+func (me MongoError) GetErrorInfo() string {
+	return me.errInfo
 }
 
 func (me MongoError) ToBSON() bson.D {
@@ -28,6 +37,14 @@ func (me MongoError) ToBSON() bson.D {
 		bson.E{"codeName", me.codeName})
 
 	return doc
+}
+
+func (me MongoError) GetCode() int {
+	return me.code
+}
+
+func (me MongoError) GetCodeName() string {
+	return me.codeName
 }
 
 func (me MongoError) Error() string {
