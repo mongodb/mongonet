@@ -14,15 +14,6 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/readpref"
 )
 
-type CursorRes struct {
-	Id int64  `bson:"id"`
-	Ns string `bson:"ns"`
-}
-
-type FindRes struct {
-	Cursor CursorRes `bson:"cursor"`
-}
-
 func TestPinnedServer(t *testing.T) {
 	mongoPort, proxyPort, hostname := util.GetTestHostAndPorts()
 	pc := getProxyConfig(hostname, mongoPort, proxyPort, DefaultMaxPoolSize, DefaultMaxPoolIdleTimeSec, util.Cluster, false, nil)

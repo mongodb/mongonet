@@ -296,13 +296,10 @@ func (ps *ProxySession) getMongoConnection(
 	var srvSelector description.ServerSelector
 
 	switch {
-
 	case len(pinnedAddress.String()) > 0:
 		srvSelector = PinnedServerSelector(pinnedAddress)
-
 	case ps.proxy.Config.ConnectionMode == util.Cluster:
 		srvSelector = description.ReadPrefSelector(rp)
-
 	default:
 		// Direct
 		srvSelector = PinnedServerSelector(address.Address(ps.proxy.Config.MongoAddress()))
