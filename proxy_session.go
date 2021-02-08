@@ -292,7 +292,7 @@ func (ps *ProxySession) getMongoConnection(
 	topology *topology.Topology,
 	pinnedAddress address.Address,
 ) (*MongoConnectionWrapper, error) {
-	ps.logTrace(ps.proxy.logger, ps.proxy.Config.TraceConnPool, "finding a server")
+	ps.logTrace(ps.proxy.logger, ps.proxy.Config.TraceConnPool, "finding a server. readpref=%v, pinnedAddress=%v", rp, pinnedAddress)
 	var srvSelector description.ServerSelector
 
 	switch {
