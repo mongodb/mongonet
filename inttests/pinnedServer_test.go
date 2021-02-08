@@ -52,6 +52,7 @@ func TestPinnedServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer cur.Close(goctx)
 	docsFound := 0
 	i := cur.RemainingBatchLength()
 	for i > 0 {
