@@ -32,7 +32,6 @@ func insertDummyDocs(client *mongo.Client, numOfDocs int, ctx context.Context) e
 	if _, err := coll.InsertMany(ctx, docs); err != nil {
 		return fmt.Errorf("initial insert failed. err: %v", err)
 	}
-	fmt.Println("inserted", numOfDocs, "dummy docs")
 	return nil
 }
 
