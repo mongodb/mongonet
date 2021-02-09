@@ -110,22 +110,25 @@ func parseMessageMessage(header MessageHeader, buf []byte) (Message, error) {
 	loc := 4
 
 	sections := make([]MessageMessageSection, 0)
-	var hasBodySection bool
+
+	numBodySections := 0
+
 	for (len(buf) - loc) >= 5 { // need at least 5 bytes left for kind byte and size
 		section, kind, err := parseMessageMessageSection(buf, &loc)
 		if err != nil {
 			return msg, err
 		}
-		if kind == BodySectionKind {
-			if section.(*BodySection) != nil {
-				hasBodySection = true
-				msg.BodyDoc = section.(*BodySection).Body.BSON
-			}
+		if kind == BodySectionKind && section.(*BodySection) != nil {
+			numBodySections++
 		}
 		sections = append(sections, section)
 	}
-	if !hasBodySection {
+
+	if numBodySections < 1 {
 		return msg, fmt.Errorf("invalid OP_MSG - no body section found or body section is nil")
+	}
+	if numBodySections > 1 {
+		return msg, fmt.Errorf("invalid OP_MSG - more than one body section.  There are %v body sections.", numBodySections)
 	}
 
 	msg.Sections = sections
