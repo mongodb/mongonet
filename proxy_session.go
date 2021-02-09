@@ -601,6 +601,10 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 				}
 				if pre, ok := err.(*ProxyRetryError); ok {
 					pre.MsgToRetry = ps.interceptor.GetClientMessage()
+					//switch mm := pre.MsgToRetry.(type) {
+					//case *MessageMessage:
+					//	bm := MessageMessageToBSOND(&mm)
+					//}
 					return nil, pre
 				}
 				return nil, NewStackErrorf("error intercepting message %v", err)
