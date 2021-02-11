@@ -124,7 +124,7 @@ func (s *Session) RespondToCommandMakeBSON(clientMessage Message, args ...interf
 	return s.RespondToCommand(clientMessage, doc2)
 }
 
-// do not call with OP_GET_MORE
+// do not call with OP_GET_MORE since we never added support for that
 func (s *Session) RespondToCommand(clientMessage Message, doc SimpleBSON) error {
 	switch clientMessage.Header().OpCode {
 
