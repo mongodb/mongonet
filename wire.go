@@ -1,6 +1,10 @@
 package mongonet
 
-import "go.mongodb.org/mongo-driver/x/bsonx/bsoncore"
+import (
+	"go.mongodb.org/mongo-driver/x/bsonx/bsoncore"
+
+	"fmt"
+)
 
 const (
 	OP_REPLY         = 1
@@ -49,8 +53,15 @@ type ReplyMessage struct {
 	StartingFrom   int32
 	NumberReturned int32
 
-	Docs       []SimpleBSON
-	CommandDoc bsoncore.Document
+	Docs []SimpleBSON
+}
+
+func (rm *ReplyMessage) CommandDoc() bsoncore.Document {
+	if len(rm.Docs) == 0 {
+		return nil
+	}
+
+	return bsoncore.Document(rm.Docs[0].BSON)
 }
 
 // OP_UPDATE
@@ -145,5 +156,16 @@ type MessageMessage struct {
 
 	FlagBits int32
 	Sections []MessageMessageSection
-	BodyDoc  bsoncore.Document
+}
+
+func (mm *MessageMessage) BodyDoc() (bsoncore.Document, error) {
+	// when parsed in in parseMessageMessage we checked that there was exactly one BodySection
+	// as such we can stop as soon as we find it
+	for _, sec := range mm.Sections {
+		if bodySection, ok := sec.(*BodySection); ok && bodySection != nil {
+			return bsoncore.Document(bodySection.Body.BSON), nil
+		}
+	}
+
+	return nil, fmt.Errorf("no body section found for OP_MSG")
 }

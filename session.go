@@ -10,7 +10,6 @@ import (
 
 	"github.com/mongodb/slogger/v2/slogger"
 	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/x/bsonx/bsoncore"
 )
 
 type Session struct {
@@ -125,6 +124,7 @@ func (s *Session) RespondToCommandMakeBSON(clientMessage Message, args ...interf
 	return s.RespondToCommand(clientMessage, doc2)
 }
 
+// do not call with OP_GET_MORE since we never added support for that
 func (s *Session) RespondToCommand(clientMessage Message, doc SimpleBSON) error {
 	switch clientMessage.Header().OpCode {
 
@@ -140,7 +140,6 @@ func (s *Session) RespondToCommand(clientMessage Message, doc SimpleBSON) error 
 			0, // StartingFrom
 			1, // NumberReturned
 			[]SimpleBSON{doc},
-			bsoncore.Document(doc.BSON),
 		}
 		return SendMessage(rm, s.conn)
 
@@ -174,9 +173,11 @@ func (s *Session) RespondToCommand(clientMessage Message, doc SimpleBSON) error 
 					doc,
 				},
 			},
-			bsoncore.Document(doc.BSON),
 		}
 		return SendMessage(rm, s.conn)
+
+	case OP_GET_MORE:
+		return errors.New("Internal error.  Should not be passing a GET_MORE message here.")
 
 	default:
 		return ErrUnknownOpcode
@@ -217,7 +218,6 @@ func (s *Session) RespondWithError(clientMessage Message, err error) error {
 			0, // StartingFrom
 			1, // NumberReturned
 			[]SimpleBSON{doc},
-			bsoncore.Document(doc.BSON),
 		}
 		return SendMessage(rm, s.conn)
 
@@ -251,7 +251,6 @@ func (s *Session) RespondWithError(clientMessage Message, err error) error {
 					doc,
 				},
 			},
-			bsoncore.Document(doc.BSON),
 		}
 		return SendMessage(rm, s.conn)
 

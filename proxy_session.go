@@ -46,11 +46,17 @@ type MetricsHookFactory interface {
 }
 
 type ResponseInterceptor interface {
-	InterceptMongoToClient(m Message) (Message, error)
+	InterceptMongoToClient(m Message, serverAddress address.Address) (Message, error)
 }
 
 type ProxyInterceptor interface {
-	InterceptClientToMongo(m Message) (newMsg Message, ri ResponseInterceptor, remoteRs string, err error)
+	InterceptClientToMongo(m Message) (
+		newMsg Message,
+		ri ResponseInterceptor,
+		remoteRs string,
+		pinnedAddress address.Address,
+		err error,
+	)
 	Close()
 	TrackRequest(MessageHeader)
 	TrackResponse(MessageHeader)
@@ -168,7 +174,6 @@ func (ps *ProxySession) respondWithError(clientMessage Message, err error) error
 			0, // StartingFrom
 			1, // NumberReturned
 			[]SimpleBSON{doc},
-			bsoncore.Document(doc.BSON),
 		}
 		return SendMessage(rm, ps.conn)
 
@@ -198,7 +203,6 @@ func (ps *ProxySession) respondWithError(clientMessage Message, err error) error
 					doc,
 				},
 			},
-			bsoncore.Document(doc.BSON),
 		}
 		return SendMessage(rm, ps.conn)
 
@@ -224,7 +228,12 @@ func logPanic(logger *slogger.Logger) {
 }
 
 func getReadPrefFromOpMsg(mm *MessageMessage, logger *slogger.Logger, defaultRp *readpref.ReadPref) (rp *readpref.ReadPref, err error) {
-	rpVal, err2 := mm.BodyDoc.LookupErr("$readPreference")
+	bodyDoc, err2 := mm.BodyDoc()
+	if err != nil {
+		return nil, fmt.Errorf("Error getting body of document: %v", err2)
+	}
+
+	rpVal, err2 := bodyDoc.LookupErr("$readPreference")
 	if err2 != nil {
 		if err2 == bsoncore.ErrElementNotFound {
 			return defaultRp, nil
@@ -278,15 +287,24 @@ func PinnedServerSelector(addr address.Address) description.ServerSelector {
 	})
 }
 
-func (ps *ProxySession) getMongoConnection(rp *readpref.ReadPref, topology *topology.Topology) (*MongoConnectionWrapper, error) {
-	ps.logTrace(ps.proxy.logger, ps.proxy.Config.TraceConnPool, "finding a server")
+func (ps *ProxySession) getMongoConnection(
+	rp *readpref.ReadPref,
+	topology *topology.Topology,
+	pinnedAddress address.Address,
+) (*MongoConnectionWrapper, error) {
+	ps.logTrace(ps.proxy.logger, ps.proxy.Config.TraceConnPool, "finding a server. readpref=%v, pinnedAddress=%v", rp, pinnedAddress)
 	var srvSelector description.ServerSelector
-	if ps.proxy.Config.ConnectionMode == util.Cluster {
+
+	switch {
+	case len(pinnedAddress.String()) > 0:
+		srvSelector = PinnedServerSelector(pinnedAddress)
+	case ps.proxy.Config.ConnectionMode == util.Cluster:
 		srvSelector = description.ReadPrefSelector(rp)
-	} else {
+	default:
 		// Direct
 		srvSelector = PinnedServerSelector(address.Address(ps.proxy.Config.MongoAddress()))
 	}
+
 	srv, err := topology.SelectServer(ps.proxy.Context, srvSelector)
 	if err != nil {
 		return nil, err
@@ -394,9 +412,10 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 	ps.logTrace(ps.proxy.logger, ps.proxy.Config.TraceConnPool, "got message from client")
 	ps.logMessageTrace(ps.proxy.logger, ps.proxy.Config.TraceConnPool, m)
 	var respInter ResponseInterceptor
+	var pinnedAddress address.Address
 	if ps.interceptor != nil {
 		ps.interceptor.TrackRequest(m.Header())
-		m, respInter, remoteRs, err = ps.interceptor.InterceptClientToMongo(m)
+		m, respInter, remoteRs, pinnedAddress, err = ps.interceptor.InterceptClientToMongo(m)
 		if err != nil {
 			if m == nil {
 				if ps.isMetricsEnabled {
@@ -447,7 +466,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 			}
 			topology = rc.(*RemoteConnection).topology
 		}
-		mongoConn, err = ps.getMongoConnection(rp, topology)
+		mongoConn, err = ps.getMongoConnection(rp, topology, pinnedAddress)
 		if err != nil {
 			if ps.isMetricsEnabled {
 				hookErr := requestErrorsHook.IncCounterGauge()
@@ -568,7 +587,11 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 		}
 		switch mm := resp.(type) {
 		case *MessageMessage:
-			if err := extractError(mm.BodyDoc); err != nil {
+			bodyDoc, err := mm.BodyDoc()
+			if err != nil {
+				return nil, fmt.Errorf("Error getting body doc: %v", err)
+			}
+			if err := extractError(bodyDoc); err != nil {
 				if ps.isMetricsEnabled {
 					hookErr := responseErrorsHook.IncCounterGauge()
 					if hookErr != nil {
@@ -579,7 +602,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 				mongoConn.ep.ProcessError(err, mongoConn.conn)
 			}
 		case *ReplyMessage:
-			if err := extractError(mm.CommandDoc); err != nil {
+			if err := extractError(mm.CommandDoc()); err != nil {
 				if ps.isMetricsEnabled {
 					hookErr := responseErrorsHook.IncCounterGauge()
 					if hookErr != nil {
@@ -591,7 +614,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 			}
 		}
 		if respInter != nil {
-			resp, err = respInter.InterceptMongoToClient(resp)
+			resp, err = respInter.InterceptMongoToClient(resp, mongoConn.conn.Address())
 			if err != nil {
 				if ps.isMetricsEnabled {
 					hookErr := responseErrorsHook.IncCounterGauge()

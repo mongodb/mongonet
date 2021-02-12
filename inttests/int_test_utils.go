@@ -13,6 +13,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/x/mongo/driver/address"
 )
 
 const (
@@ -50,43 +51,33 @@ type MyFactory struct {
 }
 
 func (myf *MyFactory) NewInterceptor(ps *ProxySession) (ProxyInterceptor, error) {
-	return &MyInterceptor{ps, myf.mode, myf.mongoPort, myf.proxyPort, myf.disableIsMaster, myf.blockCommands}, nil
+	return &MyInterceptor{ps, myf.mode, myf.mongoPort, myf.proxyPort, myf.disableIsMaster, myf.blockCommands, NewLightCursorManager()}, nil
 }
 
-type SimulateRetryFixer struct {
+type FindFixer struct {
 	OriginalMessage Message
+	simulateRetry   bool
+	cm              *LightCursorManager
 }
 
-func (srf *SimulateRetryFixer) InterceptMongoToClient(m Message) (Message, error) {
+func (ff *FindFixer) InterceptMongoToClient(m Message, address address.Address) (Message, error) {
 	switch mm := m.(type) {
 	case *MessageMessage:
-		var err error
-		var bodySection *BodySection = nil
-		for _, section := range mm.Sections {
-			if bs, ok := section.(*BodySection); ok {
-				if bodySection != nil {
-					return mm, NewStackErrorf("OP_MSG should not have more than one body section!  Second body section: %v", bs)
-				}
-				bodySection = bs
-			} else {
-				// MongoDB 3.6 does not support anything other than body sections in replies
-				return mm, NewStackErrorf("OP_MSG replies with sections other than a body section are not supported!")
-			}
-		}
-
-		if bodySection == nil {
-			return mm, NewStackErrorf("OP_MSG should have a body section!")
-		}
-		doc, err := bodySection.Body.ToBSOND()
+		doc, _, err := MessageMessageToBSOND(mm)
 		if err != nil {
-			return mm, err
+			return mm, NewStackErrorf("failed to get BSON.D from OP_MSG. err=%v", err)
 		}
-		val := BSONGetValueByNestedPathForTests(doc, "cursor.firstBatch.val", 0)
-		if v, ok := val.(int32); ok {
-			fmt.Println("SimulateRetryFixer::got ", v)
-			// trigger a retry error only if the server responds with a particular value
-			if v == util.RetryOnRemoteVal {
-				return mm, NewProxyRetryError(srf.OriginalMessage, util.RemoteRsName)
+		cidRaw := BSONGetValueByNestedPathForTests(doc, "cursor.id", 0)
+		if cid, ok := cidRaw.(int64); ok && cid > 0 {
+			ff.cm.Store(cid, address)
+		}
+		if ff.simulateRetry {
+			val := BSONGetValueByNestedPathForTests(doc, "cursor.firstBatch.val", 0)
+			if v, ok := val.(int32); ok {
+				// trigger a retry error only if the server responds with a particular value
+				if v == util.RetryOnRemoteVal {
+					return mm, NewProxyRetryError(ff.OriginalMessage, util.RemoteRsName)
+				}
 			}
 		}
 		return mm, nil
@@ -159,7 +150,7 @@ func fixIsMasterDirect(doc bson.D, mongoPort, proxyPort int) (SimpleBSON, error)
 	return SimpleBSONConvert(doc)
 }
 
-func (mri *IsMasterFixer) InterceptMongoToClient(m Message) (Message, error) {
+func (mri *IsMasterFixer) InterceptMongoToClient(m Message, address address.Address) (Message, error) {
 	switch mm := m.(type) {
 	case *ReplyMessage:
 		var err error
@@ -222,6 +213,7 @@ type MyInterceptor struct {
 	proxyPort                int
 	disableStreamingIsMaster bool
 	blockCommands            map[string]time.Duration
+	cursorManager            *LightCursorManager
 }
 
 func (myi *MyInterceptor) GetClientMessage() Message {
@@ -247,22 +239,28 @@ func (myi *MyInterceptor) CheckConnectionInterval() time.Duration {
 	return 0
 }
 
-func (myi *MyInterceptor) InterceptClientToMongo(m Message) (Message, ResponseInterceptor, string, error) {
+func (myi *MyInterceptor) InterceptClientToMongo(m Message) (
+	Message,
+	ResponseInterceptor,
+	string,
+	address.Address,
+	error,
+) {
 	switch mm := m.(type) {
 	case *QueryMessage:
 		if !NamespaceIsCommand(mm.Namespace) {
-			return m, nil, "", nil
+			return m, nil, "", "", nil
 		}
 
 		query, err := mm.Query.ToBSOND()
 		if err != nil || len(query) == 0 {
 			// let mongod handle error message
-			return m, nil, "", nil
+			return m, nil, "", "", nil
 		}
 
 		cmdName := strings.ToLower(query[0].Key)
 		if cmdName != "ismaster" {
-			return m, nil, "", nil
+			return m, nil, "", "", nil
 		}
 		// remove client
 		if idx := BSONIndexOf(query, "client"); idx >= 0 {
@@ -281,25 +279,11 @@ func (myi *MyInterceptor) InterceptClientToMongo(m Message) (Message, ResponseIn
 			panic(err)
 		}
 		mm.Query = qb
-		return mm, &IsMasterFixer{myi.mode, myi.mongoPort, myi.proxyPort}, "", nil
+		return mm, &IsMasterFixer{myi.mode, myi.mongoPort, myi.proxyPort}, "", "", nil
 	case *MessageMessage:
-		var err error
-		var bodySection *BodySection = nil
-		for _, section := range mm.Sections {
-			if bs, ok := section.(*BodySection); ok {
-				if bodySection != nil {
-					return mm, nil, "", NewStackErrorf("OP_MSG should not have more than one body section!  Second body section: %v", bs)
-				}
-				bodySection = bs
-			}
-		}
-
-		if bodySection == nil {
-			return mm, nil, "", NewStackErrorf("OP_MSG should have a body section!")
-		}
-		doc, err := bodySection.Body.ToBSOND()
+		doc, bodySection, err := MessageMessageToBSOND(mm)
 		if err != nil {
-			return mm, nil, "", err
+			panic(err)
 		}
 		var rsName string
 		var db string
@@ -327,7 +311,7 @@ func (myi *MyInterceptor) InterceptClientToMongo(m Message) (Message, ResponseIn
 		case "ismaster":
 			// streaming isMaster is enabled. no need to fix
 			if !myi.disableStreamingIsMaster {
-				return mm, nil, rsName, nil
+				return mm, nil, rsName, "", nil
 			}
 			// fixing isMaster request when streamingIsMaster is disabled
 			if idx := BSONIndexOf(doc, "maxAwaitTimeMS"); idx >= 0 {
@@ -341,18 +325,25 @@ func (myi *MyInterceptor) InterceptClientToMongo(m Message) (Message, ResponseIn
 				panic(err)
 			}
 			bodySection.Body = n
-			return mm, &IsMasterFixer{myi.mode, myi.mongoPort, myi.proxyPort}, rsName, nil
+			return mm, &IsMasterFixer{myi.mode, myi.mongoPort, myi.proxyPort}, rsName, "", nil
 		case "find":
 			if db == util.RetryOnRemoteDbNameForTests {
-				return mm, &SimulateRetryFixer{mm}, "", nil
+				return mm, &FindFixer{mm, true, myi.cursorManager}, "", "", nil
 			}
-			return mm, nil, rsName, nil
+			return mm, &FindFixer{mm, false, myi.cursorManager}, rsName, "", nil
+		case "getmore":
+			cid, ok := doc[0].Value.(int64)
+			if !ok {
+				panic(fmt.Sprintf("got %T for cursor id but expected int64", cid))
+			}
+			addr, _ := myi.cursorManager.Load(cid)
+			return mm, nil, rsName, addr, nil
 		default:
-			return mm, nil, rsName, nil
+			return mm, nil, rsName, "", nil
 		}
 	}
 
-	return m, nil, "", nil
+	return m, nil, "", "", nil
 }
 
 const charset = "abcdefghijklmnopqrstuvwxyz" +
