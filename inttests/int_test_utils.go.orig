@@ -61,7 +61,11 @@ type FindFixer struct {
 	cm              *LightCursorManager
 }
 
+<<<<<<< HEAD
+func (ff *FindFixer) InterceptMongoToClient(m Message, address address.Address) (Message, error) {
+=======
 func (ff *FindFixer) InterceptMongoToClient(m Message, address address.Address, isRemote bool) (Message, error) {
+>>>>>>> 153f8bf3e65396adc279ed47a54eeab02e7275a2
 	switch mm := m.(type) {
 	case *MessageMessage:
 		doc, _, err := MessageMessageToBSOND(mm)
@@ -151,7 +155,11 @@ func fixIsMasterDirect(doc bson.D, mongoPort, proxyPort int) (SimpleBSON, error)
 	return SimpleBSONConvert(doc)
 }
 
+<<<<<<< HEAD
+func (mri *IsMasterFixer) InterceptMongoToClient(m Message, address address.Address) (Message, error) {
+=======
 func (mri *IsMasterFixer) InterceptMongoToClient(m Message, address address.Address, isRemote bool) (Message, error) {
+>>>>>>> 153f8bf3e65396adc279ed47a54eeab02e7275a2
 	switch mm := m.(type) {
 	case *ReplyMessage:
 		var err error
@@ -217,11 +225,19 @@ type MyInterceptor struct {
 	cursorManager            *LightCursorManager
 }
 
+func (myi *MyInterceptor) GetClientMessage() Message {
+	return nil
+}
+
 func (myi *MyInterceptor) Close() {
 }
 func (myi *MyInterceptor) TrackRequest(MessageHeader) {
 }
 func (myi *MyInterceptor) TrackResponse(MessageHeader) {
+}
+
+func (myi *MyInterceptor) SetClientMessage(message Message) {
+	return
 }
 
 func (myi *MyInterceptor) CheckConnection() error {
