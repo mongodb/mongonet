@@ -61,7 +61,7 @@ type FindFixer struct {
 	cm              *LightCursorManager
 }
 
-func (ff *FindFixer) InterceptMongoToClient(m Message, address address.Address, isRemote bool) (Message, error) {
+func (ff *FindFixer) InterceptMongoToClient(m Message, address address.Address) (Message, error) {
 	switch mm := m.(type) {
 	case *MessageMessage:
 		doc, _, err := MessageMessageToBSOND(mm)
@@ -151,7 +151,7 @@ func fixIsMasterDirect(doc bson.D, mongoPort, proxyPort int) (SimpleBSON, error)
 	return SimpleBSONConvert(doc)
 }
 
-func (mri *IsMasterFixer) InterceptMongoToClient(m Message, address address.Address, isRemote bool) (Message, error) {
+func (mri *IsMasterFixer) InterceptMongoToClient(m Message, address address.Address) (Message, error) {
 	switch mm := m.(type) {
 	case *ReplyMessage:
 		var err error
