@@ -46,7 +46,7 @@ type MetricsHookFactory interface {
 }
 
 type ResponseInterceptor interface {
-	InterceptMongoToClient(m Message, serverAddress address.Address) (Message, error)
+	InterceptMongoToClient(m Message, serverAddress address.Address, isRemote bool) (Message, error)
 }
 
 type ProxyInterceptor interface {
@@ -612,7 +612,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 			}
 		}
 		if respInter != nil {
-			resp, err = respInter.InterceptMongoToClient(resp, mongoConn.conn.Address())
+			resp, err = respInter.InterceptMongoToClient(resp, mongoConn.conn.Address(), remoteRs != "")
 			if err != nil {
 				if ps.isMetricsEnabled {
 					hookErr := responseErrorsHook.IncCounterGauge()
