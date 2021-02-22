@@ -39,10 +39,18 @@ func (me MongoError) GetCodeName() string {
 }
 
 func (me MongoError) Error() string {
-	return fmt.Sprintf(
-		"code=%v codeName=%v errmsg = %v",
-		me.code,
-		me.codeName,
-		me.err.Error(),
-	)
+	if me.err != nil {
+		return fmt.Sprintf(
+			"code=%v codeName=%v errmsg = %v",
+			me.code,
+			me.codeName,
+			me.err.Error(),
+		)
+	} else {
+		return fmt.Sprintf(
+			"code=%v codeName=%v",
+			me.code,
+			me.codeName,
+		)
+	}
 }
