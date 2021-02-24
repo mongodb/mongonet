@@ -138,6 +138,26 @@ func GetAsBSON(elem bson.E) (bson.D, string, error) {
 	}
 }
 
+func GetAsStringArray(elem bson.E) ([]string, string, error) {
+	tipe := fmt.Sprintf("%T", elem.Value)
+	switch val := elem.Value.(type) {
+	case primitive.A:
+		res := make([]string, len(val))
+		for num, raw := range []interface{}(val) {
+			switch fixed := raw.(type) {
+			case string:
+				res[num] = fixed
+			default:
+				return nil, tipe, NewStackErrorf("not string %T %s", raw, raw)
+			}
+			return res, tipe, nil
+		}
+	default:
+		return nil, tipe, NewStackErrorf("not an array %T", elem.Value)
+	}
+	return nil, tipe, NewStackErrorf("not an array %T", elem.Value)
+}
+
 func getAsBsonDocsArray(val []interface{}, tipe string) ([]bson.D, string, error) {
 	a := make([]bson.D, len(val))
 	for num, raw := range val {

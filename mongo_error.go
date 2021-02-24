@@ -2,7 +2,6 @@ package mongonet
 
 import (
 	"fmt"
-
 	"go.mongodb.org/mongo-driver/bson"
 )
 
@@ -10,10 +9,24 @@ type MongoError struct {
 	err      error
 	code     int
 	codeName string
+	labels   []string
 }
 
 func NewMongoError(err error, code int, codeName string) MongoError {
-	return MongoError{err, code, codeName}
+	return MongoError{err, code, codeName, nil}
+}
+
+func NewMongoErrorWithLabels(err error, code int, codeName string, labels []string) MongoError {
+	return MongoError{err, code, codeName, labels}
+}
+
+func (me MongoError) HasLabel(label string) bool {
+	for _, val := range me.labels {
+		if val == label {
+			return true
+		}
+	}
+	return false
 }
 
 func (me MongoError) ToBSON() bson.D {
