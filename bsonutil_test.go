@@ -37,7 +37,7 @@ func TestGetAsStringArray(test *testing.T) {
 	if res[0] != "test1" {
 		test.Errorf("expected test1, but got %v", res[0])
 	}
-	if res[0] != "test2" {
+	if res[1] != "test2" {
 		test.Errorf("expected test2, but got %v", res[0])
 	}
 }

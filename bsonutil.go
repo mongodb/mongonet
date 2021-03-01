@@ -155,7 +155,6 @@ func GetAsStringArray(elem bson.E) ([]string, string, error) {
 	default:
 		return nil, tipe, NewStackErrorf("not an array %T", elem.Value)
 	}
-	return nil, tipe, NewStackErrorf("not an array %T", elem.Value)
 }
 
 func getAsBsonDocsArray(val []interface{}, tipe string) ([]bson.D, string, error) {
