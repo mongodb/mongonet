@@ -150,8 +150,8 @@ func GetAsStringArray(elem bson.E) ([]string, string, error) {
 			default:
 				return nil, tipe, NewStackErrorf("not string %T %s", raw, raw)
 			}
-			return res, tipe, nil
 		}
+		return res, tipe, nil
 	default:
 		return nil, tipe, NewStackErrorf("not an array %T", elem.Value)
 	}

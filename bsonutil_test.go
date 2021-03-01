@@ -27,6 +27,21 @@ func TestBSONIndexOf(test *testing.T) {
 	}
 }
 
+func TestGetAsStringArray(test *testing.T) {
+	val := bson.A{"test1", "test2"}
+	doc := bson.E{"a", val}
+	res, _, _ := GetAsStringArray(doc)
+	if len(res) != 2 {
+		test.Errorf("result should of length 2, but got %v", len(res))
+	}
+	if res[0] != "test1" {
+		test.Errorf("expected test1, but got %v", res[0])
+	}
+	if res[0] != "test2" {
+		test.Errorf("expected test2, but got %v", res[0])
+	}
+}
+
 type testWalker struct {
 	seen []bson.E
 }
