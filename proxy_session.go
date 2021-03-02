@@ -62,8 +62,6 @@ type ProxyInterceptor interface {
 	TrackResponse(MessageHeader)
 	CheckConnection() error
 	CheckConnectionInterval() time.Duration
-	SetClientMessage(message Message)
-	GetClientMessage() Message
 }
 
 type ProxyInterceptorFactory interface {

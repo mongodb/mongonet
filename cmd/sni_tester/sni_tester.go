@@ -28,10 +28,6 @@ type MyInterceptor struct {
 	ps *mongonet.ProxySession
 }
 
-func (myi *MyInterceptor) GetClientMessage() mongonet.Message {
-	return nil
-}
-
 func (myi *MyInterceptor) sniResponse() mongonet.SimpleBSON {
 	doc := bson.D{{"sniName", myi.ps.SSLServerName}, {"ok", 1}}
 	raw, err := mongonet.SimpleBSONConvert(doc)
@@ -39,10 +35,6 @@ func (myi *MyInterceptor) sniResponse() mongonet.SimpleBSON {
 		panic(err)
 	}
 	return raw
-}
-
-func (myi *MyInterceptor) SetClientMessage(message mongonet.Message) {
-	return
 }
 
 func (myi *MyInterceptor) InterceptClientToMongo(m mongonet.Message) (

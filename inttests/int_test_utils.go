@@ -216,19 +216,11 @@ type MyInterceptor struct {
 	cursorManager            *LightCursorManager
 }
 
-func (myi *MyInterceptor) GetClientMessage() Message {
-	return nil
-}
-
 func (myi *MyInterceptor) Close() {
 }
 func (myi *MyInterceptor) TrackRequest(MessageHeader) {
 }
 func (myi *MyInterceptor) TrackResponse(MessageHeader) {
-}
-
-func (myi *MyInterceptor) SetClientMessage(message Message) {
-	return
 }
 
 func (myi *MyInterceptor) CheckConnection() error {
