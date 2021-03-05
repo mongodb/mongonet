@@ -14,17 +14,19 @@ import (
 // ---
 
 type ProxyRetryError struct {
-	MsgToRetry Message
-	RetryOnRs  string
+	MsgToRetry     Message
+	PreviousResult SimpleBSON
+	RetryOnRs      string
 }
 
 func (e *ProxyRetryError) Error() string {
 	return fmt.Sprintf("ProxyRetryError - going to retry on %s", e.RetryOnRs)
 }
 
-func NewProxyRetryError(msgToRetry Message, retryOnRs string) *ProxyRetryError {
+func NewProxyRetryError(msgToRetry Message, previousRes SimpleBSON, retryOnRs string) *ProxyRetryError {
 	return &ProxyRetryError{
 		msgToRetry,
+		previousRes,
 		retryOnRs,
 	}
 }
