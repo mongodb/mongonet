@@ -76,7 +76,7 @@ func (ff *FindFixer) InterceptMongoToClient(m Message, address address.Address, 
 			if v, ok := val.(int32); ok {
 				// trigger a retry error only if the server responds with a particular value
 				if v == util.RetryOnRemoteVal {
-					return mm, NewProxyRetryError(ff.OriginalMessage, util.RemoteRsName)
+					return mm, NewProxyRetryError(ff.OriginalMessage, SimpleBSON{}, util.RemoteRsName)
 				}
 			}
 		}
@@ -231,7 +231,7 @@ func (myi *MyInterceptor) CheckConnectionInterval() time.Duration {
 	return 0
 }
 
-func (myi *MyInterceptor) InterceptClientToMongo(m Message) (
+func (myi *MyInterceptor) InterceptClientToMongo(m Message, previousResult SimpleBSON) (
 	Message,
 	ResponseInterceptor,
 	string,

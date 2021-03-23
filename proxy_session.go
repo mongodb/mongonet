@@ -50,7 +50,7 @@ type ResponseInterceptor interface {
 }
 
 type ProxyInterceptor interface {
-	InterceptClientToMongo(m Message) (
+	InterceptClientToMongo(m Message, previousResult SimpleBSON) (
 		newMsg Message,
 		ri ResponseInterceptor,
 		remoteRs string,
@@ -355,6 +355,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 	// reading message from client
 	var err error
 	var m Message
+	var previousRes SimpleBSON
 	if retryError == nil {
 		ps.logTrace(ps.proxy.logger, ps.proxy.Config.TraceConnPool, "reading message from client")
 		m, err = ReadMessage(ps.conn)
@@ -373,6 +374,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 		}
 	} else {
 		m = retryError.MsgToRetry
+		previousRes = retryError.PreviousResult
 		ps.logTrace(ps.proxy.logger, ps.proxy.Config.TraceConnPool, "retrying a message from client on rs=%v", retryError.RetryOnRs)
 	}
 
@@ -413,7 +415,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 	var pinnedAddress address.Address
 	if ps.interceptor != nil {
 		ps.interceptor.TrackRequest(m.Header())
-		m, respInter, remoteRs, pinnedAddress, err = ps.interceptor.InterceptClientToMongo(m)
+		m, respInter, remoteRs, pinnedAddress, err = ps.interceptor.InterceptClientToMongo(m, previousRes)
 		if err != nil {
 			if m == nil {
 				if ps.isMetricsEnabled {
