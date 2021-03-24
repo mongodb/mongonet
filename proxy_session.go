@@ -274,14 +274,18 @@ func getReadPrefFromOpMsg(mm *MessageMessage, logger *slogger.Logger, defaultRp 
 	}
 }
 
-func PinnedServerSelector(addr address.Address) description.ServerSelector {
+func (ps *ProxySession) PinnedServerSelector(addr address.Address, fallbackToDefault bool) description.ServerSelector {
 	return description.ServerSelectorFunc(func(t description.Topology, candidates []description.Server) ([]description.Server, error) {
 		for _, s := range candidates {
 			if s.Addr == addr {
 				return []description.Server{s}, nil
 			}
 		}
-		return nil, nil
+		if !fallbackToDefault {
+			return nil, nil
+		}
+		ps.logTrace(ps.proxy.logger, ps.proxy.Config.TraceConnPool, "couldn't find a server in candidates, using a default Server with addr=%v", addr)
+		return []description.Server{description.NewDefaultServer(addr)}, nil
 	})
 }
 
@@ -295,12 +299,12 @@ func (ps *ProxySession) getMongoConnection(
 
 	switch {
 	case len(pinnedAddress.String()) > 0:
-		srvSelector = PinnedServerSelector(pinnedAddress)
+		srvSelector = ps.PinnedServerSelector(pinnedAddress, true)
 	case ps.proxy.Config.ConnectionMode == util.Cluster:
 		srvSelector = description.ReadPrefSelector(rp)
 	default:
 		// Direct
-		srvSelector = PinnedServerSelector(address.Address(ps.proxy.Config.MongoAddress()))
+		srvSelector = ps.PinnedServerSelector(address.Address(ps.proxy.Config.MongoAddress()), false)
 	}
 
 	srv, err := topology.SelectServer(ps.proxy.Context, srvSelector)
