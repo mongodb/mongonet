@@ -3,7 +3,7 @@ package inttests
 import (
 	"sync"
 
-	"go.mongodb.org/mongo-driver/x/mongo/driver/address"
+	"go.mongodb.org/mongo-driver/mongo/address"
 )
 
 /*

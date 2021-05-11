@@ -14,15 +14,15 @@ import (
 func TestBSONIndexOf(test *testing.T) {
 	doc := bson.D{{"a", 1}, {"b", 3}}
 
-	if 0 != BSONIndexOf(doc, "a") {
+	if BSONIndexOf(doc, "a") != 0 {
 		test.Errorf("index of a is wrong")
 	}
 
-	if 1 != BSONIndexOf(doc, "b") {
+	if BSONIndexOf(doc, "b") != 1 {
 		test.Errorf("index of b is wrong")
 	}
 
-	if -1 != BSONIndexOf(doc, "c") {
+	if BSONIndexOf(doc, "c") != -1 {
 		test.Errorf("index of c is wrong")
 	}
 }
