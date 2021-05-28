@@ -86,6 +86,8 @@ type ServerConfig struct {
 
 	CipherSuites []uint16
 
+	EarlyAccessChecker EarlyAccessChecker
+
 	LogLevel  slogger.Level
 	Appenders []slogger.Appender
 }
@@ -128,7 +130,7 @@ type Server struct {
 }
 
 // called by a synched method
-func (s *Server) OnSSLConfig(sslPairs []*SSLPair) (ok bool, names []string, errs []error) {
+func (s *Server) OnTlsConfig(sslPairs []*SSLPair) (ok bool, names []string, errs []error) {
 	return s.config.SyncTlsConfig.setTlsConfig(sslPairs, s.config.CipherSuites, s.config.MinTlsVersion, s.config.SSLKeys)
 }
 
@@ -165,10 +167,23 @@ func (s *Server) Run() error {
 
 	incomingConnections := make(chan accepted, 1)
 
+	earlyAccessChecker := s.config.EarlyAccessChecker
+
 	for {
 		go func() {
 			conn, err := ln.Accept()
-			incomingConnections <- accepted{conn, err}
+			if err != nil {
+				incomingConnections <- accepted{nil, err}
+			}
+			if earlyAccessChecker != nil {
+				if err := earlyAccessChecker.PreClientHelloCheck(conn.LocalAddr()); err != nil {
+					incomingConnections <- accepted{
+						nil,
+						fmt.Errorf("Access denied: %v", err),
+					}
+				}
+			}
+			incomingConnections <- accepted{conn, nil}
 		}()
 
 		select {
@@ -181,7 +196,9 @@ func (s *Server) Run() error {
 			if connectionEvent.err != nil {
 				return NewStackErrorf("could not accept in proxy: %s", err)
 			}
+
 			conn := connectionEvent.conn
+
 			if s.config.TCPKeepAlivePeriod > 0 {
 				switch conn := conn.(type) {
 				case *net.TCPConn:
@@ -194,11 +211,15 @@ func (s *Server) Run() error {
 
 			if s.config.UseSSL {
 				tlsConfig := s.config.SyncTlsConfig.getTlsConfig()
-				conn = tls.Server(conn, tlsConfig)
+				if earlyAccessChecker == nil {
+					conn = tls.Server(conn, tlsConfig)
+				} else {
+					conn = NewPeekServerNameConn(conn, tlsConfig)
+				}
 			}
 
 			remoteAddr := conn.RemoteAddr()
-			c := &Session{s, nil, remoteAddr, s.NewLogger(fmt.Sprintf("Session %s", remoteAddr)), "", nil}
+			c := &Session{s, nil, remoteAddr, earlyAccessChecker, nil, s.NewLogger(fmt.Sprintf("Session %s", remoteAddr)), ""}
 			if _, ok := s.contextualWorkerFactory(); ok {
 				s.sessionManager.sessionWG.Add(1)
 			}

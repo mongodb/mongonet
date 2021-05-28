@@ -12,15 +12,20 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 )
 
+type ConnectionStater interface {
+	ConnectionState() tls.ConnectionState
+}
+
 type Session struct {
 	server     *Server
 	conn       io.ReadWriteCloser
 	remoteAddr net.Addr
+	earlyAccessChecker EarlyAccessChecker
+	earlyAccessCheckerData interface{}
 
 	logger *slogger.Logger
 
-	SSLServerName string
-	tlsConn       *tls.Conn
+	TlsServerName    string
 }
 
 var ErrUnknownOpcode = errors.New("unknown opcode")
@@ -30,8 +35,11 @@ func (s *Session) Connection() io.ReadWriteCloser {
 	return s.conn
 }
 
-func (s *Session) GetTLSConnection() *tls.Conn {
-	return s.tlsConn
+func (s *Session) GetConnectionState() tls.ConnectionState {
+	if connectionStater, ok := s.conn.(ConnectionStater); ok {
+		return connectionStater.ConnectionState()
+	}
+	return tls.ConnectionState{}
 }
 
 func (s *Session) Logf(level slogger.Level, messageFmt string, args ...interface{}) (*slogger.Log, []error) {
@@ -65,6 +73,20 @@ func (s *Session) Run(conn net.Conn) {
 	}()
 
 	switch c := conn.(type) {
+	case *PeekServerNameConn:
+		serverName, err := c.ServerName()
+		if err != nil {
+			s.logger.Logf(slogger.WARN, "error parsing TLS CLIENT HELLO : %v", err)
+			return
+		}
+		if s.earlyAccessChecker != nil {
+			s.earlyAccessCheckerData, err = s.earlyAccessChecker.PostClientHelloCheck(serverName, conn.RemoteAddr())
+			if err != nil {
+				s.logger.Logf(slogger.WARN, "Access Denied: %v", err)
+			}
+		}
+		s.TlsServerName = serverName
+
 	case *tls.Conn:
 		// we do this here so that we can get the SNI server name
 		err = c.Handshake()
@@ -72,11 +94,10 @@ func (s *Session) Run(conn net.Conn) {
 			s.logger.Logf(slogger.WARN, "error doing tls handshake %s", err)
 			return
 		}
-		s.tlsConn = c
-		s.SSLServerName = strings.TrimSuffix(c.ConnectionState().ServerName, ".")
+		s.TlsServerName = strings.TrimSuffix(c.ConnectionState().ServerName, ".")
 	}
 
-	s.logger.Logf(slogger.INFO, "new connection SSLServerName [%s]", s.SSLServerName)
+	s.logger.Logf(slogger.INFO, "new connection SSLServerName [%s]", s.TlsServerName)
 
 	defer s.logger.Logf(slogger.INFO, "socket closed")
 

@@ -247,7 +247,7 @@ func (p *Proxy) GetPoolCleared() int64 {
 func (p *Proxy) CreateWorker(session *Session) (ServerWorker, error) {
 	var err error
 
-	ps := &ProxySession{session, p, nil, nil, nil, false}
+	ps := &ProxySession{session, p, nil, nil, nil, false, session.earlyAccessCheckerData}
 	if p.Config.InterceptorFactory != nil {
 		ps.interceptor, err = ps.proxy.Config.InterceptorFactory.NewInterceptor(ps)
 		if err != nil {

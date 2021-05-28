@@ -29,6 +29,7 @@ type ProxySession struct {
 	hooks            map[string]MetricsHook
 	mongoConn        *MongoConnectionWrapper
 	isMetricsEnabled bool
+	earlyAccessData interface{}
 }
 
 type MetricsHook interface {
@@ -90,6 +91,10 @@ func (ps *ProxySession) Stats() bson.D {
 		},
 		},
 	}
+}
+
+func (ps *ProxySession) EarlyAccessData() interface{} {
+	return ps.earlyAccessData
 }
 
 // doRetryLoop will retry the previous message on an RS specified by ProxyRetryError. Future iterations will read new messages on the client->proxy connection and continue to send them to the new RS

@@ -46,7 +46,16 @@ type ProxyConfig struct {
 	ConnectionPoolHeartbeatIntervalMs int
 }
 
-func NewProxyConfig(bindHost string, bindPort int, mongoUri, mongoHost string, mongoPort int, mongoUser, mongoPassword, appName string, traceConnPool bool, connectionMode util.MongoConnectionMode, serverSelectionTimeoutSec, maxPoolSize, maxPoolIdleTimeSec, connectionPoolHeartbeatIntervalMs int) ProxyConfig {
+func NewProxyConfig(
+	bindHost string,
+	bindPort int,
+	mongoUri, mongoHost string,
+	mongoPort int,
+	mongoUser, mongoPassword, appName string,
+	traceConnPool bool,
+	connectionMode util.MongoConnectionMode,
+	serverSelectionTimeoutSec, maxPoolSize, maxPoolIdleTimeSec, connectionPoolHeartbeatIntervalMs int,
+	earlyAccessChecker EarlyAccessChecker) ProxyConfig {
 
 	syncTlsConfig := NewSyncTlsConfig()
 	return ProxyConfig{
@@ -59,6 +68,7 @@ func NewProxyConfig(bindHost string, bindPort int, mongoUri, mongoHost string, m
 			0,           // MinTlsVersion
 			0,           // TCPKeepAlivePeriod
 			nil,         // CipherSuites
+			earlyAccessChecker,
 			slogger.OFF, // LogLevel
 			nil,         // Appenders
 		},
