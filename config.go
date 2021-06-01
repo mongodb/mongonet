@@ -65,9 +65,9 @@ func NewProxyConfig(
 			false, // UseSSL
 			nil,   // SSLKeys
 			syncTlsConfig,
-			0,           // MinTlsVersion
-			0,           // TCPKeepAlivePeriod
-			nil,         // CipherSuites
+			0,   // MinTlsVersion
+			0,   // TCPKeepAlivePeriod
+			nil, // CipherSuites
 			earlyAccessChecker,
 			slogger.OFF, // LogLevel
 			nil,         // Appenders

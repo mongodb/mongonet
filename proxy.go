@@ -213,8 +213,8 @@ func (p *Proxy) Run() error {
 }
 
 // called by a synched method
-func (p *Proxy) OnSSLConfig(sslPairs []*SSLPair) (ok bool, names []string, errs []error) {
-	return p.server.OnSSLConfig(sslPairs)
+func (p *Proxy) OnTlsConfig(sslPairs []*SSLPair) (ok bool, names []string, errs []error) {
+	return p.server.OnTlsConfig(sslPairs)
 }
 
 func (p *Proxy) NewLogger(prefix string) *slogger.Logger {

@@ -29,7 +29,7 @@ type ProxySession struct {
 	hooks            map[string]MetricsHook
 	mongoConn        *MongoConnectionWrapper
 	isMetricsEnabled bool
-	earlyAccessData interface{}
+	earlyAccessData  interface{}
 }
 
 type MetricsHook interface {

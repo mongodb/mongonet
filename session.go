@@ -17,15 +17,15 @@ type ConnectionStater interface {
 }
 
 type Session struct {
-	server     *Server
-	conn       io.ReadWriteCloser
-	remoteAddr net.Addr
-	earlyAccessChecker EarlyAccessChecker
+	server                 *Server
+	conn                   io.ReadWriteCloser
+	remoteAddr             net.Addr
+	earlyAccessChecker     EarlyAccessChecker
 	earlyAccessCheckerData interface{}
 
 	logger *slogger.Logger
 
-	TlsServerName    string
+	TlsServerName string
 }
 
 var ErrUnknownOpcode = errors.New("unknown opcode")
@@ -279,4 +279,8 @@ func (s *Session) RespondWithError(clientMessage Message, err error) error {
 		return ErrUnknownOpcode
 	}
 
+}
+
+func (s *Session) GetEarlyAccessCheckerData() interface{} {
+	return s.earlyAccessCheckerData
 }
