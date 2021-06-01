@@ -98,7 +98,7 @@ type ServerWorker interface {
 
 type ServerWorkerFactory interface {
 	CreateWorker(session *Session) (ServerWorker, error)
-	GetConnection(conn net.Conn) io.ReadWriteCloser
+	GetConnection(conn *Conn) io.ReadWriteCloser
 }
 
 // ServerWorkerWithContextFactory should be used when workers need to listen to the Done channel of the session context.
@@ -160,7 +160,7 @@ func (s *Server) Run() error {
 	}()
 
 	type accepted struct {
-		conn Conn
+		conn *Conn
 		err  error
 	}
 
@@ -170,7 +170,7 @@ func (s *Server) Run() error {
 		go func() {
 			conn, err := ln.Accept()
 			wrapper, err2 := NewConn(conn)
-			incomingConnections <- accepted{*wrapper, MergeErrors(err, err2)}
+			incomingConnections <- accepted{wrapper, MergeErrors(err, err2)}
 		}()
 
 		select {
@@ -209,8 +209,7 @@ func (s *Server) Run() error {
 			if _, ok := s.contextualWorkerFactory(); ok {
 				s.sessionManager.sessionWG.Add(1)
 			}
-
-			go c.Run(wrappedConn)
+			go c.Run(conn)
 		}
 
 	}

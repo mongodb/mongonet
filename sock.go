@@ -1,6 +1,8 @@
 package mongonet
 
-import "io"
+import (
+	"io"
+)
 
 const MaxInt32 = 2147483647
 

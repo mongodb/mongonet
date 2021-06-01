@@ -104,9 +104,8 @@ func (c *Conn) Write(p []byte) (int, error) {
 
 func (c *Conn) init() error {
 	c.remote = c.wrapped.RemoteAddr()
-
 	// check if the first byte is one of our recognized signatures
-	if b1, err := c.rbuf.Peek(1); err == nil && (b1[0] == v1Signature[0] || b1[0] == v2Signature[0]) {
+	if b1, err := c.rbuf.Peek(1); err == nil && b1[0] == v1Signature[0] || b1[0] == v2Signature[0] {
 		if sig, err := c.rbuf.Peek(5); err == nil && bytes.Equal(sig, v1Signature) {
 			return c.initv1()
 		}
