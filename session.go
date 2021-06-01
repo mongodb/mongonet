@@ -21,11 +21,18 @@ type Session struct {
 
 	SSLServerName string
 	tlsConn       *tls.Conn
+
+	proxiedConnection bool
 }
 
 var ErrUnknownOpcode = errors.New("unknown opcode")
 
 // ------------------
+
+func (s *Session) IsProxied() bool {
+	return s.proxiedConnection
+}
+
 func (s *Session) Connection() io.ReadWriteCloser {
 	return s.conn
 }

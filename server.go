@@ -184,7 +184,7 @@ func (s *Server) Run() error {
 			}
 			conn := connectionEvent.conn
 			if conn.IsProxied() {
-				s.logger.Logf(slogger.DEBUG, "accepted a proxied connection (local=%v, remote=%v, proxy=%v, target=%v)", conn.LocalAddr(), conn.RemoteAddr(), conn.ProxyAddr(), conn.TargetAddr())
+				s.logger.Logf(slogger.DEBUG, "accepted a proxied connection (local=%v, remote=%v, proxy=%v, target=%v, version=%v)", conn.LocalAddr(), conn.RemoteAddr(), conn.ProxyAddr(), conn.TargetAddr(), conn.Version())
 			} else {
 				s.logger.Logf(slogger.DEBUG, "accepted a regular connection (local=%v, remote=%v, target=%v)", conn.LocalAddr(), conn.RemoteAddr(), conn.TargetAddr())
 			}
@@ -205,7 +205,7 @@ func (s *Server) Run() error {
 			}
 
 			remoteAddr := connectionEvent.conn.RemoteAddr()
-			c := &Session{s, nil, remoteAddr, s.NewLogger(fmt.Sprintf("Session %s", remoteAddr)), "", nil}
+			c := &Session{s, nil, remoteAddr, s.NewLogger(fmt.Sprintf("Session %s", remoteAddr)), "", nil, conn.IsProxied()}
 			if _, ok := s.contextualWorkerFactory(); ok {
 				s.sessionManager.sessionWG.Add(1)
 			}
