@@ -57,7 +57,6 @@ func TestProxyProtocol(t *testing.T) {
 		}
 	)
 
-	t.Parallel()
 	testCases := []struct {
 		name               string
 		bytes              []byte
@@ -351,8 +350,6 @@ func TestProxyProtocol(t *testing.T) {
 	for _, tc := range testCases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
 			c := newMockConn(tc.bytes)
 			subject, err := NewConn(c)
 			if err != nil && tc.expectedErr == nil {
