@@ -16,6 +16,7 @@ import (
 */
 
 func TestCommonProxyProtocolInt(t *testing.T) {
+	t.Skip("skipping until EVG builds have HAProxy")
 	type mongonetIsConnectionProxiedResponse struct {
 		Proxied bool `bson:"proxied"`
 	}
