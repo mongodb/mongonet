@@ -201,7 +201,7 @@ func (s *Server) Run() error {
 
 			if s.config.UseSSL {
 				tlsConfig := s.config.SyncTlsConfig.getTlsConfig()
-				wrappedConn = tls.Server(wrappedConn, tlsConfig)
+				conn.wrapped = tls.Server(wrappedConn, tlsConfig)
 			}
 
 			remoteAddr := connectionEvent.conn.RemoteAddr()
