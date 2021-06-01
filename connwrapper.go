@@ -103,6 +103,9 @@ func (c *Conn) Write(p []byte) (int, error) {
 }
 
 func (c *Conn) init() error {
+	if c.wrapped == nil {
+		return fmt.Errorf("init a nil connection")
+	}
 	c.remote = c.wrapped.RemoteAddr()
 	// check if the first byte is one of our recognized signatures
 	if b1, err := c.rbuf.Peek(1); err == nil && b1[0] == v1Signature[0] || b1[0] == v2Signature[0] {
