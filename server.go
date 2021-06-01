@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -159,7 +160,7 @@ func (s *Server) Run() error {
 	}()
 
 	type accepted struct {
-		conn net.Conn
+		conn Conn
 		err  error
 	}
 
@@ -168,7 +169,8 @@ func (s *Server) Run() error {
 	for {
 		go func() {
 			conn, err := ln.Accept()
-			incomingConnections <- accepted{conn, err}
+			wrapper, err2 := NewConn(conn)
+			incomingConnections <- accepted{*wrapper, MergeErrors(err, err2)}
 		}()
 
 		select {
@@ -177,13 +179,18 @@ func (s *Server) Run() error {
 			s.sessionManager.stopSessions()
 			return nil
 		case connectionEvent := <-incomingConnections:
-
 			if connectionEvent.err != nil {
 				return NewStackErrorf("could not accept in proxy: %s", err)
 			}
 			conn := connectionEvent.conn
+			if conn.IsProxied() {
+				s.logger.Logf(slogger.DEBUG, "accepted a proxied connection (local=%v, remote=%v, proxy=%v, target=%v)", conn.LocalAddr(), conn.RemoteAddr(), conn.ProxyAddr(), conn.TargetAddr())
+			} else {
+				s.logger.Logf(slogger.DEBUG, "accepted a regular connection (local=%v, remote=%v, target=%v)", conn.LocalAddr(), conn.RemoteAddr(), conn.TargetAddr())
+			}
+			wrappedConn := conn.wrapped
 			if s.config.TCPKeepAlivePeriod > 0 {
-				switch conn := conn.(type) {
+				switch conn := wrappedConn.(type) {
 				case *net.TCPConn:
 					conn.SetKeepAlive(true)
 					conn.SetKeepAlivePeriod(s.config.TCPKeepAlivePeriod)
@@ -194,16 +201,16 @@ func (s *Server) Run() error {
 
 			if s.config.UseSSL {
 				tlsConfig := s.config.SyncTlsConfig.getTlsConfig()
-				conn = tls.Server(conn, tlsConfig)
+				wrappedConn = tls.Server(wrappedConn, tlsConfig)
 			}
 
-			remoteAddr := conn.RemoteAddr()
+			remoteAddr := connectionEvent.conn.RemoteAddr()
 			c := &Session{s, nil, remoteAddr, s.NewLogger(fmt.Sprintf("Session %s", remoteAddr)), "", nil}
 			if _, ok := s.contextualWorkerFactory(); ok {
 				s.sessionManager.sessionWG.Add(1)
 			}
 
-			go c.Run(conn)
+			go c.Run(wrappedConn)
 		}
 
 	}
@@ -252,4 +259,29 @@ func NewServer(config ServerConfig, factory ServerWorkerFactory) Server {
 func (s *Server) contextualWorkerFactory() (ServerWorkerWithContextFactory, bool) {
 	swf, ok := s.workerFactory.(ServerWorkerWithContextFactory)
 	return swf, ok
+}
+
+func MergeErrors(errors ...error) error {
+	n, laste := 0, error(nil)
+
+	for _, e := range errors {
+		if e != nil {
+			n++
+			laste = e
+		}
+	}
+	switch n {
+	case 0:
+		return nil
+	case 1:
+		return laste
+	default:
+		s := make([]string, 0, n)
+		for _, e := range errors {
+			if e != error(nil) {
+				s = append(s, e.Error())
+			}
+		}
+		return fmt.Errorf("Multiple errors: %v", strings.Join(s, "; "))
+	}
 }

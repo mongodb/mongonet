@@ -248,7 +248,7 @@ func TestServer(t *testing.T) {
 			0,
 			nil,
 			slogger.DEBUG,
-			nil,
+			[]slogger.Appender{slogger.StdOutAppender()},
 		},
 		&MyServerTestFactory{},
 	)
