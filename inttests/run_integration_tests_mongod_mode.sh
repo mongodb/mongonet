@@ -15,4 +15,3 @@ mkdir dbpath || true
 $MONGO_DIR/mongod --port $MONGO_PORT --dbpath `pwd`/dbpath --logpath `pwd`/dbpath/mongod.log --fork --setParameter enableTestCommands=1
 
 go test -test.v -run TestProxyMongodMode
-go test -test.v -run TestCommon
