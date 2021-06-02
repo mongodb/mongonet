@@ -31,7 +31,7 @@ func (s *SyncTlsConfig) getTlsConfig() *tls.Config {
 	return s.tlsConfig
 }
 
-func (s *SyncTlsConfig) setTlsConfig(sslKeys []*SSLPair, cipherSuites []uint16, minTlsVersion uint16, fallbackKeys []SSLPair) (ok bool, names []string, errs []error) {
+func (s *SyncTlsConfig) SetTlsConfig(sslKeys []*SSLPair, cipherSuites []uint16, minTlsVersion uint16, fallbackKeys []SSLPair) (ok bool, names []string, errs []error) {
 	ok = true
 	certs := []tls.Certificate{}
 	for _, pair := range fallbackKeys {
@@ -130,7 +130,7 @@ type Server struct {
 
 // called by a synched method
 func (s *Server) OnSSLConfig(sslPairs []*SSLPair) (ok bool, names []string, errs []error) {
-	return s.config.SyncTlsConfig.setTlsConfig(sslPairs, s.config.CipherSuites, s.config.MinTlsVersion, s.config.SSLKeys)
+	return s.config.SyncTlsConfig.SetTlsConfig(sslPairs, s.config.CipherSuites, s.config.MinTlsVersion, s.config.SSLKeys)
 }
 
 func (s *Server) Run() error {
@@ -202,6 +202,7 @@ func (s *Server) Run() error {
 			if s.config.UseSSL {
 				tlsConfig := s.config.SyncTlsConfig.getTlsConfig()
 				conn.wrapped = tls.Server(conn, tlsConfig)
+				s.logger.Logf(slogger.DEBUG, "got a TLS connection") // TODO - remove
 			}
 
 			remoteAddr := connectionEvent.conn.RemoteAddr()

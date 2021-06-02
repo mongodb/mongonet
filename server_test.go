@@ -2,8 +2,19 @@ package mongonet_test
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha512"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"fmt"
 	"io"
+	"io/ioutil"
+	"math/big"
+	"net"
+	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -291,6 +302,53 @@ func TestServer(t *testing.T) {
 
 }
 
+func TestServerWorkerWithContext(t *testing.T) {
+	port := 9921
+
+	var sessCtr int32
+	syncTlsConfig := mongonet.NewSyncTlsConfig()
+	server := mongonet.NewServer(
+		mongonet.ServerConfig{
+			"127.0.0.1",
+			port,
+			false,
+			nil,
+			syncTlsConfig,
+			0,
+			0,
+			nil,
+			slogger.DEBUG,
+			[]slogger.Appender{slogger.StdOutAppender()},
+		},
+		&TestFactoryWithContext{&sessCtr},
+	)
+
+	go server.Run()
+
+	if err := <-server.InitChannel(); err != nil {
+		t.Error(err)
+	}
+
+	opts := options.Client().ApplyURI(fmt.Sprintf("mongodb://127.0.0.1:%d", port))
+	for i := 0; i < 10; i++ {
+		if err := checkClient(opts); err != nil {
+			t.Error(err)
+		}
+	}
+	sessCtrCurr := atomic.LoadInt32(&sessCtr)
+
+	if sessCtrCurr != int32(30) {
+		t.Errorf("expect session counter to be 30 but got %d", sessCtrCurr)
+	}
+
+	server.Close()
+
+	sessCtrFinal := atomic.LoadInt32(&sessCtr)
+	if sessCtrFinal != int32(0) {
+		t.Errorf("expect session counter to be 0 but got %d", sessCtrFinal)
+	}
+}
+
 // ---------------------------------------------------------------------------------------------------------------
 // Testing for server with contextualWorkerFactory
 
@@ -376,16 +434,140 @@ func checkClient(opts *options.ClientOptions) error {
 	return client.Disconnect(ctx)
 }
 
-func TestServerWorkerWithContext(t *testing.T) {
-	port := 9921
+func generateCertificateKeyPair(subject string, ca *x509.Certificate, authorityKey interface{}, hostname string, notAfter time.Time, serial int64) (*x509.Certificate, interface{}, error) {
+	myKey, errRSA := rsa.GenerateKey(rand.Reader, 2048)
+	if errRSA != nil {
+		return nil, nil, errRSA
+	}
 
-	var sessCtr int32
+	if authorityKey == nil {
+		key, errRSA := rsa.GenerateKey(rand.Reader, 2048)
+		if errRSA != nil {
+			return nil, nil, errRSA
+		}
+		authorityKey = key
+		myKey = key
+	}
+
+	pubKeySlice := append(myKey.PublicKey.N.Bytes(), big.NewInt(int64(myKey.PublicKey.E)).Bytes()...)
+	pubKeyHash := sha512.Sum512(pubKeySlice)
+
+	var ou []string
+
+	name := pkix.Name{
+		Country: []string{"US"}, Organization: []string{"MongoDB"},
+		OrganizationalUnit: ou, Locality: []string{"NewYorkCity"},
+		Province: []string{"NewYork"}, CommonName: subject}
+
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(serial),
+		Subject:      name,
+		//Let's hope the tests can run in this window
+		NotBefore:             time.Now().Add(-time.Minute),
+		NotAfter:              notAfter,
+		BasicConstraintsValid: true,
+		IsCA:                  ca == nil,
+		//MaxPathLen: -1,
+		SubjectKeyId:                pubKeyHash[0:],
+		DNSNames:                    []string{hostname},
+		PermittedDNSDomainsCritical: false,
+		SignatureAlgorithm:          x509.SHA512WithRSA,
+	}
+
+	// Update SAN fields using IPAddresses if hostname is really an IP Address
+	ip := net.ParseIP(hostname)
+	if ip != nil {
+		template.IPAddresses = []net.IP{ip}
+	}
+
+	serial += 1
+
+	if ca == nil {
+		template.KeyUsage |= x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign | x509.KeyUsageCRLSign
+		ca = template
+	} else {
+		template.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}
+	}
+
+	template.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth}
+
+	certDER, errCert := x509.CreateCertificate(rand.Reader, template, ca, &myKey.PublicKey, authorityKey)
+	if errCert != nil {
+		return nil, nil, errCert
+	}
+	cert, errParse := x509.ParseCertificate(certDER)
+	if errParse != nil {
+		return nil, nil, errParse
+	}
+	return cert, myKey, nil
+}
+
+func generateCertificateAuthorityPair(hostname string, notAfter time.Time) (*x509.Certificate, interface{}, error) {
+	return generateCertificateKeyPair("test CA", nil, nil, hostname, notAfter, 1)
+}
+
+func getTestCerts() (*x509.Certificate, string, error) {
+	expiration := time.Now().Add(time.Hour * 24)
+	hostname, err := os.Hostname()
+	if err != nil {
+		return nil, "", err
+	}
+	ca, cakey, err := generateCertificateAuthorityPair(hostname, expiration)
+	if err != nil {
+		return nil, "", err
+	}
+	cert, key, err := generateCertificateKeyPair("test cert", ca, cakey, hostname, expiration, 2)
+	if err != nil {
+		return nil, "", err
+	}
+
+	return ca, hostname, writeCertificatePairToDisk(cert, key, "cert.pem")
+}
+
+func encodeCertificatePairAsPEM(certificate *x509.Certificate, privateKey interface{}) (certPEM, keyPEM []byte) {
+	if certificate != nil {
+		block := &pem.Block{Type: "CERTIFICATE",
+			Bytes: certificate.Raw}
+		certPEM = pem.EncodeToMemory(block)
+	}
+	if privateKey != nil {
+		block := &pem.Block{Type: "RSA PRIVATE KEY",
+			Bytes: x509.MarshalPKCS1PrivateKey(privateKey.(*rsa.PrivateKey))}
+		keyPEM = pem.EncodeToMemory(block)
+	}
+	return
+}
+
+func writeCertificatePairToDisk(certificate *x509.Certificate, privateKey interface{}, filePath string) error {
+	certPEM, keyPEM := encodeCertificatePairAsPEM(certificate, privateKey)
+	data := make([]byte, 0, len(certPEM)+len(keyPEM))
+	data = append(data, certPEM...)
+	data = append(data, keyPEM...)
+	return ioutil.WriteFile(filePath, data, 0666)
+}
+
+func TestServerWithTLS(t *testing.T) {
+	port := 9922 // TODO: pick randomly or check?
 	syncTlsConfig := mongonet.NewSyncTlsConfig()
+
+	// generate keys
+	ca, hostname, err := getTestCerts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove("cert.pem")
+
+	sslPair := []mongonet.SSLPair{{
+		Cert: "cert.pem",
+		Key:  "cert.pem",
+		Id:   "default",
+	}}
+
 	server := mongonet.NewServer(
 		mongonet.ServerConfig{
-			"127.0.0.1",
+			hostname,
 			port,
-			false,
+			true,
 			nil,
 			syncTlsConfig,
 			0,
@@ -394,31 +576,57 @@ func TestServerWorkerWithContext(t *testing.T) {
 			slogger.DEBUG,
 			[]slogger.Appender{slogger.StdOutAppender()},
 		},
-		&TestFactoryWithContext{&sessCtr},
+		&MyServerTestFactory{},
 	)
+
+	ok, _, errs := syncTlsConfig.SetTlsConfig(nil, nil, tls.VersionTLS12, sslPair)
+	if !ok {
+		t.Fatal(errs)
+	}
 
 	go server.Run()
 
-	if err := <-server.InitChannel(); err != nil {
-		t.Error(err)
+	certPool := x509.NewCertPool()
+	certPool.AddCert(ca)
+	tlsConfig := &tls.Config{
+		RootCAs:            certPool,
+		InsecureSkipVerify: true,
+	}
+	opts := options.Client().ApplyURI(fmt.Sprintf("mongodb://%s:%d", hostname, port)).SetTLSConfig(tlsConfig).SetDirect(true)
+	client, err := mongo.NewClient(opts)
+	if err != nil {
+		t.Errorf("cannot create a mongo client. err: %v", err)
 	}
 
-	opts := options.Client().ApplyURI(fmt.Sprintf("mongodb://127.0.0.1:%d", port))
-	for i := 0; i < 10; i++ {
-		if err := checkClient(opts); err != nil {
-			t.Error(err)
-		}
+	ctx, cancelFunc := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelFunc()
+	if err := client.Connect(ctx); err != nil {
+		t.Errorf("cannot connect to server. err: %v", err)
+		return
 	}
-	sessCtrCurr := atomic.LoadInt32(&sessCtr)
-
-	if sessCtrCurr != int32(30) {
-		t.Errorf("expect session counter to be 30 but got %d", sessCtrCurr)
+	defer client.Disconnect(ctx)
+	coll := client.Database("test").Collection("bar")
+	docIn := bson.D{{"foo", int32(17)}}
+	if _, err = coll.InsertOne(ctx, docIn); err != nil {
+		t.Errorf("can't insert: %v", err)
+		return
 	}
 
-	server.Close()
-
-	sessCtrFinal := atomic.LoadInt32(&sessCtr)
-	if sessCtrFinal != int32(0) {
-		t.Errorf("expect session counter to be 0 but got %d", sessCtrFinal)
+	docOut := bson.D{}
+	err = coll.FindOne(ctx, bson.D{}).Decode(&docOut)
+	if err != nil {
+		t.Errorf("can't find: %v", err)
+		return
 	}
+
+	if len(docIn) != len(docOut) {
+		t.Errorf("docs don't match\n %v\n %v\n", docIn, docOut)
+		return
+	}
+
+	if diff := deep.Equal(docIn[0], docOut[0]); diff != nil {
+		t.Errorf("docs don't match: %v", diff)
+		return
+	}
+
 }
