@@ -21,11 +21,18 @@ type Session struct {
 
 	SSLServerName string
 	tlsConn       *tls.Conn
+
+	proxiedConnection bool
 }
 
 var ErrUnknownOpcode = errors.New("unknown opcode")
 
 // ------------------
+
+func (s *Session) IsProxied() bool {
+	return s.proxiedConnection
+}
+
 func (s *Session) Connection() io.ReadWriteCloser {
 	return s.conn
 }
@@ -46,7 +53,7 @@ func (s *Session) ReadMessage() (Message, error) {
 	return ReadMessage(s.conn)
 }
 
-func (s *Session) Run(conn net.Conn) {
+func (s *Session) Run(conn *Conn) {
 	var err error
 	s.conn = s.server.workerFactory.GetConnection(conn)
 
@@ -64,7 +71,7 @@ func (s *Session) Run(conn net.Conn) {
 		}
 	}()
 
-	switch c := conn.(type) {
+	switch c := conn.wrapped.(type) {
 	case *tls.Conn:
 		// we do this here so that we can get the SNI server name
 		err = c.Handshake()
