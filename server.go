@@ -169,6 +169,10 @@ func (s *Server) Run() error {
 	for {
 		go func() {
 			conn, err := ln.Accept()
+			if s.config.UseSSL {
+				tlsConfig := s.config.SyncTlsConfig.getTlsConfig()
+				conn = tls.Server(conn, tlsConfig)
+			}
 			wrapper, err2 := NewConn(conn)
 			incomingConnections <- accepted{wrapper, MergeErrors(err, err2)}
 		}()
@@ -197,12 +201,6 @@ func (s *Server) Run() error {
 				default:
 					s.logger.Logf(slogger.WARN, "Want to set TCP keep alive on accepted connection but connection is not *net.TCPConn.  It is %T", conn)
 				}
-			}
-
-			if s.config.UseSSL {
-				tlsConfig := s.config.SyncTlsConfig.getTlsConfig()
-				conn.wrapped = tls.Server(conn, tlsConfig)
-				s.logger.Logf(slogger.DEBUG, "got a TLS connection") // TODO - remove
 			}
 
 			remoteAddr := connectionEvent.conn.RemoteAddr()
