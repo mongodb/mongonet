@@ -14,7 +14,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/readpref"
 )
 
-func TestPinnedServer(t *testing.T) {
+func TestCommonPinnedServer(t *testing.T) {
 	mongoPort, proxyPort, hostname := util.GetTestHostAndPorts()
 	pc := getProxyConfig(hostname, mongoPort, proxyPort, DefaultMaxPoolSize, DefaultMaxPoolIdleTimeSec, util.Cluster, false, nil)
 	pc.LogLevel = slogger.DEBUG

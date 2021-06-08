@@ -26,11 +26,19 @@ type Session struct {
 	logger *slogger.Logger
 
 	TlsServerName string
+	tlsConn       *tls.Conn
+
+	proxiedConnection bool
 }
 
 var ErrUnknownOpcode = errors.New("unknown opcode")
 
 // ------------------
+
+func (s *Session) IsProxied() bool {
+	return s.proxiedConnection
+}
+
 func (s *Session) Connection() io.ReadWriteCloser {
 	return s.conn
 }
@@ -54,7 +62,7 @@ func (s *Session) ReadMessage() (Message, error) {
 	return ReadMessage(s.conn)
 }
 
-func (s *Session) Run(conn net.Conn) {
+func (s *Session) Run(conn *Conn) {
 	var err error
 	s.conn = s.server.workerFactory.GetConnection(conn)
 
@@ -72,7 +80,8 @@ func (s *Session) Run(conn net.Conn) {
 		}
 	}()
 
-	switch c := conn.(type) {
+	// TIM TODO: FIX THIS
+	switch c := conn.wrapped.(type) {
 	case *PeekServerNameConn:
 		serverName, err := c.ServerName()
 		if err != nil {

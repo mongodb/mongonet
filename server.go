@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -30,7 +31,7 @@ func (s *SyncTlsConfig) getTlsConfig() *tls.Config {
 	return s.tlsConfig
 }
 
-func (s *SyncTlsConfig) setTlsConfig(sslKeys []*SSLPair, cipherSuites []uint16, minTlsVersion uint16, fallbackKeys []SSLPair) (ok bool, names []string, errs []error) {
+func (s *SyncTlsConfig) SetTlsConfig(sslKeys []*SSLPair, cipherSuites []uint16, minTlsVersion uint16, fallbackKeys []SSLPair) (ok bool, names []string, errs []error) {
 	ok = true
 	certs := []tls.Certificate{}
 	for _, pair := range fallbackKeys {
@@ -99,7 +100,7 @@ type ServerWorker interface {
 
 type ServerWorkerFactory interface {
 	CreateWorker(session *Session) (ServerWorker, error)
-	GetConnection(conn net.Conn) io.ReadWriteCloser
+	GetConnection(conn *Conn) io.ReadWriteCloser
 }
 
 // ServerWorkerWithContextFactory should be used when workers need to listen to the Done channel of the session context.
@@ -131,7 +132,7 @@ type Server struct {
 
 // called by a synched method
 func (s *Server) OnTlsConfig(sslPairs []*SSLPair) (ok bool, names []string, errs []error) {
-	return s.config.SyncTlsConfig.setTlsConfig(sslPairs, s.config.CipherSuites, s.config.MinTlsVersion, s.config.SSLKeys)
+	return s.config.SyncTlsConfig.SetTlsConfig(sslPairs, s.config.CipherSuites, s.config.MinTlsVersion, s.config.SSLKeys)
 }
 
 func (s *Server) Run() error {
@@ -161,7 +162,7 @@ func (s *Server) Run() error {
 	}()
 
 	type accepted struct {
-		conn net.Conn
+		conn *Conn
 		err  error
 	}
 
@@ -174,9 +175,19 @@ func (s *Server) Run() error {
 			conn, err := ln.Accept()
 			if err != nil {
 				incomingConnections <- accepted{nil, err}
+				return
+			}
+			if s.config.UseSSL {
+				tlsConfig := s.config.SyncTlsConfig.getTlsConfig()
+				conn = tls.Server(conn, tlsConfig)
+			}
+			conn, err = NewConn(conn)
+			if err != nil {
+				incomingConnections <- accepted{nil, err}
+				return
 			}
 			if earlyAccessChecker != nil {
-				if err := earlyAccessChecker.PreClientHelloCheck(conn.LocalAddr()); err != nil {
+				if err := earlyAccessChecker.PreClientHelloCheck(conn.RemoteAddr()); err != nil {
 					incomingConnections <- accepted{
 						nil,
 						fmt.Errorf("Access denied: %v", err),
@@ -192,15 +203,19 @@ func (s *Server) Run() error {
 			s.sessionManager.stopSessions()
 			return nil
 		case connectionEvent := <-incomingConnections:
-
 			if connectionEvent.err != nil {
 				return NewStackErrorf("could not accept in proxy: %s", err)
 			}
 
 			conn := connectionEvent.conn
-
+			if conn.IsProxied() {
+				s.logger.Logf(slogger.DEBUG, "accepted a proxied connection (local=%v, remote=%v, proxy=%v, target=%v, version=%v)", conn.LocalAddr(), conn.RemoteAddr(), conn.ProxyAddr(), conn.TargetAddr(), conn.Version())
+			} else {
+				s.logger.Logf(slogger.DEBUG, "accepted a regular connection (local=%v, remote=%v, target=%v)", conn.LocalAddr(), conn.RemoteAddr(), conn.TargetAddr())
+			}
+			wrappedConn := conn.wrapped
 			if s.config.TCPKeepAlivePeriod > 0 {
-				switch conn := conn.(type) {
+				switch conn := wrappedConn.(type) {
 				case *net.TCPConn:
 					conn.SetKeepAlive(true)
 					conn.SetKeepAlivePeriod(s.config.TCPKeepAlivePeriod)
@@ -218,12 +233,11 @@ func (s *Server) Run() error {
 				}
 			}
 
-			remoteAddr := conn.RemoteAddr()
-			c := &Session{s, nil, remoteAddr, earlyAccessChecker, nil, s.NewLogger(fmt.Sprintf("Session %s", remoteAddr)), ""}
+			remoteAddr := connectionEvent.conn.RemoteAddr()
+			c := &Session{s, nil, remoteAddr, earlyAccessChecker, s.NewLogger(fmt.Sprintf("Session %s", remoteAddr)), "", nil, conn.IsProxied()}
 			if _, ok := s.contextualWorkerFactory(); ok {
 				s.sessionManager.sessionWG.Add(1)
 			}
-
 			go c.Run(conn)
 		}
 
@@ -273,4 +287,29 @@ func NewServer(config ServerConfig, factory ServerWorkerFactory) Server {
 func (s *Server) contextualWorkerFactory() (ServerWorkerWithContextFactory, bool) {
 	swf, ok := s.workerFactory.(ServerWorkerWithContextFactory)
 	return swf, ok
+}
+
+func MergeErrors(errors ...error) error {
+	n, laste := 0, error(nil)
+
+	for _, e := range errors {
+		if e != nil {
+			n++
+			laste = e
+		}
+	}
+	switch n {
+	case 0:
+		return nil
+	case 1:
+		return laste
+	default:
+		s := make([]string, 0, n)
+		for _, e := range errors {
+			if e != error(nil) {
+				s = append(s, e.Error())
+			}
+		}
+		return fmt.Errorf("Multiple errors: %v", strings.Join(s, "; "))
+	}
 }

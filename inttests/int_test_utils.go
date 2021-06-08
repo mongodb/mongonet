@@ -330,6 +330,10 @@ func (myi *MyInterceptor) InterceptClientToMongo(m Message, previousResult Simpl
 			}
 			addr, _ := myi.cursorManager.Load(cid)
 			return mm, nil, rsName, addr, nil
+		case "mongonetisconnectionproxied":
+			// test command
+			return nil, nil, "", "", myi.ps.RespondToCommandMakeBSON(mm, "proxied", myi.ps.IsProxied())
+
 		default:
 			return mm, nil, rsName, "", nil
 		}
