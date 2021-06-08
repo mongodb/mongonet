@@ -52,6 +52,7 @@ func (pc *PeekableConn) Peek(n int) ([]byte, error) {
 // so a little more than 128k
 // so we can do a half megabyte to be safe
 
+// TIM TODO: grow a buffer on demand instead
 const peekServerNameConnBufferSize = 512 * 1024 * 1024
 
 const (

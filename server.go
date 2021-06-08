@@ -170,6 +170,13 @@ func (s *Server) Run() error {
 
 	earlyAccessChecker := s.config.EarlyAccessChecker
 
+	// cases
+	// TLS EARLY_ACCESS_CHECKER  type
+	// no  no                    mongonet.Conn with non-TLS connection
+	// yes no                    mongonet.Conn with TLS connection
+	// no  yes                   invalid configuration
+	// yes yes                   PeekServerNameConn
+
 	for {
 		go func() {
 			conn, err := ln.Accept()

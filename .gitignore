@@ -2,3 +2,4 @@
 coverage.out
 .vscode/settings.json
 inttests/dbpath
+.idea
