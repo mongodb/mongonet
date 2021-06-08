@@ -16,7 +16,7 @@ func main() {
 
 	flag.Parse()
 
-	pc := mongonet.NewProxyConfig(*bindHost, *bindPort, "", *mongoHost, *mongoPort, "", "", "straight proxy", false, util.Direct, 5, mongonet.DefaultMaxPoolSize, mongonet.DefaultMaxPoolIdleTimeSec, mongonet.DefaultConnectionPoolHeartbeatIntervalMs)
+	pc := mongonet.NewProxyConfig(*bindHost, *bindPort, "", *mongoHost, *mongoPort, "", "", "straight proxy", false, util.Direct, 5, mongonet.DefaultMaxPoolSize, mongonet.DefaultMaxPoolIdleTimeSec, mongonet.DefaultConnectionPoolHeartbeatIntervalMs, nil)
 	pc.MongoSSLSkipVerify = true
 
 	proxy, err := mongonet.NewProxy(pc)
@@ -25,8 +25,8 @@ func main() {
 	}
 
 	proxy.InitializeServer()
-	if ok, _, _ := proxy.OnSSLConfig(nil); !ok {
-		panic("failed to call OnSSLConfig")
+	if ok, _, _ := proxy.OnTlsConfig(nil); !ok {
+		panic("failed to call OnTlsConfig")
 	}
 
 	err = proxy.Run()

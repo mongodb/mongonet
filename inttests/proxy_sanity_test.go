@@ -149,8 +149,8 @@ func privateSanityTester(t *testing.T, pc ProxyConfig, host string, proxyPort, m
 	}
 
 	proxy.InitializeServer()
-	if ok, _, _ := proxy.OnSSLConfig(nil); !ok {
-		panic("failed to call OnSSLConfig")
+	if ok, _, _ := proxy.OnTlsConfig(nil); !ok {
+		panic("failed to call OnTlsConfig")
 	}
 
 	go proxy.Run()

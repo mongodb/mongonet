@@ -23,8 +23,8 @@ func TestPinnedServer(t *testing.T) {
 		panic(err)
 	}
 	proxy.InitializeServer()
-	if ok, _, _ := proxy.OnSSLConfig(nil); !ok {
-		panic("failed to call OnSSLConfig")
+	if ok, _, _ := proxy.OnTlsConfig(nil); !ok {
+		panic("failed to call OnTlsConfig")
 	}
 	go proxy.Run()
 

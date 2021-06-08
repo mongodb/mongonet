@@ -379,7 +379,7 @@ func getProxyConfig(hostname string, mongoPort, proxyPort, maxPoolSize, maxPoolI
 	if mode == util.Cluster {
 		uri = fmt.Sprintf("mongodb://%s:%v,%s:%v,%s:%v/?replSet=proxytest", hostname, mongoPort, hostname, mongoPort+1, hostname, mongoPort+2)
 	}
-	pc := NewProxyConfig("localhost", proxyPort, uri, hostname, mongoPort, "", "", "test proxy", enableTracing, mode, ServerSelectionTimeoutSecForTests, maxPoolSize, maxPoolIdleTimeSec, 500)
+	pc := NewProxyConfig("localhost", proxyPort, uri, hostname, mongoPort, "", "", "test proxy", enableTracing, mode, ServerSelectionTimeoutSecForTests, maxPoolSize, maxPoolIdleTimeSec, 500, nil)
 	pc.MongoSSLSkipVerify = true
 	pc.InterceptorFactory = &MyFactory{mode, mongoPort, proxyPort, false, blockCommands}
 	return pc

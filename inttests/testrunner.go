@@ -186,8 +186,8 @@ func RunIntTest(mode util.MongoConnectionMode, maxPoolSize, workers int, targetA
 	}
 
 	proxy.InitializeServer()
-	if ok, _, _ := proxy.OnSSLConfig(nil); !ok {
-		panic("failed to call OnSSLConfig")
+	if ok, _, _ := proxy.OnTlsConfig(nil); !ok {
+		panic("failed to call OnTlsConfig")
 	}
 
 	if mode == util.Cluster {

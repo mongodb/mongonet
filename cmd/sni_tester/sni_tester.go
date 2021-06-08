@@ -29,7 +29,7 @@ type MyInterceptor struct {
 }
 
 func (myi *MyInterceptor) sniResponse() mongonet.SimpleBSON {
-	doc := bson.D{{"sniName", myi.ps.SSLServerName}, {"ok", 1}}
+	doc := bson.D{{"sniName", myi.ps.TlsServerName}, {"ok", 1}}
 	raw, err := mongonet.SimpleBSONConvert(doc)
 	if err != nil {
 		panic(err)
@@ -96,7 +96,7 @@ func main() {
 
 	flag.Parse()
 
-	pc := mongonet.NewProxyConfig(*bindHost, *bindPort, "", *mongoHost, *mongoPort, "", "", "sni_tester", false, util.Direct, 5, mongonet.DefaultMaxPoolSize, mongonet.DefaultMaxPoolIdleTimeSec, mongonet.DefaultConnectionPoolHeartbeatIntervalMs)
+	pc := mongonet.NewProxyConfig(*bindHost, *bindPort, "", *mongoHost, *mongoPort, "", "", "sni_tester", false, util.Direct, 5, mongonet.DefaultMaxPoolSize, mongonet.DefaultMaxPoolIdleTimeSec, mongonet.DefaultConnectionPoolHeartbeatIntervalMs, nil)
 
 	pc.UseSSL = true
 	if len(flag.Args()) < 2 {
@@ -118,7 +118,7 @@ func main() {
 	}
 
 	proxy.InitializeServer()
-	proxy.OnSSLConfig(nil)
+	proxy.OnTlsConfig(nil)
 
 	err = proxy.Run()
 	if err != nil {
