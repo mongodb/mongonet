@@ -351,7 +351,7 @@ func TestProxyProtocol(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			c := newMockConn(tc.bytes)
-			subject, err := NewConn(c)
+			subject, err := NewProxyProtoConn(c)
 			if err != nil && tc.expectedErr == nil {
 				t.Fatalf("expected no error, but got %v", err)
 			} else if err == nil && tc.expectedErr != nil {

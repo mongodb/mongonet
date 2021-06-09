@@ -18,7 +18,7 @@ var (
 	v2Signature = []byte{0x0D, 0x0A, 0x0D, 0x0A, 0x00, 0x0D, 0x0A, 0x51, 0x55, 0x49, 0x54, 0x0A}
 )
 
-type Conn struct {
+type ProxyProtoConn struct {
 	wrapped net.Conn
 	rbuf    *bufio.Reader
 
@@ -29,8 +29,8 @@ type Conn struct {
 	target net.Addr
 }
 
-func NewConn(wrapped net.Conn) (*Conn, error) {
-	c := &Conn{
+func NewProxyProtoConn(wrapped net.Conn) (*ProxyProtoConn, error) {
+	c := &ProxyProtoConn{
 		wrapped: wrapped,
 		rbuf:    bufio.NewReader(wrapped),
 	}
@@ -43,66 +43,66 @@ func NewConn(wrapped net.Conn) (*Conn, error) {
 }
 
 // Close implements the io.Closer interface.
-func (c *Conn) Close() error {
+func (c *ProxyProtoConn) Close() error {
 	return c.wrapped.Close()
 }
 
 // IsProxied returns true if the PROXY PROTOCOL was used.
-func (c *Conn) IsProxied() bool {
+func (c *ProxyProtoConn) IsProxied() bool {
 	return c.proxy != nil
 }
 
 // LocalAddr implements the net.Conn interface.
-func (c *Conn) LocalAddr() net.Addr {
+func (c *ProxyProtoConn) LocalAddr() net.Addr {
 	return c.wrapped.LocalAddr()
 }
 
 // ProxyAddr returns the proxy server's addr if IsProxied() is true; otherwise nil.
-func (c *Conn) ProxyAddr() net.Addr {
+func (c *ProxyProtoConn) ProxyAddr() net.Addr {
 	return c.proxy
 }
 
 // Read implements the io.Reader interface.
-func (c *Conn) Read(p []byte) (int, error) {
+func (c *ProxyProtoConn) Read(p []byte) (int, error) {
 	return c.rbuf.Read(p)
 }
 
 // RemoteAddr implements the net.Conn interface.
-func (c *Conn) RemoteAddr() net.Addr {
+func (c *ProxyProtoConn) RemoteAddr() net.Addr {
 	return c.remote
 }
 
 // TargetAddr returns the client's intended target addr if IsProxied() is true; otherwise nil.
-func (c *Conn) TargetAddr() net.Addr {
+func (c *ProxyProtoConn) TargetAddr() net.Addr {
 	return c.target
 }
 
 // SetDeadline implements the net.Conn interface.
-func (c *Conn) SetDeadline(t time.Time) error {
+func (c *ProxyProtoConn) SetDeadline(t time.Time) error {
 	return c.wrapped.SetDeadline(t)
 }
 
 // SetReadDeadline implements the net.Conn interface.
-func (c *Conn) SetReadDeadline(t time.Time) error {
+func (c *ProxyProtoConn) SetReadDeadline(t time.Time) error {
 	return c.wrapped.SetReadDeadline(t)
 }
 
 // SetWriteDeadline implements the net.Conn interface.
-func (c *Conn) SetWriteDeadline(t time.Time) error {
+func (c *ProxyProtoConn) SetWriteDeadline(t time.Time) error {
 	return c.wrapped.SetWriteDeadline(t)
 }
 
 // Version returns the version of the PROXY PROTOCOL.
-func (c *Conn) Version() byte {
+func (c *ProxyProtoConn) Version() byte {
 	return c.version
 }
 
 // Write implements the io.Writer interface.
-func (c *Conn) Write(p []byte) (int, error) {
+func (c *ProxyProtoConn) Write(p []byte) (int, error) {
 	return c.wrapped.Write(p)
 }
 
-func (c *Conn) init() error {
+func (c *ProxyProtoConn) init() error {
 	if c.wrapped == nil {
 		return fmt.Errorf("init a nil connection")
 	}
@@ -121,7 +121,7 @@ func (c *Conn) init() error {
 	return nil
 }
 
-func (c *Conn) initv1() error {
+func (c *ProxyProtoConn) initv1() error {
 	c.version = 1
 	line, _ := c.rbuf.ReadString('\n')
 	if !strings.HasSuffix(line, "\r\n") {
@@ -187,7 +187,7 @@ func (c *Conn) initv1() error {
 	return nil
 }
 
-func (c *Conn) initv2() error {
+func (c *ProxyProtoConn) initv2() error {
 	header := make([]byte, 16)
 	_, err := io.ReadFull(c.rbuf, header)
 	if err != nil {

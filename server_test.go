@@ -238,7 +238,7 @@ func (sf *MyServerTestFactory) CreateWorker(session *mongonet.Session) (mongonet
 	return &MyServerSession{&BaseServerSession{session, map[string][]bson.D{}}}, nil
 }
 
-func (sf *MyServerTestFactory) GetConnection(conn *mongonet.Conn) io.ReadWriteCloser {
+func (sf *MyServerTestFactory) GetConnection(conn *mongonet.ProxyProtoConn) io.ReadWriteCloser {
 	return conn
 }
 
@@ -365,7 +365,7 @@ func (sf *TestFactoryWithContext) CreateWorker(session *mongonet.Session) (mongo
 	return nil, fmt.Errorf("create worker not allowed with contextual worker factory")
 }
 
-func (sf *TestFactoryWithContext) GetConnection(conn *mongonet.Conn) io.ReadWriteCloser {
+func (sf *TestFactoryWithContext) GetConnection(conn *mongonet.ProxyProtoConn) io.ReadWriteCloser {
 	return conn
 }
 

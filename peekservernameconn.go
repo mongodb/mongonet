@@ -64,7 +64,7 @@ const (
 	typeServerNameHostName = 0
 )
 
-// PeekServerNameConn emulates a tls.Conn but provides a way to get at the SNI hostname
+// PeekServerNameConn emulates a tls.ProxyProtoConn but provides a way to get at the SNI hostname
 // without doing a full (and computionally expensive) handshake
 
 type PeekServerNameConn struct {

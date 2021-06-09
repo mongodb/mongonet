@@ -62,7 +62,7 @@ func (s *Session) ReadMessage() (Message, error) {
 	return ReadMessage(s.conn)
 }
 
-func (s *Session) Run(conn *Conn) {
+func (s *Session) Run(conn net.Conn) {
 	var err error
 	s.conn = s.server.workerFactory.GetConnection(conn)
 
@@ -80,8 +80,7 @@ func (s *Session) Run(conn *Conn) {
 		}
 	}()
 
-	// TIM TODO: FIX THIS
-	switch c := conn.wrapped.(type) {
+	switch c := conn.(type) {
 	case *PeekServerNameConn:
 		serverName, err := c.ServerName()
 		if err != nil {
@@ -89,24 +88,25 @@ func (s *Session) Run(conn *Conn) {
 			return
 		}
 		if s.earlyAccessChecker != nil {
-			s.earlyAccessCheckerData, err = s.earlyAccessChecker.PostClientHelloCheck(serverName, conn.RemoteAddr())
+			s.earlyAccessCheckerData, err = s.earlyAccessChecker.PostClientHelloCheck(serverName, c.RemoteAddr())
 			if err != nil {
 				s.logger.Logf(slogger.WARN, "Access Denied: %v", err)
 			}
 		}
 		s.TlsServerName = serverName
 
-	case *tls.Conn:
-		// we do this here so that we can get the SNI server name
-		err = c.Handshake()
-		if err != nil {
-			s.logger.Logf(slogger.WARN, "error doing tls handshake %s", err)
-			return
+	case *ProxyProtoConn:
+		if wrappedTlsConn, ok := c.wrapped.(*tls.Conn); ok {
+			// The handshake has already happened with TLS ProxyProtoConn
+			s.TlsServerName = strings.TrimSuffix(wrappedTlsConn.ConnectionState().ServerName, ".")
 		}
-		s.TlsServerName = strings.TrimSuffix(c.ConnectionState().ServerName, ".")
+
+	default:
+		s.logger.Logf(slogger.ERROR, "Internal error.  Unsupported connection type: %T", conn)
+		return
 	}
 
-	s.logger.Logf(slogger.INFO, "new connection SSLServerName [%s]", s.TlsServerName)
+	s.logger.Logf(slogger.INFO, "new connection TLSServerName [%s]", s.TlsServerName)
 
 	defer s.logger.Logf(slogger.INFO, "socket closed")
 
