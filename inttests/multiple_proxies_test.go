@@ -31,7 +31,7 @@ func TestCommonProxyProtocolInt(t *testing.T) {
 		panic(err)
 	}
 	proxy.InitializeServer()
-	if ok, _, _ := proxy.OnSSLConfig(nil); !ok {
+	if ok, _, _ := proxy.OnTlsConfig(nil); !ok {
 		panic("failed to call OnSSLConfig")
 	}
 	go proxy.Run()
