@@ -166,17 +166,37 @@ func (s *Server) Run() error {
 		close(s.doneChan)
 	}()
 
-	for {
-		conn, err := ln.Accept()
-		if err != nil {
-			if s.ctx.Err() != nil {
-				// context was cancelled.  Exit cleanly
-				return nil
-			}
-			return NewStackErrorf("could not accept in proxy: %s", err)
-		}
+	type accepted struct {
+		conn net.Conn
+		err  error
+	}
 
-		go s.handleConnection(conn)
+	incomingConnections := make(chan accepted, 128)
+
+	go func() {
+		var conn net.Conn
+		var err error = nil
+		for err == nil {
+			conn, err = ln.Accept()
+			incomingConnections <- accepted{conn, err}
+		}
+	}()
+
+	for {
+		select {
+		case <-s.ctx.Done():
+			return nil
+
+		case connectionEvent := <-incomingConnections:
+			if connectionEvent.err != nil {
+				if s.ctx.Err() != nil {
+					// context was cancelled.  Exit cleanly
+					return nil
+				}
+				return NewStackErrorf("could not accept in proxy: %s", err)
+			}
+			go s.handleConnection(connectionEvent.conn)
+		}
 	}
 
 }
