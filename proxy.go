@@ -195,11 +195,14 @@ func (p *Proxy) ClearRemoteConnection(rsName string, additionalGracePeriodSec in
 }
 
 func (p *Proxy) InitializeServer() {
+	serverCtx, serverCancelCtx := context.WithCancel(p.Context)
+
 	server := Server{
 		p.Config.ServerConfig,
 		p.logger,
 		p,
-		make(chan struct{}),
+		serverCtx,
+		serverCancelCtx,
 		make(chan error, 1),
 		make(chan struct{}),
 		nil,

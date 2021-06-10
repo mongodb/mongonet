@@ -73,12 +73,7 @@ func (s *Session) Run(conn *Conn) {
 
 	switch c := conn.wrapped.(type) {
 	case *tls.Conn:
-		// we do this here so that we can get the SNI server name
-		err = c.Handshake()
-		if err != nil {
-			s.logger.Logf(slogger.WARN, "error doing tls handshake %s", err)
-			return
-		}
+		// Handshake has already happened
 		s.tlsConn = c
 		s.SSLServerName = strings.TrimSuffix(c.ConnectionState().ServerName, ".")
 	}
