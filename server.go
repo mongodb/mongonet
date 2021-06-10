@@ -169,6 +169,15 @@ func (s *Server) Run() error {
 	for {
 		go func() {
 			conn, err := ln.Accept()
+			if s.config.TCPKeepAlivePeriod > 0 {
+				switch conn := conn.(type) {
+				case *net.TCPConn:
+					conn.SetKeepAlive(true)
+					conn.SetKeepAlivePeriod(s.config.TCPKeepAlivePeriod)
+				default:
+					s.logger.Logf(slogger.WARN, "Want to set TCP keep alive on accepted connection but connection is not *net.TCPConn.  It is %T", conn)
+				}
+			}
 			if s.config.UseSSL {
 				tlsConfig := s.config.SyncTlsConfig.getTlsConfig()
 				conn = tls.Server(conn, tlsConfig)
@@ -192,17 +201,6 @@ func (s *Server) Run() error {
 			} else {
 				s.logger.Logf(slogger.DEBUG, "accepted a regular connection (local=%v, remote=%v, target=%v)", conn.LocalAddr(), conn.RemoteAddr(), conn.TargetAddr())
 			}
-			wrappedConn := conn.wrapped
-			if s.config.TCPKeepAlivePeriod > 0 {
-				switch conn := wrappedConn.(type) {
-				case *net.TCPConn:
-					conn.SetKeepAlive(true)
-					conn.SetKeepAlivePeriod(s.config.TCPKeepAlivePeriod)
-				default:
-					s.logger.Logf(slogger.WARN, "Want to set TCP keep alive on accepted connection but connection is not *net.TCPConn.  It is %T", conn)
-				}
-			}
-
 			remoteAddr := connectionEvent.conn.RemoteAddr()
 			c := &Session{s, nil, remoteAddr, s.NewLogger(fmt.Sprintf("Session %s", remoteAddr)), "", nil, conn.IsProxied()}
 			if _, ok := s.contextualWorkerFactory(); ok {
