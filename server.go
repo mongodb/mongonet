@@ -157,7 +157,12 @@ func (s *Server) Run() error {
 
 	defer func() {
 		ln.Close()
+
+		// add another context cancellation so that it happens now.
+		// Otherwise the prior deferred cancellation won't happen until
+		// after this defer call (because defers are called LIFO)
 		s.cancelCtx()
+
 		// wait for all sessions to end
 		s.logger.Logf(slogger.WARN, "waiting for sessions to close...")
 		s.sessionManager.sessionWG.Wait()
