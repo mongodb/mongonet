@@ -356,7 +356,7 @@ type TestFactoryWithContext struct {
 	counter *int32
 }
 
-func (sf *TestFactoryWithContext) CreateWorkerWithContext(session *mongonet.Session, ctx *context.Context) (mongonet.ServerWorker, error) {
+func (sf *TestFactoryWithContext) CreateWorkerWithContext(session *mongonet.Session, ctx context.Context) (mongonet.ServerWorker, error) {
 	return &TestSessionWithContext{&BaseServerSession{session, map[string][]bson.D{}}, ctx, sf.counter}, nil
 }
 
@@ -370,13 +370,13 @@ func (sf *TestFactoryWithContext) GetConnection(conn *mongonet.Conn) io.ReadWrit
 
 type TestSessionWithContext struct {
 	*BaseServerSession
-	ctx     *context.Context
+	ctx     context.Context
 	counter *int32
 }
 
 func (tsc *TestSessionWithContext) DoLoopTemp() {
 	atomic.AddInt32(tsc.counter, 1)
-	ctx := *tsc.ctx
+	ctx := tsc.ctx
 
 	for {
 		m, err := tsc.session.ReadMessage()

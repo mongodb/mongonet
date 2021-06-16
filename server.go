@@ -102,26 +102,26 @@ type ServerWorkerFactory interface {
 }
 
 // ServerWorkerWithContextFactory should be used when workers need to listen to the Done channel of the session context.
-// The server will call stopSessions() when the server killChan is closed; stopSessions() will close the Done channel.
+// The server will cancel the ctx passed to CreateWorkerWithContext() when it exits; causing the ctx's Done channel to be closed
 // Implementing this interface will cause the server to incrememnt a session wait group when each new session starts.
 // A mongonet session will decrement the wait group after calling .Close() on the session.
 // When using this you should make sure that your `DoLoopTemp` returns when it receives from the context Done Channel.
 type ServerWorkerWithContextFactory interface {
 	ServerWorkerFactory
-	CreateWorkerWithContext(session *Session, ctx *context.Context) (ServerWorker, error)
+	CreateWorkerWithContext(session *Session, ctx context.Context) (ServerWorker, error)
 }
 
 type sessionManager struct {
-	sessionWG    *sync.WaitGroup
-	ctx          *context.Context
-	stopSessions context.CancelFunc
+	sessionWG *sync.WaitGroup
+	ctx       context.Context
 }
 
 type Server struct {
 	config         ServerConfig
 	logger         *slogger.Logger
 	workerFactory  ServerWorkerFactory
-	killChan       chan struct{}
+	ctx            context.Context
+	cancelCtx      context.CancelFunc
 	initChan       chan error
 	doneChan       chan struct{}
 	sessionManager *sessionManager
@@ -138,9 +138,15 @@ func (s *Server) Run() error {
 
 	s.logger.Logf(slogger.WARN, "listening on %s", bindTo)
 
+	defer s.cancelCtx()
 	defer close(s.initChan)
 
-	ln, err := net.Listen("tcp", bindTo)
+	keepAlive := time.Duration(-1)       // negative Duration means keep-alives disabled in ListenConfig
+	if s.config.TCPKeepAlivePeriod > 0 { // but in our config we use 0 to mean keep-alives are disabled
+		keepAlive = s.config.TCPKeepAlivePeriod
+	}
+	lc := &net.ListenConfig{KeepAlive: keepAlive}
+	ln, err := lc.Listen(s.ctx, "tcp", bindTo)
 	if err != nil {
 		returnErr := NewStackErrorf("cannot start listening in proxy: %s", err)
 		s.initChan <- returnErr
@@ -151,6 +157,12 @@ func (s *Server) Run() error {
 
 	defer func() {
 		ln.Close()
+
+		// add another context cancellation so that it happens now.
+		// Otherwise the prior deferred cancellation won't happen until
+		// after this defer call (because defers are called LIFO)
+		s.cancelCtx()
+
 		// wait for all sessions to end
 		s.logger.Logf(slogger.WARN, "waiting for sessions to close...")
 		s.sessionManager.sessionWG.Wait()
@@ -160,56 +172,89 @@ func (s *Server) Run() error {
 	}()
 
 	type accepted struct {
-		conn *Conn
+		conn net.Conn
 		err  error
 	}
 
-	incomingConnections := make(chan accepted, 1)
+	incomingConnections := make(chan accepted, 128)
+
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			incomingConnections <- accepted{conn, err}
+			if err != nil {
+				return
+			}
+		}
+	}()
 
 	for {
-		go func() {
-			conn, err := ln.Accept()
-			if s.config.TCPKeepAlivePeriod > 0 {
-				switch conn := conn.(type) {
-				case *net.TCPConn:
-					conn.SetKeepAlive(true)
-					conn.SetKeepAlivePeriod(s.config.TCPKeepAlivePeriod)
-				default:
-					s.logger.Logf(slogger.WARN, "Want to set TCP keep alive on accepted connection but connection is not *net.TCPConn.  It is %T", conn)
-				}
-			}
-			if s.config.UseSSL {
-				tlsConfig := s.config.SyncTlsConfig.getTlsConfig()
-				conn = tls.Server(conn, tlsConfig)
-			}
-			wrapper, err2 := NewConn(conn)
-			incomingConnections <- accepted{wrapper, MergeErrors(err, err2)}
-		}()
-
 		select {
-		case <-s.killChan:
-			// close the Done channel on the sessions ctx
-			s.sessionManager.stopSessions()
+		case <-s.ctx.Done():
 			return nil
+
 		case connectionEvent := <-incomingConnections:
 			if connectionEvent.err != nil {
+				if s.ctx.Err() != nil {
+					// context was cancelled.  Exit cleanly
+					return nil
+				}
 				return NewStackErrorf("could not accept in proxy: %s", err)
 			}
-			conn := connectionEvent.conn
-			if conn.IsProxied() {
-				s.logger.Logf(slogger.DEBUG, "accepted a proxied connection (local=%v, remote=%v, proxy=%v, target=%v, version=%v)", conn.LocalAddr(), conn.RemoteAddr(), conn.ProxyAddr(), conn.TargetAddr(), conn.Version())
-			} else {
-				s.logger.Logf(slogger.DEBUG, "accepted a regular connection (local=%v, remote=%v, target=%v)", conn.LocalAddr(), conn.RemoteAddr(), conn.TargetAddr())
-			}
-			remoteAddr := connectionEvent.conn.RemoteAddr()
-			c := &Session{s, nil, remoteAddr, s.NewLogger(fmt.Sprintf("Session %s", remoteAddr)), "", nil, conn.IsProxied()}
-			if _, ok := s.contextualWorkerFactory(); ok {
-				s.sessionManager.sessionWG.Add(1)
-			}
-			go c.Run(conn)
+			go s.handleConnection(connectionEvent.conn)
 		}
-
 	}
+
+}
+
+func (s *Server) handleConnection(conn net.Conn) {
+	if s.config.UseSSL {
+		tlsConfig := s.config.SyncTlsConfig.getTlsConfig()
+		conn = tls.Server(conn, tlsConfig)
+	}
+
+	proxyProtoConn, err := NewConn(conn)
+	if err != nil {
+		s.logger.Logf(slogger.ERROR, "Error setting up a proxy protocol compatible connection: %v", err)
+		conn.Close()
+		return
+	}
+
+	if proxyProtoConn.IsProxied() {
+		s.logger.Logf(
+			slogger.DEBUG,
+			"accepted a proxied connection (local=%v, remote=%v, proxy=%v, target=%v, version=%v)",
+			proxyProtoConn.LocalAddr(),
+			proxyProtoConn.RemoteAddr(),
+			proxyProtoConn.ProxyAddr(),
+			proxyProtoConn.TargetAddr(),
+			proxyProtoConn.Version(),
+		)
+	} else {
+		s.logger.Logf(
+			slogger.DEBUG,
+			"accepted a regular connection (local=%v, remote=%v)",
+			conn.LocalAddr(),
+			conn.RemoteAddr(),
+		)
+	}
+
+	remoteAddr := conn.RemoteAddr()
+	c := &Session{
+		s,
+		nil,
+		remoteAddr,
+		s.NewLogger(fmt.Sprintf("Session %s", remoteAddr)),
+		"",
+		nil,
+		proxyProtoConn.IsProxied(),
+	}
+
+	if _, ok := s.contextualWorkerFactory(); ok {
+		s.sessionManager.sessionWG.Add(1)
+	}
+
+	c.Run(proxyProtoConn)
 }
 
 // InitChannel returns a channel that will send nil once the server has started
@@ -219,7 +264,7 @@ func (s *Server) InitChannel() <-chan error {
 }
 
 func (s *Server) Close() {
-	close(s.killChan)
+	s.cancelCtx()
 	<-s.doneChan
 }
 
@@ -235,18 +280,18 @@ func (s *Server) NewLogger(prefix string) *slogger.Logger {
 }
 
 func NewServer(config ServerConfig, factory ServerWorkerFactory) Server {
-	sessionCtx, stopSessions := context.WithCancel(context.Background())
+	ctx, cancelCtx := context.WithCancel(context.Background())
 	return Server{
 		config,
 		&slogger.Logger{"Server", config.Appenders, 0, nil},
 		factory,
-		make(chan struct{}),
+		ctx,
+		cancelCtx,
 		make(chan error, 1),
 		make(chan struct{}),
 		&sessionManager{
 			&sync.WaitGroup{},
-			&sessionCtx,
-			stopSessions,
+			ctx,
 		},
 		nil,
 	}
