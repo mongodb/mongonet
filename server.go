@@ -179,11 +179,12 @@ func (s *Server) Run() error {
 	incomingConnections := make(chan accepted, 128)
 
 	go func() {
-		var conn net.Conn
-		var err error = nil
-		for err == nil {
-			conn, err = ln.Accept()
+		for {
+			conn, err := ln.Accept()
 			incomingConnections <- accepted{conn, err}
+			if err != nil {
+				return
+			}
 		}
 	}()
 
