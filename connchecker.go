@@ -34,7 +34,7 @@ func (c CheckedConn) Read(b []byte) (n int, err error) {
 		// If a timeout occurs, the TLS connection will be corrupted, and all future writes
 		// will return the same error. (https://golang.org/pkg/crypto/tls/#Conn.SetDeadline)
 		// Therefore, always return.
-		if _, ok := c.conn.(*tls.Conn); ok {
+		if isTlsConn(c.conn) {
 			return n, err
 		}
 		if e, ok := err.(net.Error); !ok || !e.Timeout() {
@@ -63,7 +63,7 @@ func (c CheckedConn) Write(b []byte) (n int, err error) {
 		// If a timeout occurs, the TLS connection will be corrupted, and all future writes
 		// will return the same error. (https://golang.org/pkg/crypto/tls/#Conn.SetDeadline)
 		// Therefore, always return.
-		if _, ok := c.conn.(*tls.Conn); ok {
+		if isTlsConn(c.conn) {
 			return n, err
 		}
 		if e, ok := err.(net.Error); !ok || !e.Timeout() {
@@ -74,4 +74,18 @@ func (c CheckedConn) Write(b []byte) (n int, err error) {
 
 func (c CheckedConn) Close() error {
 	return c.conn.Close()
+}
+
+func isTlsConn(conn net.Conn) bool {
+	switch c := conn.(type) {
+
+	case *tls.Conn:
+		return true
+
+	case *Conn:
+		return isTlsConn(c.wrapped)
+
+	default:
+		return false
+	}
 }
