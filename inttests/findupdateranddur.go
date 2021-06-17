@@ -26,7 +26,6 @@ func RunProxyConnectionPerformanceFindUpdateRandomDur(iterations, mongoPort, pro
 }
 
 func runFindUpdateRandomDur(logger *slogger.Logger, client *mongo.Client, workerNum int, ctx context.Context) (time.Duration, bool, error) {
-	rand.Seed(time.Now().UnixNano())
 	start := time.Now()
 	dbName, collName := "test2", "foo"
 	doc := bson.D{}
