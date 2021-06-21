@@ -64,7 +64,10 @@ https://docs.mongodb.com/manual/core/read-preference-staleness/
 const MinMaxStalenessVal int32 = 90
 
 func NewProxy(pc ProxyConfig) (Proxy, error) {
-	ctx := context.Background()
+	return NewProxyWithContext(pc, context.Background())
+}
+
+func NewProxyWithContext(pc ProxyConfig, ctx context.Context) (Proxy, error) {
 	var initCount, initPoolCleared int64 = 0, 0
 	defaultReadPref := readpref.Primary()
 	p := Proxy{pc, nil, nil, nil, nil, defaultReadPref, ctx, &initCount, &initPoolCleared, &sync.Map{}}
