@@ -176,7 +176,7 @@ func (s *Server) Run() error {
 		err  error
 	}
 
-	incomingConnections := make(chan accepted, 128)
+	incomingConnections := make(chan accepted, 1)
 
 	for {
 		go func() {
