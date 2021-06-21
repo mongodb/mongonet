@@ -178,17 +178,12 @@ func (s *Server) Run() error {
 
 	incomingConnections := make(chan accepted, 128)
 
-	go func() {
-		for {
+	for {
+		go func() {
 			conn, err := ln.Accept()
 			incomingConnections <- accepted{conn, err}
-			if err != nil {
-				return
-			}
-		}
-	}()
+		}()
 
-	for {
 		select {
 		case <-s.ctx.Done():
 			return nil
