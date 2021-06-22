@@ -178,7 +178,7 @@ func RunIntTest(mode util.MongoConnectionMode, maxPoolSize, workers int, targetA
 		hostToUse = "localhost"
 	}
 
-	pc := getProxyConfig(hostToUse, mongoPort, proxyPort, maxPoolSize, DefaultMaxPoolIdleTimeSec, mode, true, blockCommands)
+	pc := getProxyConfig(hostToUse, mongoPort, proxyPort, maxPoolSize, DefaultMaxPoolIdleTimeSec, mode, false, blockCommands)
 	pc.LogLevel = slogger.DEBUG
 	proxy, err := NewProxy(pc)
 	if err != nil {
