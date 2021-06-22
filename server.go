@@ -151,9 +151,11 @@ func (s *Server) Run() error {
 	defer func() {
 		ln.Close()
 		// wait for all sessions to end
-		s.logger.Logf(slogger.WARN, "waiting for sessions to close...")
-		s.sessionManager.sessionWG.Wait()
-		s.logger.Logf(slogger.WARN, "done")
+		if s.sessionManager != nil {
+			s.logger.Logf(slogger.WARN, "waiting for sessions to close...")
+			s.sessionManager.sessionWG.Wait()
+			s.logger.Logf(slogger.WARN, "done")
+		}
 
 		close(s.doneChan)
 	}()
