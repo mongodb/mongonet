@@ -3,6 +3,7 @@ package inttests
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"time"
 
 	"github.com/mongodb/mongonet"
@@ -39,6 +40,7 @@ func cleanupRemoteConns(client *mongo.Client, ctx context.Context) error {
 }
 
 func findOneRemoteConn(logger *slogger.Logger, coll *mongo.Collection, goctx context.Context) error {
+	rand.Seed(time.Now().UnixNano())
 	doc := bson.D{}
 	res := coll.FindOne(goctx, bson.D{})
 	if res.Err() != nil {
@@ -66,6 +68,7 @@ func findOneRemoteConn(logger *slogger.Logger, coll *mongo.Collection, goctx con
 }
 
 func runRemoteConns(logger *slogger.Logger, client *mongo.Client, workerNum int, ctx context.Context) (time.Duration, bool, error) {
+	rand.Seed(time.Now().UnixNano())
 	start := time.Now()
 
 	localColl := client.Database(LocalDbName).Collection(RemoteConnCollName)
@@ -152,6 +155,7 @@ func runProxyConnectionPerformanceRemoteConns(iterations, mongoPort, proxyPort i
 }
 
 func findOneRemoteConnRetry(logger *slogger.Logger, coll *mongo.Collection, goctx context.Context) error {
+	rand.Seed(time.Now().UnixNano())
 	doc := bson.D{}
 	res := coll.FindOne(goctx, bson.D{})
 	if res.Err() != nil {
@@ -174,6 +178,7 @@ func findOneRemoteConnRetry(logger *slogger.Logger, coll *mongo.Collection, goct
 }
 
 func runRemoteConnsRetry(logger *slogger.Logger, client *mongo.Client, workerNum int, ctx context.Context) (time.Duration, bool, error) {
+	rand.Seed(time.Now().UnixNano())
 	start := time.Now()
 
 	coll := client.Database(util.RetryOnRemoteDbNameForTests).Collection(RemoteConnCollName)
