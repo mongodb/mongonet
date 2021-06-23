@@ -54,10 +54,10 @@ func runFindUpdateRandomDur(logger *slogger.Logger, client *mongo.Client, worker
 	if err != nil {
 		return 0, false, fmt.Errorf("failed to update the doc. err=%v", err)
 	}
-	elapsed := time.Since(start)
 	rn := rand.Intn(1000)
 	logger.Logf(slogger.DEBUG, "**** worker-%v sleeping for %vms", workerNum, rn)
 	time.Sleep(time.Duration(rn) * time.Millisecond)
+	elapsed := time.Since(start)
 	logger.Logf(slogger.DEBUG, "worker-%v finished after %v", workerNum, elapsed)
 	return elapsed, true, nil
 }
