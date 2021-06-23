@@ -32,4 +32,3 @@ sleep 10 # let replica sets reach steady state
 
 go test -test.v -run TestProxyMongosMode
 go test -test.v -run TestCommon
-
