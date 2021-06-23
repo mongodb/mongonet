@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"reflect"
+	"runtime"
 	"time"
 
 	"github.com/mongodb/mongonet/util"
@@ -47,7 +49,6 @@ func getCommentDoc(postId, commentId int) bson.D {
 }
 
 func getPostDoc(id int) bson.D {
-	rand.Seed(time.Now().UnixNano())
 	return bson.D{
 		{"_id", id},
 		{"author", bson.D{
@@ -62,7 +63,6 @@ func getPostDoc(id int) bson.D {
 }
 
 func blogPostFindOne(logger *slogger.Logger, coll *mongo.Collection, goctx context.Context) error {
-	rand.Seed(time.Now().UnixNano())
 	doc := bson.D{}
 	cur, err := coll.Find(goctx, bson.D{{"author.age", rand.Intn(100)}})
 	if err != nil {
@@ -76,7 +76,6 @@ func blogPostFindOne(logger *slogger.Logger, coll *mongo.Collection, goctx conte
 }
 
 func blogPostFindSome(logger *slogger.Logger, coll *mongo.Collection, goctx context.Context) error {
-	rand.Seed(time.Now().UnixNano())
 	var res []interface{}
 	cur, err := coll.Find(goctx, bson.D{{"author.age", bson.D{{"$gt", rand.Intn(90)}}}})
 	if err != nil {
@@ -86,7 +85,6 @@ func blogPostFindSome(logger *slogger.Logger, coll *mongo.Collection, goctx cont
 }
 
 func blogPostFindComments(logger *slogger.Logger, coll *mongo.Collection, goctx context.Context) error {
-	rand.Seed(time.Now().UnixNano())
 	var res []interface{}
 	cur, err := coll.Find(goctx, bson.D{{"post_id", bson.D{{"$gt", rand.Intn(90)}}}})
 	if err != nil {
@@ -96,7 +94,6 @@ func blogPostFindComments(logger *slogger.Logger, coll *mongo.Collection, goctx 
 }
 
 func blogPostUpdatePost(logger *slogger.Logger, coll *mongo.Collection, goctx context.Context) error {
-	rand.Seed(time.Now().UnixNano())
 	_, err := coll.UpdateOne(goctx, bson.D{{"_id", bson.D{{"$gt", rand.Intn(90)}}}}, bson.D{{"$inc", bson.D{{"upVotes", 1}}}})
 	if err != nil {
 		return fmt.Errorf("failed to update the doc. err=%v", err)
@@ -105,7 +102,6 @@ func blogPostUpdatePost(logger *slogger.Logger, coll *mongo.Collection, goctx co
 }
 
 func runBlogApp(logger *slogger.Logger, client *mongo.Client, workerNum int, ctx context.Context) (time.Duration, bool, error) {
-	rand.Seed(time.Now().UnixNano())
 	start := time.Now()
 
 	postsColl := client.Database(BlogsDB).Collection(PostsColl)
@@ -130,7 +126,10 @@ func runBlogApp(logger *slogger.Logger, client *mongo.Client, workerNum int, ctx
 	}
 
 	elapsed := time.Since(start)
-	logger.Logf(slogger.DEBUG, "worker-%v finished after %v", workerNum, elapsed)
+
+	funcName := runtime.FuncForPC(reflect.ValueOf(funcs[ix]).Pointer()).Name()
+
+	logger.Logf(slogger.INFO, "worker-%v called %v and finished after %v", workerNum, funcName, elapsed)
 	return elapsed, true, nil
 }
 
