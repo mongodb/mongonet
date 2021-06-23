@@ -7,7 +7,6 @@ functions:
   "generate expansions":
     - command: shell.exec
       params:
-        working_dir: mongonet
         script: |
           PATCH_DIR=""
           if [ "${is_patch|}" = "true" ]; then
@@ -16,7 +15,7 @@ functions:
           echo "patch_dir: $PATCH_DIR" | tee expansions.yml
     - command: expansions.update
       params:
-        file: mongonet/expansions.yml
+        file: expansions.yml
 
   "fetch source":
     - command: git.get_project
