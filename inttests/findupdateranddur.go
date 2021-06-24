@@ -31,18 +31,11 @@ func runFindUpdateRandomDur(logger *slogger.Logger, client *mongo.Client, worker
 	doc := bson.D{}
 	coll := client.Database(dbName).Collection(collName)
 
-	logger.Logf(slogger.DEBUG, "worker-%v BEFORE FIND %v", workerNum, time.Since(start))
-	last := time.Now()
 	cur, err := coll.Find(ctx, bson.D{{"x", workerNum}})
 	if err != nil {
 		return 0, false, fmt.Errorf("failed to run find. err=%v", err)
 	}
-	logger.Logf(slogger.DEBUG, "worker-%v AFTER FIND; BEFORE CURSOR NEXT %v", workerNum, time.Since(last))
-	last = time.Now()
 	cur.Next(ctx)
-	logger.Logf(slogger.DEBUG, "worker-%v AFTER CURSOR NEXT; BEFORE DECODE %v", workerNum, time.Since(last))
-	last = time.Now()
-
 	if err := cur.Decode(&doc); err != nil {
 		return 0, false, fmt.Errorf("failed to decode find. err=%v", err)
 	}
@@ -57,13 +50,10 @@ func runFindUpdateRandomDur(logger *slogger.Logger, client *mongo.Client, worker
 	if v != workerNum {
 		return 0, false, fmt.Errorf("fetched wrong doc %v for worker=%v", doc, workerNum)
 	}
-	logger.Logf(slogger.DEBUG, "worker-%v AFTER DECODE; BEFORE UPDATE_ONE %v", workerNum, time.Since(last))
-	last = time.Now()
 	_, err = coll.UpdateOne(ctx, bson.D{{"x", workerNum}}, bson.D{{"$set", bson.D{{"i", workerNum}}}})
 	if err != nil {
 		return 0, false, fmt.Errorf("failed to update the doc. err=%v", err)
 	}
-	logger.Logf(slogger.DEBUG, "worker-%v AFTER UPDATE_ONE; BEFORE SLEEP %v", workerNum, time.Since(last))
 	rn := rand.Intn(1000)
 	logger.Logf(slogger.DEBUG, "**** worker-%v sleeping for %vms", workerNum, rn)
 	time.Sleep(time.Duration(rn) * time.Millisecond)
