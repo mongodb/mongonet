@@ -25,7 +25,7 @@ func runShellCommand(cmd string, t *testing.T, goctx context.Context, args ...st
 
 func TestCommonProxyProtocolInt(t *testing.T) {
 	goctx := context.Background()
-	if err := runShellCommand("haproxy", t, goctx, "-f", "mongonethaproxy.conf"); err != nil {
+	if err := runShellCommand("haproxy", t, goctx, "-f", "mongonethaproxy.conf", "-D"); err != nil {
 		panic(err)
 	}
 	defer runShellCommand("pkill", t, goctx, "-9", "-f", "mongonethaproxy.conf")
