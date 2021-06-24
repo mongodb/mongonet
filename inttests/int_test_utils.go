@@ -60,6 +60,10 @@ type FindFixer struct {
 	cm              *LightCursorManager
 }
 
+func (ff *FindFixer) ExtractExecutionTime(startTime time.Time, pausedExecutionTime int64) {
+	// no-op
+}
+
 func (ff *FindFixer) InterceptMongoToClient(m Message, address address.Address, isRemote bool) (Message, error) {
 	switch mm := m.(type) {
 	case *MessageMessage:
@@ -148,6 +152,10 @@ func fixHostNames(doc bson.D, old, new int) bson.D {
 func fixIsMasterDirect(doc bson.D, mongoPort, proxyPort int) (SimpleBSON, error) {
 	doc = fixHostNames(doc, mongoPort, proxyPort)
 	return SimpleBSONConvert(doc)
+}
+
+func (mri *IsMasterFixer) ExtractExecutionTime(startTime time.Time, pausedExecutionTime int64) {
+	// no-op
 }
 
 func (mri *IsMasterFixer) InterceptMongoToClient(m Message, address address.Address, isRemote bool) (Message, error) {
