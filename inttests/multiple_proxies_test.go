@@ -2,6 +2,7 @@ package inttests
 
 import (
 	"context"
+	"os/exec"
 	"testing"
 
 	. "github.com/mongodb/mongonet"
@@ -15,7 +16,20 @@ import (
 	connection reset by peer errors might appear due to HAProxy health checks
 */
 
+func runShellCommand(cmd string, t *testing.T, goctx context.Context, args ...string) error {
+	cmdObj := exec.CommandContext(goctx, cmd, args...)
+	out, err := cmdObj.CombinedOutput()
+	t.Logf("cmd %s %v out: %v. err=%v", cmd, args, string(out), err)
+	return err
+}
+
 func TestCommonProxyProtocolInt(t *testing.T) {
+	goctx := context.Background()
+	if err := runShellCommand("haproxy", t, goctx, "-f", "mongonethaproxy.conf"); err != nil {
+		panic(err)
+	}
+	defer runShellCommand("pkill", t, goctx, "-9", "-f", "mongonethaproxy.conf")
+
 	type mongonetIsConnectionProxiedResponse struct {
 		Proxied bool `bson:"proxied"`
 	}
@@ -34,8 +48,6 @@ func TestCommonProxyProtocolInt(t *testing.T) {
 		panic("failed to call OnSSLConfig")
 	}
 	go proxy.Run()
-
-	goctx := context.Background()
 
 	check := func(name string, port int, expected bool) {
 		proxyClient, err := util.GetTestClient(hostname, port, util.Cluster, false, "testProxy1", goctx)
@@ -59,5 +71,4 @@ func TestCommonProxyProtocolInt(t *testing.T) {
 	check("direct", proxyPort, false)
 	check("haProxyPortV1", haProxyPortV1, true)
 	check("haProxyPortV2", haProxyPortV2, true)
-
 }
