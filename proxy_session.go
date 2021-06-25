@@ -418,7 +418,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 	if ps.interceptor != nil {
 		ps.interceptor.TrackRequest(m.Header())
 		m, respInter, remoteRs, pinnedAddress, err = ps.interceptor.InterceptClientToMongo(m, previousRes)
-		defer func () {
+		defer func() {
 			if respInter != nil {
 				respInter.ExtractExecutionTime(startServerSelection, pausedExecutionTime)
 			}
