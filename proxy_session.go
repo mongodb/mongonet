@@ -47,7 +47,9 @@ type MetricsHookFactory interface {
 
 type ResponseInterceptor interface {
 	InterceptMongoToClient(m Message, serverAddress address.Address, isRemote bool) (Message, error)
-	ExtractExecutionTime(startTime time.Time, pausedExecutionTime int64)
+	// ExtractExecutionTime records the execution time of an operation from startTime, subtracting
+	// time while execution was paused, pausedExecutionTimeMicros (i.e. while sending the message back to client)
+	ExtractExecutionTime(startTime time.Time, pausedExecutionTimeMicros int64)
 }
 
 type ProxyInterceptor interface {
@@ -414,13 +416,13 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 	ps.logMessageTrace(ps.proxy.logger, ps.proxy.Config.TraceConnPool, m)
 	var respInter ResponseInterceptor
 	var pinnedAddress address.Address
-	pausedExecutionTime := int64(0)
+	pausedExecutionTimeMicros := int64(0)
 	if ps.interceptor != nil {
 		ps.interceptor.TrackRequest(m.Header())
 		m, respInter, remoteRs, pinnedAddress, err = ps.interceptor.InterceptClientToMongo(m, previousRes)
 		defer func() {
 			if respInter != nil {
-				respInter.ExtractExecutionTime(startServerSelection, pausedExecutionTime)
+				respInter.ExtractExecutionTime(startServerSelection, pausedExecutionTimeMicros)
 			}
 		}()
 		if err != nil {
@@ -645,6 +647,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 		ps.logTrace(ps.proxy.logger, ps.proxy.Config.TraceConnPool, "sending back data to user from mongo conn id=%v remoteRs=%s", mongoConn.conn.ID(), remoteRs)
 		startPausedTimer := time.Now()
 		err = SendMessage(resp, ps.conn)
+		pausedExecutionTimeMicros += time.Now().Sub(startPausedTimer).Microseconds()
 		if err != nil {
 			if ps.isMetricsEnabled {
 				hookErr := responseErrorsHook.IncCounterGauge()
@@ -684,7 +687,6 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 			}
 			return nil, NewStackErrorf("bad response type from server %T", r)
 		}
-		pausedExecutionTime += time.Now().Sub(startPausedTimer).Microseconds()
 	}
 }
 
