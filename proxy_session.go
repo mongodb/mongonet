@@ -47,9 +47,9 @@ type MetricsHookFactory interface {
 
 type ResponseInterceptor interface {
 	InterceptMongoToClient(m Message, serverAddress address.Address, isRemote bool) (Message, error)
-	// ExtractExecutionTime records the execution time of an operation from startTime, subtracting
+	// ProcessExecutionTime records the execution time of an operation from startTime, subtracting
 	// time while execution was paused, pausedExecutionTimeMicros (i.e. while sending the message back to client)
-	ExtractExecutionTime(startTime time.Time, pausedExecutionTimeMicros int64)
+	ProcessExecutionTime(startTime time.Time, pausedExecutionTimeMicros int64)
 }
 
 type ProxyInterceptor interface {
@@ -422,7 +422,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 		m, respInter, remoteRs, pinnedAddress, err = ps.interceptor.InterceptClientToMongo(m, previousRes)
 		defer func() {
 			if respInter != nil {
-				respInter.ExtractExecutionTime(startServerSelection, pausedExecutionTimeMicros)
+				respInter.ProcessExecutionTime(startServerSelection, pausedExecutionTimeMicros)
 			}
 		}()
 		if err != nil {

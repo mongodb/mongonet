@@ -60,7 +60,7 @@ type FindFixer struct {
 	cm              *LightCursorManager
 }
 
-func (ff *FindFixer) ExtractExecutionTime(startTime time.Time, pausedExecutionTimeMicros int64) {
+func (ff *FindFixer) ProcessExecutionTime(startTime time.Time, pausedExecutionTimeMicros int64) {
 	// no-op
 }
 
@@ -154,7 +154,7 @@ func fixIsMasterDirect(doc bson.D, mongoPort, proxyPort int) (SimpleBSON, error)
 	return SimpleBSONConvert(doc)
 }
 
-func (mri *IsMasterFixer) ExtractExecutionTime(startTime time.Time, pausedExecutionTimeMicros int64) {
+func (mri *IsMasterFixer) ProcessExecutionTime(startTime time.Time, pausedExecutionTimeMicros int64) {
 	// no-op
 }
 
