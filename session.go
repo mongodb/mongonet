@@ -73,7 +73,10 @@ func (s *Session) Run(conn *Conn) {
 
 	switch c := conn.wrapped.(type) {
 	case *tls.Conn:
-		// Handshake has already happened
+		if err := c.Handshake(); err != nil {
+			s.logger.Logf(slogger.WARN, "error performing handshake %v", err)
+			return
+		}
 		s.tlsConn = c
 		s.SSLServerName = strings.TrimSuffix(c.ConnectionState().ServerName, ".")
 	}
@@ -89,7 +92,7 @@ func (s *Session) Run(conn *Conn) {
 	}
 
 	if err != nil {
-		s.logger.Logf(slogger.WARN, "error creating worker %s", err)
+		s.logger.Logf(slogger.WARN, "error creating worker %v", err)
 		return
 	}
 
