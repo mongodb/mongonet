@@ -249,7 +249,6 @@ func (s *Server) handleConnection(origConn net.Conn) {
 		)
 	}
 	newconn := s.handshake(proxyProtoConn)
-	proxyProtoConn.wrapped = newconn
 	remoteAddr := proxyProtoConn.RemoteAddr()
 	c := &Session{
 		s,
