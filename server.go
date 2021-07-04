@@ -213,12 +213,10 @@ func (s *Server) handshake(conn net.Conn) net.Conn {
 	}
 
 	tlsConn := tls.Server(conn, s.config.SyncTlsConfig.getTlsConfig())
-	s.logger.Logf(slogger.ERROR, "got a TLS connection! attempting handshake")
 	if err := tlsConn.Handshake(); err != nil {
 		s.logger.Logf(slogger.ERROR, "TLS Handshake failed. err=%v", err)
 		return conn
 	}
-	s.logger.Logf(slogger.ERROR, "handshake successfull!")
 	return tlsConn
 }
 
@@ -232,7 +230,7 @@ func (s *Server) handleConnection(origConn net.Conn) {
 
 	if proxyProtoConn.IsProxied() {
 		s.logger.Logf(
-			slogger.ERROR,
+			slogger.DEBUG,
 			"accepted a proxied connection (local=%v, remote=%v, proxy=%v, target=%v, version=%v)",
 			proxyProtoConn.LocalAddr(),
 			proxyProtoConn.RemoteAddr(),
@@ -242,7 +240,7 @@ func (s *Server) handleConnection(origConn net.Conn) {
 		)
 	} else {
 		s.logger.Logf(
-			slogger.ERROR,
+			slogger.DEBUG,
 			"accepted a regular connection (local=%v, remote=%v)",
 			origConn.LocalAddr(),
 			origConn.RemoteAddr(),
