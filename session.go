@@ -53,7 +53,7 @@ func (s *Session) ReadMessage() (Message, error) {
 	return ReadMessage(s.conn)
 }
 
-func (s *Session) Run(conn *Conn) {
+func (s *Session) Run(conn net.Conn) {
 	var err error
 	s.conn = s.server.workerFactory.GetConnection(conn)
 
@@ -71,9 +71,8 @@ func (s *Session) Run(conn *Conn) {
 		}
 	}()
 
-	switch c := conn.wrapped.(type) {
+	switch c := conn.(type) {
 	case *tls.Conn:
-		// handshake already happened
 		s.tlsConn = c
 		s.SSLServerName = strings.TrimSuffix(c.ConnectionState().ServerName, ".")
 	}

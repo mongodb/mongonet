@@ -98,7 +98,7 @@ type ServerWorker interface {
 
 type ServerWorkerFactory interface {
 	CreateWorker(session *Session) (ServerWorker, error)
-	GetConnection(conn *Conn) io.ReadWriteCloser
+	GetConnection(conn net.Conn) io.ReadWriteCloser
 }
 
 // ServerWorkerWithContextFactory should be used when workers need to listen to the Done channel of the session context.
@@ -207,28 +207,32 @@ func (s *Server) Run() error {
 
 }
 
-func (s *Server) handshake(conn net.Conn) (net.Conn, error) {
+func (s *Server) handshake(conn net.Conn) net.Conn {
 	if !s.config.UseSSL {
-		return conn, nil
+		return conn
 	}
+
 	tlsConn := tls.Server(conn, s.config.SyncTlsConfig.getTlsConfig())
+	s.logger.Logf(slogger.ERROR, "got a TLS connection! attempting handshake")
 	if err := tlsConn.Handshake(); err != nil {
-		return nil, fmt.Errorf("TLS handshake failed. err=%v", err)
+		s.logger.Logf(slogger.ERROR, "TLS Handshake failed. err=%v", err)
+		return conn
 	}
-	return tlsConn, nil
+	s.logger.Logf(slogger.ERROR, "handshake successfull!")
+	return tlsConn
 }
 
-func (s *Server) handleConnection(conn net.Conn) {
-	proxyProtoConn, err := NewConn(conn)
+func (s *Server) handleConnection(origConn net.Conn) {
+	proxyProtoConn, err := NewConn(origConn)
 	if err != nil {
 		s.logger.Logf(slogger.ERROR, "Error setting up a proxy protocol compatible connection: %v", err)
-		conn.Close()
+		origConn.Close()
 		return
 	}
 
 	if proxyProtoConn.IsProxied() {
 		s.logger.Logf(
-			slogger.DEBUG,
+			slogger.ERROR,
 			"accepted a proxied connection (local=%v, remote=%v, proxy=%v, target=%v, version=%v)",
 			proxyProtoConn.LocalAddr(),
 			proxyProtoConn.RemoteAddr(),
@@ -238,22 +242,15 @@ func (s *Server) handleConnection(conn net.Conn) {
 		)
 	} else {
 		s.logger.Logf(
-			slogger.DEBUG,
+			slogger.ERROR,
 			"accepted a regular connection (local=%v, remote=%v)",
-			conn.LocalAddr(),
-			conn.RemoteAddr(),
+			origConn.LocalAddr(),
+			origConn.RemoteAddr(),
 		)
 	}
-	conn, err = s.handshake(proxyProtoConn)
-	if err != nil {
-		s.logger.Logf(slogger.ERROR, "error performing TLS handshake: %v", err)
-		conn.Close()
-		return
-	}
-
-	proxyProtoConn.wrapped = conn
-
-	remoteAddr := conn.RemoteAddr()
+	newconn := s.handshake(proxyProtoConn)
+	proxyProtoConn.wrapped = newconn
+	remoteAddr := proxyProtoConn.RemoteAddr()
 	c := &Session{
 		s,
 		nil,
@@ -268,7 +265,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 		s.sessionManager.sessionWG.Add(1)
 	}
 
-	c.Run(proxyProtoConn)
+	c.Run(newconn)
 }
 
 // InitChannel returns a channel that will send nil once the server has started
