@@ -207,12 +207,18 @@ func (s *Server) Run() error {
 
 }
 
-func (s *Server) handleConnection(conn net.Conn) {
-	if s.config.UseSSL {
-		tlsConfig := s.config.SyncTlsConfig.getTlsConfig()
-		conn = tls.Server(conn, tlsConfig)
+func (s *Server) handshake(conn net.Conn) (net.Conn, error) {
+	if !s.config.UseSSL {
+		return conn, nil
 	}
+	tlsConn := tls.Server(conn, s.config.SyncTlsConfig.getTlsConfig())
+	if err := tlsConn.Handshake(); err != nil {
+		return nil, fmt.Errorf("TLS handshake failed. err=%v", err)
+	}
+	return tlsConn, nil
+}
 
+func (s *Server) handleConnection(conn net.Conn) {
 	proxyProtoConn, err := NewConn(conn)
 	if err != nil {
 		s.logger.Logf(slogger.ERROR, "Error setting up a proxy protocol compatible connection: %v", err)
@@ -238,6 +244,14 @@ func (s *Server) handleConnection(conn net.Conn) {
 			conn.RemoteAddr(),
 		)
 	}
+	conn, err = s.handshake(proxyProtoConn)
+	if err != nil {
+		s.logger.Logf(slogger.ERROR, "error performing TLS handshake: %v", err)
+		conn.Close()
+		return
+	}
+
+	proxyProtoConn.wrapped = conn
 
 	remoteAddr := conn.RemoteAddr()
 	c := &Session{

@@ -73,10 +73,7 @@ func (s *Session) Run(conn *Conn) {
 
 	switch c := conn.wrapped.(type) {
 	case *tls.Conn:
-		if err := c.Handshake(); err != nil {
-			s.logger.Logf(slogger.WARN, "error performing handshake %v", err)
-			return
-		}
+		// handshake already happened
 		s.tlsConn = c
 		s.SSLServerName = strings.TrimSuffix(c.ConnectionState().ServerName, ".")
 	}
