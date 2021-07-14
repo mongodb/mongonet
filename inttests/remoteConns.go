@@ -285,3 +285,85 @@ func runProxyConnectionPerformanceRetryOnRemoteConns(iterations, mongoPort, prox
 
 	return analyzeResults(err, workers, failedCount, avgLatencyMs, targetAvgLatencyMs, maxLatencyMs, targetMaxLatencyMs, results, percentiles, logger)
 }
+
+func runProxyConnectionPerformanceMultipleRetryOnRemoteConns(iterations, mongoPort, proxyPort int, hostname string, logger *slogger.Logger, workers int, targetAvgLatencyMs, targetMaxLatencyMs int64, mode util.MongoConnectionMode,
+	mongoClientFactory util.ClientFactoryFunc,
+	proxyClientFactory util.ClientFactoryFunc,
+) error {
+	preSetupFunc := func(logger *slogger.Logger, client *mongo.Client, ctx context.Context) error {
+		client1, err := mongoClientFactory(hostname, 30000, util.Cluster, false, "presetup", ctx)
+		if err != nil {
+			return err
+		}
+		defer client1.Disconnect(ctx)
+		client2, err := mongoClientFactory(hostname, 40000, util.Cluster, false, "presetup", ctx)
+		if err != nil {
+			return err
+		}
+		defer client2.Disconnect(ctx)
+		if err := util.DisableFailPoint(client1, ctx); err != nil {
+			return err
+		}
+		if err := util.DisableFailPoint(client2, ctx); err != nil {
+			return err
+		}
+		if err := cleanupRemoteConns(client1, ctx); err != nil {
+			return err
+		}
+		if err := cleanupRemoteConns(client2, ctx); err != nil {
+			return err
+		}
+		time.Sleep(time.Second)
+		localColl := client1.Database(util.RetryOnRemoteDbNameForTests).Collection(RemoteConnCollName)
+		remoteColl := client2.Database(util.RetryOnRemoteDbNameForTests).Collection(RemoteConnCollName)
+		debugPrintCollContents(localColl, "local-before", ctx)
+		debugPrintCollContents(remoteColl, "remote-before", ctx)
+		if _, err := localColl.InsertOne(ctx, bson.D{{"val", util.RetryOnRemoteVal * 3}}); err != nil {
+			return err
+		}
+
+		if _, err := remoteColl.InsertOne(ctx, bson.D{{"val", util.RetryOnRemoteVal * 2}}); err != nil {
+			return err
+		}
+		time.Sleep(time.Second)
+		debugPrintCollContents(localColl, "local", ctx)
+		debugPrintCollContents(remoteColl, "remote", ctx)
+		return nil
+	}
+	setupFunc := func(logger *slogger.Logger, client *mongo.Client, ctx context.Context) error {
+		return nil
+	}
+
+	testFunc := func(logger *slogger.Logger, client *mongo.Client, workerNum, iteration int, ctx context.Context) (elapsed time.Duration, success bool, err error) {
+		return runRemoteConnsRetry(logger, client, workerNum, ctx)
+	}
+
+	cleanupFunc := func(logger *slogger.Logger, client *mongo.Client, ctx context.Context) error {
+		client2, err := mongoClientFactory(hostname, 30000, util.Cluster, false, "cleanup", ctx)
+		if err != nil {
+			return err
+		}
+		defer client2.Disconnect(ctx)
+		client3, err := mongoClientFactory(hostname, 40000, util.Cluster, false, "cleanup", ctx)
+		if err != nil {
+			return err
+		}
+		defer client3.Disconnect(ctx)
+		if err := cleanupRemoteConns(client2, ctx); err != nil {
+			return err
+		}
+		return cleanupRemoteConns(client3, ctx)
+	}
+	results, failedCount, maxLatencyMs, avgLatencyMs, percentiles, err := DoConcurrencyTestRun(logger,
+		hostname, mongoPort, proxyPort, mode,
+		mongoClientFactory,
+		proxyClientFactory,
+		iterations, workers,
+		preSetupFunc,
+		setupFunc,
+		testFunc,
+		cleanupFunc,
+	)
+
+	return analyzeResults(err, workers, failedCount, avgLatencyMs, targetAvgLatencyMs, maxLatencyMs, targetMaxLatencyMs, results, percentiles, logger)
+}
