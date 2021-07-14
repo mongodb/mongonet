@@ -318,7 +318,7 @@ func runProxyConnectionPerformanceMultipleRetryOnRemoteConns(iterations, mongoPo
 		remoteColl := client2.Database(util.RetryOnRemoteDbNameForTests).Collection(RemoteConnCollName)
 		debugPrintCollContents(localColl, "local-before", ctx)
 		debugPrintCollContents(remoteColl, "remote-before", ctx)
-		if _, err := localColl.InsertOne(ctx, bson.D{{"val", util.RetryOnRemoteVal * 3}}); err != nil {
+		if _, err := localColl.InsertOne(ctx, bson.D{{"val", util.RetryOnRemoteValMultiple}}); err != nil {
 			return err
 		}
 

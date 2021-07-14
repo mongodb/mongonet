@@ -19,6 +19,7 @@ const (
 	RemoteDbNameForTests        = "testRemote"
 	RetryOnRemoteDbNameForTests = "testRetryOnRemote"
 	RetryOnRemoteVal            = 10
+	RetryOnRemoteValMultiple    = 30
 	RemoteRsName                = "proxytest2"
 )
 

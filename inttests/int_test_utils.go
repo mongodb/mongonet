@@ -81,10 +81,10 @@ func (ff *FindFixer) InterceptMongoToClient(m Message, address address.Address, 
 				// trigger a retry error only if the server responds with a particular value
 				if v == util.RetryOnRemoteVal {
 					return mm, NewProxyRetryError(ff.OriginalMessage, SimpleBSON{}, util.RemoteRsName)
-				} else if v == util.RetryOnRemoteVal*3 && !retryFailed {
-					// Retry on local, should still get util.RetryOnRemoteVal*3
+				} else if v == util.RetryOnRemoteValMultiple && !retryFailed {
+					// Retry on local, should still get RetryOnRemoteValMultiple
 					return mm, NewProxyRetryErrorWithRetryCount(ff.OriginalMessage, SimpleBSON{}, "", 2)
-				} else if v == util.RetryOnRemoteVal*3 && retryFailed {
+				} else if v == util.RetryOnRemoteValMultiple && retryFailed {
 					// Exhausted retries, route queries back to RemoteRsName
 					return mm, NewProxyRetryError(ff.OriginalMessage, SimpleBSON{}, util.RemoteRsName)
 				}
