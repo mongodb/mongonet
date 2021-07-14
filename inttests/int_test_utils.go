@@ -64,7 +64,7 @@ func (ff *FindFixer) ProcessExecutionTime(startTime time.Time, pausedExecutionTi
 	// no-op
 }
 
-func (ff *FindFixer) InterceptMongoToClient(m Message, address address.Address, isRemote bool) (Message, error) {
+func (ff *FindFixer) InterceptMongoToClient(m Message, address address.Address, isRemote bool, retryFailed bool) (Message, error) {
 	switch mm := m.(type) {
 	case *MessageMessage:
 		doc, _, err := MessageMessageToBSOND(mm)
@@ -158,7 +158,7 @@ func (mri *IsMasterFixer) ProcessExecutionTime(startTime time.Time, pausedExecut
 	// no-op
 }
 
-func (mri *IsMasterFixer) InterceptMongoToClient(m Message, address address.Address, isRemote bool) (Message, error) {
+func (mri *IsMasterFixer) InterceptMongoToClient(m Message, address address.Address, isRemote bool, retryFailed bool) (Message, error) {
 	switch mm := m.(type) {
 	case *ReplyMessage:
 		var err error

@@ -17,6 +17,7 @@ type ProxyRetryError struct {
 	MsgToRetry     Message
 	PreviousResult SimpleBSON
 	RetryOnRs      string
+	RetryCount     int
 }
 
 func (e *ProxyRetryError) Error() string {
@@ -28,6 +29,20 @@ func NewProxyRetryError(msgToRetry Message, previousRes SimpleBSON, retryOnRs st
 		msgToRetry,
 		previousRes,
 		retryOnRs,
+		1,
+	}
+}
+
+// NewProxyRetryErrorWithRetryCount returns a ProxyRetryError with retryCount
+// number of retries. This is the same as NewProxyRetryError with retryCount
+// set to 1. If the retry fails (non-zero errorCode) retryCount number of times
+// we will return the error back to the proxy.
+func NewProxyRetryErrorWithRetryCount(msgToRetry Message, previousRes SimpleBSON, retryOnRs string, retryCount int) *ProxyRetryError {
+	return &ProxyRetryError{
+		msgToRetry,
+		previousRes,
+		retryOnRs,
+		retryCount,
 	}
 }
 
