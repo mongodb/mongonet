@@ -63,17 +63,14 @@ https://docs.mongodb.com/manual/core/read-preference-staleness/
 */
 const MinMaxStalenessVal int32 = 90
 
-func NewProxy(pc ProxyConfig) (*Proxy, error) {
-	return NewProxyWithContext(pc, context.Background())
-}
-
-func NewProxyWithContext(pc ProxyConfig, ctx context.Context) (*Proxy, error) {
+func NewProxy(pc ProxyConfig) (Proxy, error) {
+	ctx := context.Background()
 	var initCount, initPoolCleared int64 = 0, 0
 	defaultReadPref := readpref.Primary()
-	p := &Proxy{pc, nil, nil, nil, nil, defaultReadPref, ctx, &initCount, &initPoolCleared, &sync.Map{}}
-	mongoClient, err := getMongoClientFromProxyConfig(p, pc, ctx)
+	p := Proxy{pc, nil, nil, nil, nil, defaultReadPref, ctx, &initCount, &initPoolCleared, &sync.Map{}}
+	mongoClient, err := getMongoClientFromProxyConfig(&p, pc, ctx)
 	if err != nil {
-		return nil, NewStackErrorf("error getting driver client for %v: %v", pc.MongoAddress(), err)
+		return Proxy{}, NewStackErrorf("error getting driver client for %v: %v", pc.MongoAddress(), err)
 	}
 	p.MongoClient = mongoClient
 	p.topology = extractTopology(mongoClient)
