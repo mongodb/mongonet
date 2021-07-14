@@ -98,7 +98,7 @@ type ServerWorker interface {
 
 type ServerWorkerFactory interface {
 	CreateWorker(session *Session) (ServerWorker, error)
-	GetConnection(conn *Conn) io.ReadWriteCloser
+	GetConnection(conn net.Conn) io.ReadWriteCloser
 }
 
 // ServerWorkerWithContextFactory should be used when workers need to listen to the Done channel of the session context.
@@ -209,16 +209,23 @@ func (s *Server) Run() error {
 
 }
 
-func (s *Server) handleConnection(conn net.Conn) {
-	if s.config.UseSSL {
-		tlsConfig := s.config.SyncTlsConfig.getTlsConfig()
-		conn = tls.Server(conn, tlsConfig)
+func (s *Server) handshake(conn net.Conn) (net.Conn, error) {
+	if !s.config.UseSSL {
+		return conn, nil
 	}
 
-	proxyProtoConn, err := NewConn(conn)
+	tlsConn := tls.Server(conn, s.config.SyncTlsConfig.getTlsConfig())
+	if err := tlsConn.Handshake(); err != nil {
+		return conn, err
+	}
+	return tlsConn, nil
+}
+
+func (s *Server) handleConnection(origConn net.Conn) {
+	proxyProtoConn, err := NewConn(origConn)
 	if err != nil {
 		s.logger.Logf(slogger.ERROR, "Error setting up a proxy protocol compatible connection: %v", err)
-		conn.Close()
+		origConn.Close()
 		return
 	}
 
@@ -236,12 +243,17 @@ func (s *Server) handleConnection(conn net.Conn) {
 		s.logger.Logf(
 			slogger.DEBUG,
 			"accepted a regular connection (local=%v, remote=%v)",
-			conn.LocalAddr(),
-			conn.RemoteAddr(),
+			origConn.LocalAddr(),
+			origConn.RemoteAddr(),
 		)
 	}
-
-	remoteAddr := conn.RemoteAddr()
+	newconn, err := s.handshake(proxyProtoConn)
+	if err != nil {
+		s.logger.Logf(slogger.ERROR, "TLS Handshake failed. err=%v", err)
+		origConn.Close()
+		return
+	}
+	remoteAddr := proxyProtoConn.RemoteAddr()
 	c := &Session{
 		s,
 		nil,
@@ -256,7 +268,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 		s.sessionManager.sessionWG.Add(1)
 	}
 
-	c.Run(proxyProtoConn)
+	c.Run(newconn)
 }
 
 // InitChannel returns a channel that will send nil once the server has started
