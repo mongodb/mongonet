@@ -55,19 +55,9 @@ func TestProxyMongosModeConnectionPerformanceRetryOnRemoteConns(t *testing.T) {
 func TestProxyMongosModeConnectionPerformanceRetryOnRemoteConnsMultipleRetries(t *testing.T) {
 	goals := []ConnectionPerformanceTestGoal{
 		{
-			Workers:      5,
+			Workers:      1,
 			AvgLatencyMs: 70,
 			MaxLatencyMs: 300,
-		},
-		{
-			Workers:      20,
-			AvgLatencyMs: 100,
-			MaxLatencyMs: 500,
-		},
-		{
-			Workers:      60,
-			AvgLatencyMs: 300,
-			MaxLatencyMs: 1500,
 		},
 	}
 	for _, goal := range goals {

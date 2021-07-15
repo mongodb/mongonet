@@ -58,6 +58,7 @@ type FindFixer struct {
 	OriginalMessage Message
 	simulateRetry   bool
 	cm              *LightCursorManager
+	ps              *ProxySession
 }
 
 func (ff *FindFixer) ProcessExecutionTime(startTime time.Time, pausedExecutionTimeMicros int64) {
@@ -67,9 +68,23 @@ func (ff *FindFixer) ProcessExecutionTime(startTime time.Time, pausedExecutionTi
 func (ff *FindFixer) InterceptMongoToClient(m Message, address address.Address, isRemote bool, retryFailed bool) (Message, error) {
 	switch mm := m.(type) {
 	case *MessageMessage:
+
 		doc, _, err := MessageMessageToBSOND(mm)
 		if err != nil {
 			return mm, NewStackErrorf("failed to get BSON.D from OP_MSG. err=%v", err)
+		}
+		ff.ps.Logf(slogger.DEBUG, "Got %v message!", doc)
+		if errCodeIdx := BSONIndexOf(doc, "code"); errCodeIdx != -1 {
+			errCode, _, _ := GetAsInt(doc[errCodeIdx])
+			if errCode == 11601 && !retryFailed {
+				ff.ps.Logf(slogger.DEBUG, "Got 11601 Error!")
+				return mm, NewProxyRetryErrorWithRetryCount(ff.OriginalMessage, SimpleBSON{}, util.RemoteRsName, 3)
+			} else if errCode == 11601 && retryFailed {
+				ff.ps.Logf(slogger.DEBUG, "Got 11601 Error and retry failed!")
+				return mm, NewProxyRetryError(ff.OriginalMessage, SimpleBSON{}, util.RemoteRsName) // Should succeed now
+			} else {
+				ff.ps.Logf(slogger.ERROR, "Got %v Error!", errCode)
+			}
 		}
 		cidRaw := BSONGetValueByNestedPathForTests(doc, "cursor.id", 0)
 		if cid, ok := cidRaw.(int64); ok && cid > 0 {
@@ -79,13 +94,9 @@ func (ff *FindFixer) InterceptMongoToClient(m Message, address address.Address, 
 			val := BSONGetValueByNestedPathForTests(doc, "cursor.firstBatch.val", 0)
 			if v, ok := val.(int32); ok {
 				// trigger a retry error only if the server responds with a particular value
-				if v == util.RetryOnRemoteVal {
-					return mm, NewProxyRetryError(ff.OriginalMessage, SimpleBSON{}, util.RemoteRsName)
-				} else if v == util.RetryOnRemoteValMultiple && !retryFailed {
-					// Retry on local, should still get RetryOnRemoteValMultiple
-					return mm, NewProxyRetryErrorWithRetryCount(ff.OriginalMessage, SimpleBSON{}, "", 2)
-				} else if v == util.RetryOnRemoteValMultiple && retryFailed {
-					// Exhausted retries, route queries back to RemoteRsName
+				if v == util.RetryOnRemoteVal && !retryFailed {
+					// Retried once and succeeded, retryFailed -> false
+					ff.ps.Logf(slogger.ERROR, "util.RetryOnRemoteVal && NOT retryFailed")
 					return mm, NewProxyRetryError(ff.OriginalMessage, SimpleBSON{}, util.RemoteRsName)
 				}
 			}
@@ -333,10 +344,10 @@ func (myi *MyInterceptor) InterceptClientToMongo(m Message, previousResult Simpl
 			bodySection.Body = n
 			return mm, &IsMasterFixer{myi.mode, myi.mongoPort, myi.proxyPort}, rsName, "", nil
 		case "find":
-			if db == util.RetryOnRemoteDbNameForTests {
-				return mm, &FindFixer{mm, true, myi.cursorManager}, "", "", nil
+			if db == util.RetryOnRemoteDbNameForTests || db == util.RetryOnRemoteDbMultiple {
+				return mm, &FindFixer{mm, true, myi.cursorManager, myi.ps}, "", "", nil
 			}
-			return mm, &FindFixer{mm, false, myi.cursorManager}, rsName, "", nil
+			return mm, &FindFixer{mm, false, myi.cursorManager, myi.ps}, rsName, "", nil
 		case "getmore":
 			cid, ok := doc[0].Value.(int64)
 			if !ok {

@@ -101,11 +101,20 @@ func (ps *ProxySession) doRetryLoop(retryError *ProxyRetryError) {
 	// retry the message on another rs in case of a ProxyRetryError. This function assumes that ps.mongoConn is closed or nil.
 	var err error
 	retryOnRs := retryError.RetryOnRs
+	var shouldRetry bool
 	for {
+		if retryError != nil {
+			retryOnRs = retryError.RetryOnRs
+		}
 		ps.mongoConn, err = ps.doLoop(ps.mongoConn, retryError, retryOnRs)
 		if err != nil {
 			if ps.mongoConn != nil {
 				ps.mongoConn.Close(ps)
+			}
+			retryError, shouldRetry = err.(*ProxyRetryError)
+			if shouldRetry {
+				ps.logger.Logf(slogger.WARN, "%v", retryError)
+				continue
 			}
 			if err != io.EOF {
 				ps.logger.Logf(slogger.WARN, "error doing loop during retry: %v", err)
