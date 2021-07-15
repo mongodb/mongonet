@@ -179,8 +179,7 @@ func RunIntTest(mode util.MongoConnectionMode, maxPoolSize, workers int, targetA
 	runtime.SetBlockProfileRate(100)
 	runtime.SetMutexProfileFraction(5)
 
-	defer writeOutProfile(callerName, "block", 0)
-	defer writeOutProfile(callerName, "mutex", 0)
+	defer writeOutAllProfiles(callerName)
 
 	Iterations := 10
 	mongoPort, proxyPort, hostname := util.GetTestHostAndPorts()
@@ -229,12 +228,14 @@ func getCallerName() string {
 	return fullCallerName[periodIndex+1:]
 }
 
-func writeOutProfile(filenamePrefix, profileName string, debug int) {
-	profile := pprof.Lookup(profileName)
-	if profile == nil {
-		fmt.Printf("Did not find profile %v\n", profileName)
-		return
+func writeOutAllProfiles(filenamePrefix string) {
+	for _, profile := range pprof.Profiles() {
+		writeOutProfile(filenamePrefix, profile)
 	}
+}
+
+func writeOutProfile(filenamePrefix string, profile *pprof.Profile) {
+	profileName := profile.Name()
 	_ = os.Mkdir("profiles", 0755)
 	path := filepath.Join("profiles", filenamePrefix+"-"+profileName)
 	f, err := os.Create(path)
@@ -243,7 +244,7 @@ func writeOutProfile(filenamePrefix, profileName string, debug int) {
 		return
 	}
 	defer f.Close()
-	err = profile.WriteTo(f, debug)
+	err = profile.WriteTo(f, 0)
 	if err != nil {
 		fmt.Printf("Failed to write profile %v to %v ; err = %v", profileName, path, err)
 		return
