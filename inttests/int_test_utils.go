@@ -73,7 +73,6 @@ func (ff *FindFixer) InterceptMongoToClient(m Message, address address.Address, 
 		if err != nil {
 			return mm, NewStackErrorf("failed to get BSON.D from OP_MSG. err=%v", err)
 		}
-		ff.ps.Logf(slogger.DEBUG, "Got %v message!", doc)
 		if errCodeIdx := BSONIndexOf(doc, "code"); errCodeIdx != -1 {
 			errCode, _, _ := GetAsInt(doc[errCodeIdx])
 			if errCode == 11601 && !retryFailed {
@@ -82,8 +81,6 @@ func (ff *FindFixer) InterceptMongoToClient(m Message, address address.Address, 
 			} else if errCode == 11601 && retryFailed {
 				ff.ps.Logf(slogger.DEBUG, "Got 11601 Error and retry failed!")
 				return mm, NewProxyRetryError(ff.OriginalMessage, SimpleBSON{}, util.RemoteRsName) // Should succeed now
-			} else {
-				ff.ps.Logf(slogger.ERROR, "Got %v Error!", errCode)
 			}
 		}
 		cidRaw := BSONGetValueByNestedPathForTests(doc, "cursor.id", 0)
