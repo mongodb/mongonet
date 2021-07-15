@@ -1,5 +1,8 @@
+# Please keep sorted
+
 *~
-coverage.out
-.vscode/settings.json
-inttests/dbpath
 .idea
+.vscode/settings.json
+coverage.out
+inttests/dbpath
+inttests/profiles

@@ -3,6 +3,20 @@ stepback: true
 command_type: system
 
 functions:
+
+  "generate expansions":
+    - command: shell.exec
+      params:
+        script: |
+          PATCH_DIR=""
+          if [ "${is_patch|}" = "true" ]; then
+            PATCH_DIR="patch-builds/${version_id}/"
+          fi
+          echo "patch_dir: $PATCH_DIR" | tee expansions.yml
+    - command: expansions.update
+      params:
+        file: expansions.yml
+
   "fetch source":
     - command: git.get_project
       params:
@@ -10,6 +24,7 @@ functions:
     - command: git.apply_patch
       params:
         directory: mongonet
+
   "fetch mongodb":
     - command: shell.exec
       params:
@@ -23,6 +38,7 @@ functions:
           ${decompress} mongodb.tgz
           chmod +x ./mongodb-*/bin/*
           mv ./mongodb-*/bin/* ./bin
+
   "run unit tests":
     - command: shell.exec
       params:
@@ -101,6 +117,7 @@ tasks:
   - name: RunIntegrationTestsMongosMode
     priority: 5
     commands:
+      - func: "generate expansions"
       - func: "fetch source"
       - func: "fetch mongodb"
       - func: "run integration tests mongos mode"
@@ -108,6 +125,7 @@ tasks:
   - name: RunIntegrationTestsMongodMode
     priority: 5
     commands:
+      - func: "generate expansions"
       - func: "fetch source"
       - func: "fetch mongodb"
       - func: "run integration tests mongod mode"
@@ -126,6 +144,26 @@ post:
   - command: gotest.parse_files
     params:
       files: ["mongonet/unittest.suite"]
+
+  - command: archive.targz_pack
+    params:
+      target: "archive.tgz"
+      source_dir: "mongonet"
+      include:
+        - "inttests/profiles/*"
+
+  - command: s3.put
+    params:
+      aws_key: ${aws_key}
+      aws_secret: ${aws_secret}
+      local_file: archive.tgz
+      remote_file: mongonet/${patch_dir}archive-${build_id}-${task_name}.tgz
+      bucket: mciuploads
+      permissions: public-read
+      content_type: ${content_type|application/x-gzip}
+      display_name: Archive
+      optional: true
+
 
 buildvariants:
 

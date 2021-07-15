@@ -3,8 +3,12 @@ package inttests
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"runtime"
+	"runtime/pprof"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -170,6 +174,13 @@ func RunIntTest(mode util.MongoConnectionMode, maxPoolSize, workers int, targetA
 	) error,
 	blockCommands map[string]time.Duration,
 ) {
+	callerName := getCallerName()
+
+	runtime.SetBlockProfileRate(100)
+	runtime.SetMutexProfileFraction(5)
+
+	defer writeOutAllProfiles(callerName)
+
 	Iterations := 10
 	mongoPort, proxyPort, hostname := util.GetTestHostAndPorts()
 	t.Logf("using proxy port=%v, pool size=%v", proxyPort, maxPoolSize)
@@ -200,6 +211,43 @@ func RunIntTest(mode util.MongoConnectionMode, maxPoolSize, workers int, targetA
 
 	if err := testFunc(Iterations, mongoPort, proxyPort, hostToUse, proxy.NewLogger("tester"), workers, targetAvgLatencyMs, targetMaxLatencyMs, mode, util.GetTestClient, util.GetTestClient); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func getCallerName() string {
+	callerPc, _, _, ok := runtime.Caller(2)
+	if !ok {
+		panic("could not get caller info")
+	}
+	callerFunc := runtime.FuncForPC(callerPc)
+	if callerFunc == nil {
+		panic("could not get func for caller PC")
+	}
+	fullCallerName := callerFunc.Name()
+	periodIndex := strings.LastIndex(fullCallerName, ".")
+	return fullCallerName[periodIndex+1:]
+}
+
+func writeOutAllProfiles(filenamePrefix string) {
+	for _, profile := range pprof.Profiles() {
+		writeOutProfile(filenamePrefix, profile)
+	}
+}
+
+func writeOutProfile(filenamePrefix string, profile *pprof.Profile) {
+	profileName := profile.Name()
+	_ = os.Mkdir("profiles", 0755)
+	path := filepath.Join("profiles", filenamePrefix+"-"+profileName)
+	f, err := os.Create(path)
+	if err != nil {
+		fmt.Printf("Failed to create %v ; err = %v\n", path, err)
+		return
+	}
+	defer f.Close()
+	err = profile.WriteTo(f, 0)
+	if err != nil {
+		fmt.Printf("Failed to write profile %v to %v ; err = %v", profileName, path, err)
+		return
 	}
 }
 

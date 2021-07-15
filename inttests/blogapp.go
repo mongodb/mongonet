@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"reflect"
+	"runtime"
 	"time"
 
 	"github.com/mongodb/mongonet/util"
@@ -124,7 +126,10 @@ func runBlogApp(logger *slogger.Logger, client *mongo.Client, workerNum int, ctx
 	}
 
 	elapsed := time.Since(start)
-	logger.Logf(slogger.DEBUG, "worker-%v finished after %v", workerNum, elapsed)
+
+	funcName := runtime.FuncForPC(reflect.ValueOf(funcs[ix]).Pointer()).Name()
+
+	logger.Logf(slogger.INFO, "worker-%v called %v and finished after %v", workerNum, funcName, elapsed)
 	return elapsed, true, nil
 }
 
