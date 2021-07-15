@@ -25,7 +25,7 @@ func TestProxyMongosModeConnectionPerformanceRemoteConns(t *testing.T) {
 		},
 	}
 	for _, goal := range goals {
-		RunIntTest(util.Cluster, 0, goal.Workers, goal.AvgLatencyMs, goal.MaxLatencyMs, t, runProxyConnectionPerformanceMultipleRetryOnRemoteConns, nil)
+		RunIntTest(util.Cluster, 0, goal.Workers, goal.AvgLatencyMs, goal.MaxLatencyMs, t, runProxyConnectionPerformanceRemoteConns, nil)
 	}
 }
 
