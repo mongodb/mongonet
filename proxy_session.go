@@ -392,7 +392,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 	} else {
 		m = retryError.MsgToRetry
 		previousRes = retryError.PreviousResult
-		ps.proxy.logger.Logf(slogger.WARN, "retrying a message %v from client on previousRes= %v", m, previousRes)
+		ps.proxy.logger.Logf(slogger.WARN, "retrying a message %v", m)
 		ps.logTrace(ps.proxy.logger, ps.proxy.Config.TraceConnPool, "retrying a message from client on rs=%v", retryError.RetryOnRs)
 	}
 
@@ -431,6 +431,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 	ps.logMessageTrace(ps.proxy.logger, ps.proxy.Config.TraceConnPool, m)
 	var respInter ResponseInterceptor
 	var pinnedAddress address.Address
+	messageBeforeIntercept := m
 	pausedExecutionTimeMicros := int64(0)
 	if ps.interceptor != nil {
 		ps.interceptor.TrackRequest(m.Header())
@@ -663,6 +664,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 			if retryError.RetryCount > 1 {
 				// Retry failed, decrement retryCount and retry
 				retryError.RetryCount -= 1
+				retryError.MsgToRetry = messageBeforeIntercept
 				return nil, retryError
 			} else {
 				// We use this flag to signify that a retry failed after
