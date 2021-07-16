@@ -444,6 +444,10 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 			bodySectionBsond, _, _ := MessageMessageToBSOND(mm)
 			ps.proxy.logger.Logf(slogger.WARN, "[Ahmed] After: %v", bodySectionBsond)
 		}
+		if mm, ok := messageBeforeIntercept.(*MessageMessage); ok {
+			bodySectionBsond, _, _ := MessageMessageToBSOND(mm)
+			ps.proxy.logger.Logf(slogger.WARN, "[messageBeforeIntercept] After: %v", bodySectionBsond)
+		}
 		defer func() {
 			if respInter != nil {
 				respInter.ProcessExecutionTime(startServerSelection, pausedExecutionTimeMicros)
@@ -673,6 +677,10 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 				// Retry failed, decrement retryCount and retry
 				retryError.RetryCount -= 1
 				retryError.MsgToRetry = messageBeforeIntercept
+				if mm, ok := retryError.MsgToRetry.(*MessageMessage); ok {
+					bodySectionBsond, _, _ := MessageMessageToBSOND(mm)
+					ps.proxy.logger.Logf(slogger.WARN, "[retryError.MsgToRetry] : %v", bodySectionBsond)
+				}
 				return nil, retryError
 			} else {
 				// We use this flag to signify that a retry failed after
