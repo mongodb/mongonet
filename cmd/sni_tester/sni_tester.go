@@ -37,7 +37,7 @@ func (myi *MyInterceptor) sniResponse() mongonet.SimpleBSON {
 	return raw
 }
 
-func (myi *MyInterceptor) InterceptClientToMongo(m mongonet.Message, previousResult mongonet.SimpleBSON) (
+func (myi *MyInterceptor) InterceptClientToMongo(m mongonet.Message, previousResult mongonet.SimpleBSON, isRetryMessage bool) (
 	mongonet.Message,
 	mongonet.ResponseInterceptor,
 	string,

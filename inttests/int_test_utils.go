@@ -253,7 +253,7 @@ func (myi *MyInterceptor) CheckConnectionInterval() time.Duration {
 	return 0
 }
 
-func (myi *MyInterceptor) InterceptClientToMongo(m Message, previousResult SimpleBSON) (
+func (myi *MyInterceptor) InterceptClientToMongo(m Message, previousResult SimpleBSON, isRetryMessage bool) (
 	Message,
 	ResponseInterceptor,
 	string,

@@ -53,7 +53,7 @@ type ResponseInterceptor interface {
 }
 
 type ProxyInterceptor interface {
-	InterceptClientToMongo(m Message, previousResult SimpleBSON) (
+	InterceptClientToMongo(m Message, previousResult SimpleBSON, isRetryMessage bool) (
 		newMsg Message,
 		ri ResponseInterceptor,
 		remoteRs string,
@@ -428,7 +428,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 	var respInter ResponseInterceptor
 	var pinnedAddress address.Address
 	pausedExecutionTimeMicros := int64(0)
-	if ps.interceptor != nil && retryError == nil {
+	if ps.interceptor != nil {
 		ps.interceptor.TrackRequest(m.Header())
 		m, respInter, remoteRs, pinnedAddress, err = ps.interceptor.InterceptClientToMongo(m, previousRes)
 		defer func() {
