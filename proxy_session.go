@@ -431,10 +431,14 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 	ps.logMessageTrace(ps.proxy.logger, ps.proxy.Config.TraceConnPool, m)
 	var respInter ResponseInterceptor
 	var pinnedAddress address.Address
-	messageBeforeIntercept := m
+	messageBeforeIntercept, _ := ReadMessageFromBytes(m.Serialize())
 	if mm, ok := m.(*MessageMessage); ok {
 		bodySectionBsond, _, _ := MessageMessageToBSOND(mm)
 		ps.proxy.logger.Logf(slogger.WARN, "[Ahmed] Before: %v", bodySectionBsond)
+	}
+	if mm, ok := messageBeforeIntercept.(*MessageMessage); ok {
+		bodySectionBsond, _, _ := MessageMessageToBSOND(mm)
+		ps.proxy.logger.Logf(slogger.WARN, "[messageBeforeIntercept] Before: %v", bodySectionBsond)
 	}
 	pausedExecutionTimeMicros := int64(0)
 	if ps.interceptor != nil {
