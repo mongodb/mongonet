@@ -432,10 +432,18 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 	var respInter ResponseInterceptor
 	var pinnedAddress address.Address
 	messageBeforeIntercept := m
+	if mm, ok := m.(*MessageMessage); ok {
+		bodySectionBsond, _, _ := MessageMessageToBSOND(mm)
+		ps.proxy.logger.Logf(slogger.WARN, "[Ahmed] Before: %v", bodySectionBsond)
+	}
 	pausedExecutionTimeMicros := int64(0)
 	if ps.interceptor != nil {
 		ps.interceptor.TrackRequest(m.Header())
 		m, respInter, remoteRs, pinnedAddress, err = ps.interceptor.InterceptClientToMongo(m, previousRes, retryError != nil)
+		if mm, ok := m.(*MessageMessage); ok {
+			bodySectionBsond, _, _ := MessageMessageToBSOND(mm)
+			ps.proxy.logger.Logf(slogger.WARN, "[Ahmed] After: %v", bodySectionBsond)
+		}
 		defer func() {
 			if respInter != nil {
 				respInter.ProcessExecutionTime(startServerSelection, pausedExecutionTimeMicros)
