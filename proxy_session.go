@@ -113,7 +113,7 @@ func (ps *ProxySession) doRetryLoop(retryError *ProxyRetryError) {
 			}
 			retryError, shouldRetry = err.(*ProxyRetryError)
 			if shouldRetry {
-				ps.logger.Logf(slogger.WARN, "%v", retryError)
+				ps.logger.Logf(slogger.WARN, "%v, %v", retryError, retryError.MsgToRetry)
 				continue
 			}
 			if err != io.EOF {
@@ -514,7 +514,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 				ps.proxy.logger.Logf(slogger.ERROR, "error converting OP_MSG to bson.D. err=%v", err)
 				return nil, NewStackErrorf("error converting OP_MSG to bson.D. err=%v", err)
 			}
-
+			ps.proxy.logger.Logf(slogger.WARN, "Attempting MSG=%v", msg)
 			maxtimeMsIdx := BSONIndexOf(msg, "maxTimeMS")
 			if maxtimeMsIdx >= 0 {
 				maxtimeMs := msg[maxtimeMsIdx]
@@ -558,6 +558,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 	}
 
 	if !m.HasResponse() {
+		ps.proxy.logger.Logf(slogger.WARN, "No response message=%v", m)
 		return mongoConn, nil
 	}
 	defer mongoConn.Close(ps)
