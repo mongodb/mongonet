@@ -384,9 +384,11 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 			}
 			return mongoConn, NewStackErrorf("got error reading from client: %v", err)
 		}
+		ps.proxy.logger.Logf(slogger.WARN, "new a message %v from client", m)
 	} else {
 		m = retryError.MsgToRetry
 		previousRes = retryError.PreviousResult
+		ps.proxy.logger.Logf(slogger.WARN, "retrying a message %v from client on previousRes= %v", m, previousRes)
 		ps.logTrace(ps.proxy.logger, ps.proxy.Config.TraceConnPool, "retrying a message from client on rs=%v", retryError.RetryOnRs)
 	}
 
