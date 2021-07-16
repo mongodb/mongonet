@@ -150,6 +150,7 @@ func (ps *ProxySession) DoLoopTemp() {
 			}
 			return
 		}
+		retryError = nil
 	}
 }
 
