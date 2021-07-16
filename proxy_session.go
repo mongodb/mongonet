@@ -544,6 +544,15 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 		}
 	}
 
+	if mm, ok := m.(*MessageMessage); ok {
+		msg, _, err := MessageMessageToBSOND(mm)
+		if err != nil {
+			ps.proxy.logger.Logf(slogger.ERROR, "error converting OP_MSG to bson.D. err=%v", err)
+			return nil, NewStackErrorf("error converting OP_MSG to bson.D. err=%v", err)
+		}
+		ps.proxy.logger.Logf(slogger.WARN, "Attempting MSG=%v", msg)
+	}
+
 	// Send message to mongo
 	err = mongoConn.conn.WriteWireMessage(ps.proxy.Context, m.Serialize())
 	if err != nil {
