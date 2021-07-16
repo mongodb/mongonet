@@ -610,6 +610,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 			if err != nil {
 				return nil, fmt.Errorf("Error getting body doc: %v", err)
 			}
+			ps.proxy.logger.Logf(slogger.WARN, "Got MessageMessage response for %v: %v", m, bodyDoc)
 			if err := extractError(bodyDoc); err != nil {
 				driverError, ok := err.(driver.Error)
 				if ok {
@@ -625,6 +626,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 				mongoConn.ep.ProcessError(err, mongoConn.conn)
 			}
 		case *ReplyMessage:
+			ps.proxy.logger.Logf(slogger.WARN, "Got ReplyMessage response for %v: %v", m, mm.CommandDoc())
 			if err := extractError(mm.CommandDoc()); err != nil {
 				driverError, ok := err.(driver.Error)
 				if ok {
