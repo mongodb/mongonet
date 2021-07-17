@@ -359,7 +359,10 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 			return mongoConn, NewStackErrorf("got error reading from client: %v", err)
 		}
 	} else {
-		m = retryError.MsgToRetry
+		retryError.MsgToRetry, err = ReadMessageFromBytes(m.Serialize())
+		if err != nil {
+			return mongoConn, err
+		}
 		previousRes = retryError.PreviousResult
 		ps.logTrace(ps.proxy.logger, ps.proxy.Config.TraceConnPool, "retrying a message from client on rs=%v", retryError.RetryOnRs)
 	}
@@ -400,12 +403,12 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 	var respInter ResponseInterceptor
 	var pinnedAddress address.Address
 
-	// Make deep copy of message to retry before Proxy modifies message
-	// in case of retry
-	messageBeforeIntercept, err := ReadMessageFromBytes(m.Serialize())
-	if err != nil {
-		return mongoConn, err
-	}
+	// // Make deep copy of message to retry before Proxy modifies message
+	// // in case of retry
+	// messageBeforeIntercept, err := ReadMessageFromBytes(m.Serialize())
+	// if err != nil {
+	// 	return mongoConn, err
+	// }
 
 	pausedExecutionTimeMicros := int64(0)
 	if ps.interceptor != nil {
@@ -420,10 +423,6 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 			if mm, ok := retryError.MsgToRetry.(*MessageMessage); ok {
 				bodySectionBsond, _, _ := MessageMessageToBSOND(mm)
 				ps.proxy.logger.Logf(slogger.WARN, "[Ahmed] retryError.MsgToRetry: %v", bodySectionBsond)
-			}
-			if mm, ok := messageBeforeIntercept.(*MessageMessage); ok {
-				bodySectionBsond, _, _ := MessageMessageToBSOND(mm)
-				ps.proxy.logger.Logf(slogger.WARN, "[Ahmed] messageBeforeIntercept: %v", bodySectionBsond)
 			}
 		}
 		if err != nil {
@@ -637,7 +636,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 			if retryError.RetryCount > 1 {
 				// Retry failed, decrement retryCount and retry
 				retryError.RetryCount -= 1
-				retryError.MsgToRetry = messageBeforeIntercept
+				//retryError.MsgToRetry = messageBeforeIntercept
 				return nil, retryError
 			} else {
 				// We use this flag to signify that a retry failed after
