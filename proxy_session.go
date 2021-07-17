@@ -416,6 +416,10 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 				respInter.ProcessExecutionTime(startServerSelection, pausedExecutionTimeMicros)
 			}
 		}()
+		if retryError != nil {
+			ps.proxy.logger.Logf(slogger.WARN, "[Ahmed] retryError.MsgToRetry: %v", retryError.MsgToRetry)
+			ps.proxy.logger.Logf(slogger.WARN, "[Ahmed] messageBeforeIntercept: %v", retryError.MsgToRetry)
+		}
 		if err != nil {
 			if m == nil {
 				if ps.isMetricsEnabled {
