@@ -359,7 +359,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 			return mongoConn, NewStackErrorf("got error reading from client: %v", err)
 		}
 	} else {
-		retryError.MsgToRetry, err = ReadMessageFromBytes(m.Serialize())
+		m, err = ReadMessageFromBytes(retryError.MsgToRetry.Serialize())
 		if err != nil {
 			return mongoConn, err
 		}
