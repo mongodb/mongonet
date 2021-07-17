@@ -418,7 +418,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 		}()
 		if retryError != nil {
 			ps.proxy.logger.Logf(slogger.WARN, "[Ahmed] retryError.MsgToRetry: %v", retryError.MsgToRetry)
-			ps.proxy.logger.Logf(slogger.WARN, "[Ahmed] messageBeforeIntercept: %v", retryError.MsgToRetry)
+			ps.proxy.logger.Logf(slogger.WARN, "[Ahmed] messageBeforeIntercept: %v", messageBeforeIntercept)
 		}
 		if err != nil {
 			if m == nil {
