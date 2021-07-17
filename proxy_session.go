@@ -417,8 +417,14 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 			}
 		}()
 		if retryError != nil {
-			ps.proxy.logger.Logf(slogger.WARN, "[Ahmed] retryError.MsgToRetry: %v", retryError.MsgToRetry)
-			ps.proxy.logger.Logf(slogger.WARN, "[Ahmed] messageBeforeIntercept: %v", messageBeforeIntercept)
+			if mm, ok := retryError.MsgToRetry.(*MessageMessage); ok {
+				bodySectionBsond, _, _ := MessageMessageToBSOND(mm)
+				ps.proxy.logger.Logf(slogger.WARN, "[Ahmed] retryError.MsgToRetry: %v", bodySectionBsond)
+			}
+			if mm, ok := messageBeforeIntercept.(*MessageMessage); ok {
+				bodySectionBsond, _, _ := MessageMessageToBSOND(mm)
+				ps.proxy.logger.Logf(slogger.WARN, "[Ahmed] messageBeforeIntercept: %v", bodySectionBsond)
+			}
 		}
 		if err != nil {
 			if m == nil {
