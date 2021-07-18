@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/rand"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	. "github.com/mongodb/mongonet"
@@ -18,7 +19,12 @@ import (
 
 const (
 	ServerSelectionTimeoutSecForTests = 10
+	FindRetryOriginalState            = 0
+	FindRetryFirstError               = 1
+	FindRetryErrorAfterRetries        = 2
 )
+
+var FindRetryState int32
 
 func insertDummyDocs(client *mongo.Client, numOfDocs int, ctx context.Context) error {
 	dbName, collName := "test2", "foo"
@@ -58,15 +64,17 @@ type FindFixer struct {
 	OriginalMessage Message
 	simulateRetry   bool
 	cm              *LightCursorManager
+	ps              *ProxySession
 }
 
 func (ff *FindFixer) ProcessExecutionTime(startTime time.Time, pausedExecutionTimeMicros int64) {
 	// no-op
 }
 
-func (ff *FindFixer) InterceptMongoToClient(m Message, address address.Address, isRemote bool) (Message, error) {
+func (ff *FindFixer) InterceptMongoToClient(m Message, address address.Address, isRemote bool, retryAttemptsExhausted bool) (Message, error) {
 	switch mm := m.(type) {
 	case *MessageMessage:
+
 		doc, _, err := MessageMessageToBSOND(mm)
 		if err != nil {
 			return mm, NewStackErrorf("failed to get BSON.D from OP_MSG. err=%v", err)
@@ -79,11 +87,82 @@ func (ff *FindFixer) InterceptMongoToClient(m Message, address address.Address, 
 			val := BSONGetValueByNestedPathForTests(doc, "cursor.firstBatch.val", 0)
 			if v, ok := val.(int32); ok {
 				// trigger a retry error only if the server responds with a particular value
-				if v == util.RetryOnRemoteVal {
+				if v == util.RetryOnRemoteVal && !retryAttemptsExhausted {
+					// Retried once and succeeded, retryAttemptsExhausted -> false
+					ff.ps.Logf(slogger.ERROR, "util.RetryOnRemoteVal && NOT retryAttemptsExhausted")
 					return mm, NewProxyRetryError(ff.OriginalMessage, SimpleBSON{}, util.RemoteRsName)
+				} else if v == util.RetryOnRemoteVal && retryAttemptsExhausted {
+					// We should not come back here after first retry.
+					panic("retryAttemptsExhausted should not be true after one succesful retry")
 				}
 			}
 		}
+		return mm, nil
+	default:
+		return m, nil
+	}
+}
+
+type FindFixerForRetry struct {
+	OriginalMessage Message
+	simulateRetry   bool
+	cm              *LightCursorManager
+	ps              *ProxySession
+}
+
+func (ff *FindFixerForRetry) ProcessExecutionTime(startTime time.Time, pausedExecutionTimeMicros int64) {
+	// no-op
+}
+
+func (ff *FindFixerForRetry) InterceptMongoToClient(m Message, address address.Address, isRemote bool, retryAttemptsExhausted bool) (Message, error) {
+	switch mm := m.(type) {
+	case *MessageMessage:
+
+		doc, _, err := MessageMessageToBSOND(mm)
+		if err != nil {
+			return mm, NewStackErrorf("failed to get BSON.D from OP_MSG. err=%v", err)
+		}
+		if errCodeIdx := BSONIndexOf(doc, "code"); errCodeIdx != -1 {
+			errCode, _, _ := GetAsInt(doc[errCodeIdx])
+			if errCode == 11601 && !retryAttemptsExhausted {
+				ff.ps.Logf(slogger.DEBUG, "Got 11601 Error!")
+				currentState := atomic.LoadInt32(&FindRetryState)
+				if currentState != FindRetryOriginalState {
+					// We should only reach here the first time. If we retried more than 3 times
+					// and got back here, the retry logic has misbehaved.
+					panic(fmt.Sprintf("Retry logic test failed. Expected state: %v, current state: %v", FindRetryOriginalState, currentState))
+				}
+				// Failpoint for 'find' is going to trigger 4 times in total (3 more times after this)
+				// We will retry this command 3 more times.
+				atomic.StoreInt32(&FindRetryState, FindRetryFirstError)
+				return mm, NewProxyRetryErrorWithRetryCount(ff.OriginalMessage, SimpleBSON{}, util.RemoteRsName, 3)
+			} else if errCode == 11601 && retryAttemptsExhausted {
+				ff.ps.Logf(slogger.DEBUG, "Got 11601 Error and retry failed!")
+				currentState := atomic.LoadInt32(&FindRetryState)
+				if currentState != FindRetryFirstError {
+					// We should only reach here after we trigger a retry error.
+					panic(fmt.Sprintf("Retry logic test failed. Expected state: %v, current state: %v", FindRetryFirstError, currentState))
+				}
+				// Retries should be exhausted by now, we will retry one more time and it will succeed.
+				atomic.StoreInt32(&FindRetryState, FindRetryErrorAfterRetries)
+				return mm, NewProxyRetryError(ff.OriginalMessage, SimpleBSON{}, util.RemoteRsName) // Should succeed now
+			} else {
+				// We got an unknown error.
+				panic(fmt.Sprintf("Unknown error. Expected: %v, got: %v", 11601, errCode))
+			}
+		}
+
+		if retryAttemptsExhausted {
+			// This flag should not be set if there are no errors.
+			panic("retryAttemptsExhausted should not be true if there are no errors")
+		}
+
+		currentState := atomic.LoadInt32(&FindRetryState)
+		if currentState != FindRetryErrorAfterRetries {
+			// We should only reach here after we trigger retry errors.
+			panic(fmt.Sprintf("Retry logic test failed. Expected state: %v, current state: %v", FindRetryErrorAfterRetries, currentState))
+		}
+
 		return mm, nil
 	default:
 		return m, nil
@@ -158,7 +237,7 @@ func (mri *IsMasterFixer) ProcessExecutionTime(startTime time.Time, pausedExecut
 	// no-op
 }
 
-func (mri *IsMasterFixer) InterceptMongoToClient(m Message, address address.Address, isRemote bool) (Message, error) {
+func (mri *IsMasterFixer) InterceptMongoToClient(m Message, address address.Address, isRemote bool, retryAttemptsExhausted bool) (Message, error) {
 	switch mm := m.(type) {
 	case *ReplyMessage:
 		var err error
@@ -328,9 +407,11 @@ func (myi *MyInterceptor) InterceptClientToMongo(m Message, previousResult Simpl
 			return mm, &IsMasterFixer{myi.mode, myi.mongoPort, myi.proxyPort}, rsName, "", nil
 		case "find":
 			if db == util.RetryOnRemoteDbNameForTests {
-				return mm, &FindFixer{mm, true, myi.cursorManager}, "", "", nil
+				return mm, &FindFixer{mm, true, myi.cursorManager, myi.ps}, "", "", nil
+			} else if db == util.RetryOnRemoteDbMultiple {
+				return mm, &FindFixerForRetry{mm, true, myi.cursorManager, myi.ps}, "", "", nil
 			}
-			return mm, &FindFixer{mm, false, myi.cursorManager}, rsName, "", nil
+			return mm, &FindFixer{mm, false, myi.cursorManager, myi.ps}, rsName, "", nil
 		case "getmore":
 			cid, ok := doc[0].Value.(int64)
 			if !ok {

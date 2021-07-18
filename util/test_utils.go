@@ -18,6 +18,7 @@ const (
 	ClientTimeoutSecForTests    = 20 * time.Second
 	RemoteDbNameForTests        = "testRemote"
 	RetryOnRemoteDbNameForTests = "testRetryOnRemote"
+	RetryOnRemoteDbMultiple     = "testRetryOnRemoteMult"
 	RetryOnRemoteVal            = 10
 	RemoteRsName                = "proxytest2"
 )

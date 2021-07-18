@@ -46,7 +46,7 @@ type MetricsHookFactory interface {
 }
 
 type ResponseInterceptor interface {
-	InterceptMongoToClient(m Message, serverAddress address.Address, isRemote bool) (Message, error)
+	InterceptMongoToClient(m Message, serverAddress address.Address, isRemote bool, retryAttemptsExhausted bool) (Message, error)
 	// ProcessExecutionTime records the execution time of an operation from startTime, subtracting
 	// time while execution was paused, pausedExecutionTimeMicros (i.e. while sending the message back to client)
 	ProcessExecutionTime(startTime time.Time, pausedExecutionTimeMicros int64)
@@ -95,34 +95,17 @@ func (ps *ProxySession) Stats() bson.D {
 	}
 }
 
-// doRetryLoop will retry the previous message on an RS specified by ProxyRetryError. Future iterations will read new messages on the client->proxy connection and continue to send them to the new RS
-// The RS can be empty to indicate the operation should be retried on the default RS
-func (ps *ProxySession) doRetryLoop(retryError *ProxyRetryError) {
-	// retry the message on another rs in case of a ProxyRetryError. This function assumes that ps.mongoConn is closed or nil.
-	var err error
-	retryOnRs := retryError.RetryOnRs
-	for {
-		ps.mongoConn, err = ps.doLoop(ps.mongoConn, retryError, retryOnRs)
-		if err != nil {
-			if ps.mongoConn != nil {
-				ps.mongoConn.Close(ps)
-			}
-			if err != io.EOF {
-				ps.logger.Logf(slogger.WARN, "error doing loop during retry: %v", err)
-			}
-			return
-		}
-		retryError = nil
-	}
-}
-
 func (ps *ProxySession) DoLoopTemp() {
 	defer logPanic(ps.logger)
 	var err error
 	var retryError *ProxyRetryError
 	var shouldRetry bool
+	var retryOnRs string
 	for {
-		ps.mongoConn, err = ps.doLoop(ps.mongoConn, nil, "")
+		if retryError != nil {
+			retryOnRs = retryError.RetryOnRs
+		}
+		ps.mongoConn, err = ps.doLoop(ps.mongoConn, retryError, retryOnRs)
 		if err != nil {
 			if ps.mongoConn != nil {
 				ps.mongoConn.Close(ps)
@@ -130,14 +113,14 @@ func (ps *ProxySession) DoLoopTemp() {
 			retryError, shouldRetry = err.(*ProxyRetryError)
 			if shouldRetry {
 				ps.logger.Logf(slogger.WARN, "%v", retryError)
-				ps.doRetryLoop(retryError)
-				break
+				continue
 			}
 			if err != io.EOF {
 				ps.logger.Logf(slogger.WARN, "error doing loop: %v", err)
 			}
 			return
 		}
+		retryError = nil
 	}
 }
 
@@ -376,7 +359,10 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 			return mongoConn, NewStackErrorf("got error reading from client: %v", err)
 		}
 	} else {
-		m = retryError.MsgToRetry
+		m, err = ReadMessageFromBytes(retryError.MsgToRetry.Serialize())
+		if err != nil {
+			return mongoConn, err
+		}
 		previousRes = retryError.PreviousResult
 		ps.logTrace(ps.proxy.logger, ps.proxy.Config.TraceConnPool, "retrying a message from client on rs=%v", retryError.RetryOnRs)
 	}
@@ -416,6 +402,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 	ps.logMessageTrace(ps.proxy.logger, ps.proxy.Config.TraceConnPool, m)
 	var respInter ResponseInterceptor
 	var pinnedAddress address.Address
+
 	pausedExecutionTimeMicros := int64(0)
 	if ps.interceptor != nil {
 		ps.interceptor.TrackRequest(m.Header())
@@ -594,6 +581,7 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 			}
 			return nil, NewStackErrorf("got error reading response from mongo %v", err)
 		}
+		errCode := 0
 		switch mm := resp.(type) {
 		case *MessageMessage:
 			bodyDoc, err := mm.BodyDoc()
@@ -601,6 +589,10 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 				return nil, fmt.Errorf("Error getting body doc: %v", err)
 			}
 			if err := extractError(bodyDoc); err != nil {
+				driverError, ok := err.(driver.Error)
+				if ok {
+					errCode = int(driverError.Code)
+				}
 				if ps.isMetricsEnabled {
 					hookErr := responseErrorsHook.IncCounterGauge()
 					if hookErr != nil {
@@ -612,6 +604,10 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 			}
 		case *ReplyMessage:
 			if err := extractError(mm.CommandDoc()); err != nil {
+				driverError, ok := err.(driver.Error)
+				if ok {
+					errCode = int(driverError.Code)
+				}
 				if ps.isMetricsEnabled {
 					hookErr := responseErrorsHook.IncCounterGauge()
 					if hookErr != nil {
@@ -622,8 +618,21 @@ func (ps *ProxySession) doLoop(mongoConn *MongoConnectionWrapper, retryError *Pr
 				mongoConn.ep.ProcessError(err, mongoConn.conn)
 			}
 		}
+		retryAttemptsExhausted := false
+		if retryError != nil && errCode != 0 {
+			if retryError.RetryCount > 1 {
+				// Retry failed, decrement retryCount and retry
+				retryError.RetryCount -= 1
+				return nil, retryError
+			} else {
+				// We use this flag to signify that a retry failed after
+				// the proxy retried a particular command (RetryCount number
+				// of times.)
+				retryAttemptsExhausted = true
+			}
+		}
 		if respInter != nil {
-			resp, err = respInter.InterceptMongoToClient(resp, mongoConn.conn.Address(), remoteRs != "")
+			resp, err = respInter.InterceptMongoToClient(resp, mongoConn.conn.Address(), remoteRs != "", retryAttemptsExhausted)
 			if err != nil {
 				if ps.isMetricsEnabled {
 					hookErr := responseErrorsHook.IncCounterGauge()

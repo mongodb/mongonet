@@ -30,7 +30,7 @@ func RunProxyConnectionPerformanceRemoteConns(iterations, mongoPort, proxyPort i
 }
 
 func cleanupRemoteConns(client *mongo.Client, ctx context.Context) error {
-	for _, d := range []string{util.RemoteDbNameForTests, util.RetryOnRemoteDbNameForTests, LocalDbName} {
+	for _, d := range []string{util.RemoteDbNameForTests, util.RetryOnRemoteDbNameForTests, util.RetryOnRemoteDbMultiple, LocalDbName} {
 		if err := client.Database(d).Drop(ctx); err != nil {
 			return err
 		}
@@ -173,10 +173,10 @@ func findOneRemoteConnRetry(logger *slogger.Logger, coll *mongo.Collection, goct
 	return fmt.Errorf("unexpected doc %v", doc)
 }
 
-func runRemoteConnsRetry(logger *slogger.Logger, client *mongo.Client, workerNum int, ctx context.Context) (time.Duration, bool, error) {
+func runRemoteConnsRetry(logger *slogger.Logger, client *mongo.Client, workerNum int, ctx context.Context, dbname string) (time.Duration, bool, error) {
 	start := time.Now()
 
-	coll := client.Database(util.RetryOnRemoteDbNameForTests).Collection(RemoteConnCollName)
+	coll := client.Database(dbname).Collection(RemoteConnCollName)
 
 	if err := findOneRemoteConnRetry(logger, coll, ctx); err != nil {
 		return 0, false, err
@@ -253,7 +253,7 @@ func runProxyConnectionPerformanceRetryOnRemoteConns(iterations, mongoPort, prox
 	}
 
 	testFunc := func(logger *slogger.Logger, client *mongo.Client, workerNum, iteration int, ctx context.Context) (elapsed time.Duration, success bool, err error) {
-		return runRemoteConnsRetry(logger, client, workerNum, ctx)
+		return runRemoteConnsRetry(logger, client, workerNum, ctx, util.RetryOnRemoteDbNameForTests)
 	}
 
 	cleanupFunc := func(logger *slogger.Logger, client *mongo.Client, ctx context.Context) error {
@@ -271,6 +271,76 @@ func runProxyConnectionPerformanceRetryOnRemoteConns(iterations, mongoPort, prox
 			return err
 		}
 		return cleanupRemoteConns(client3, ctx)
+	}
+	results, failedCount, maxLatencyMs, avgLatencyMs, percentiles, err := DoConcurrencyTestRun(logger,
+		hostname, mongoPort, proxyPort, mode,
+		mongoClientFactory,
+		proxyClientFactory,
+		iterations, workers,
+		preSetupFunc,
+		setupFunc,
+		testFunc,
+		cleanupFunc,
+	)
+
+	return analyzeResults(err, workers, failedCount, avgLatencyMs, targetAvgLatencyMs, maxLatencyMs, targetMaxLatencyMs, results, percentiles, logger)
+}
+
+func runProxyConnectionPerformanceMultipleRetryOnRemoteConns(iterations, mongoPort, proxyPort int, hostname string, logger *slogger.Logger, workers int, targetAvgLatencyMs, targetMaxLatencyMs int64, mode util.MongoConnectionMode,
+	mongoClientFactory util.ClientFactoryFunc,
+	proxyClientFactory util.ClientFactoryFunc,
+) error {
+	preSetupFunc := func(logger *slogger.Logger, client *mongo.Client, ctx context.Context) error {
+
+		if err := util.DisableFailPoint(client, ctx); err != nil {
+			return err
+		}
+
+		if err := cleanupRemoteConns(client, ctx); err != nil {
+			return err
+		}
+
+		time.Sleep(time.Second)
+		localColl := client.Database(util.RetryOnRemoteDbMultiple).Collection(RemoteConnCollName)
+
+		if _, err := localColl.InsertOne(ctx, bson.D{{"val", util.RetryOnRemoteVal * 2}}); err != nil {
+			return err
+		}
+
+		time.Sleep(time.Second)
+		debugPrintCollContents(localColl, "local", ctx)
+		cmd := bson.D{
+			{"configureFailPoint", "failCommand"},
+			{"mode", bson.D{{"times", 4}}},
+			{"data", bson.D{
+				{"failCommands", []string{"find"}},
+				{"errorCode", 11601},
+			}},
+		}
+		if err := client.Database("admin").RunCommand(ctx, cmd).Err(); err != nil {
+			println("Failed to add failpoint")
+			return err
+		}
+		return nil
+	}
+	setupFunc := func(logger *slogger.Logger, client *mongo.Client, ctx context.Context) error {
+		return nil
+	}
+
+	testFunc := func(logger *slogger.Logger, client *mongo.Client, workerNum, iteration int, ctx context.Context) (elapsed time.Duration, success bool, err error) {
+		return runRemoteConnsRetry(logger, client, workerNum, ctx, util.RetryOnRemoteDbMultiple)
+	}
+
+	cleanupFunc := func(logger *slogger.Logger, client *mongo.Client, ctx context.Context) error {
+		client2, err := mongoClientFactory(hostname, 30000, util.Cluster, false, "cleanup", ctx)
+		if err != nil {
+			return err
+		}
+		defer client2.Disconnect(ctx)
+		if err := util.DisableFailPoint(client2, ctx); err != nil {
+			return err
+		}
+		return cleanupRemoteConns(client2, ctx)
 	}
 	results, failedCount, maxLatencyMs, avgLatencyMs, percentiles, err := DoConcurrencyTestRun(logger,
 		hostname, mongoPort, proxyPort, mode,
